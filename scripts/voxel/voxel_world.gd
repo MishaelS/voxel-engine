@@ -16,7 +16,7 @@ var _chunks := {} # Vector3i -> ChunkData
 func _ready() -> void:
 	_material = StandardMaterial3D.new()
 	_material.vertex_color_use_as_albedo = true
-	_material.vertex_color_is_srgb = true
+	_material.vertex_color_is_srgb = false # mesher emits linear colors
 	_material.roughness = 1.0
 
 	_generator = TerrainGenerator.new(world_seed)

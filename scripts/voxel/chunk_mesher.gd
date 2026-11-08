@@ -28,11 +28,25 @@ const FACE_CORNERS := [
 ]
 
 ## Brightness for AO level 0 (fully enclosed corner) .. 3 (open corner).
+## Applied in linear color space, so these are the real light multipliers.
 const AO_BRIGHTNESS: Array[float] = [0.5, 0.68, 0.84, 1.0]
+
+## Block colors converted from sRGB to linear once. Vertex colors are emitted
+## in linear space (the material has vertex_color_is_srgb = false); multiplying
+## an sRGB color by the AO factor would get gamma-expanded by the GPU and
+## turn e.g. 0.5 into ~0.22, making AO far too dark.
+static var _linear_colors: Array[Color] = _build_linear_colors()
 
 ## For every face and corner: offsets (relative to the block in front of the
 ## face) of the two side neighbors and the diagonal neighbor of that corner.
 static var _ao_offsets: Array = _build_ao_offsets()
+
+
+static func _build_linear_colors() -> Array[Color]:
+	var result: Array[Color] = []
+	for color in Blocks.COLORS:
+		result.append(color.srgb_to_linear())
+	return result
 
 
 static func _build_ao_offsets() -> Array:
@@ -67,7 +81,7 @@ static func build_arrays(data: ChunkData) -> Array:
 				var id := data.get_block(x, y, z)
 				if id == Blocks.AIR:
 					continue
-				var color := Blocks.COLORS[id]
+				var color := _linear_colors[id]
 				var origin := Vector3(x, y, z)
 
 				for face in 6:

@@ -31,6 +31,9 @@ Sections:
 - VSync is off by default, so FPS is no longer capped at the monitor refresh rate.
 - Rendering optimized for high-DPI screens (measured on Apple M4, 3420×2090: 50 → ~155 FPS): SSAO removed (replaced by voxel AO), MSAA 2x replaced by FXAA, hard directional shadows.
 
+### Fixed
+- Voxel AO was 2–3× too dark: the AO factor was applied to sRGB vertex colors and then gamma-expanded by the material (0.5 became ~0.22). Block colors are now converted to linear once and AO is applied in linear space (`vertex_color_is_srgb = false`).
+
 ### Removed
 - `VoxelBlock` (`scripts/voxel_block.gd`), replaced by chunk meshing.
 
