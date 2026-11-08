@@ -14,6 +14,8 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Falling block entities (`scripts/entities/falling_blocks.gd`): sand and gravel with nothing below turn into entities that accelerate down smoothly (classic physics per tick: gravity 0.04, drag 0.98) and become blocks again where they land; blocks landing in the same column in the same tick stack up. Simulated in game ticks on packed arrays (no node per entity), rendered with one MultiMesh per block type using the chunk block mesh and materials, positions interpolated between ticks. Tested with 256 blocks falling at once: under 1 ms per tick.
+- Debug screen shows the number of falling block entities.
 - Hotbar (`scripts/ui/hotbar.gd`) drawn with hotbar.png / hotbarSelector.png: 9 slots with isometric block icons generated from the atlas (`BlockIcons`: top, south and east faces with shading, biome tints and overlays), selection with **1-9** or the mouse wheel, block name shown above for 2 s.
 - Crosshair (`scripts/ui/crosshair.gd`, cursor.png) that inverts the colors behind it.
 - Block interaction (`scripts/player/block_interaction.gd`) with the mouse captured: **LMB** breaks, **RMB** places the selected block, **MMB** picks the targeted block into the hotbar; reach 5 blocks, outline around the targeted block. Edits go through `set_block`, so block updates apply (sand falls, grass reacts).
@@ -32,7 +34,7 @@ Sections:
 - Game tick system (`scripts/core/tick_loop.gd`, autoload `TickLoop`): all game logic runs at a fixed 20 ticks per second independent of FPS, in ordered phases (world, entities, late); catch-up capped at 10 ticks per frame; `alpha` for interpolating visuals between ticks; measured TPS and ms per tick in the HUD; **P** freezes ticks, **.** steps one tick while frozen.
 - World clock in ticks (`scripts/voxel/world_clock.gd`): `game_time` (only grows) and `day_time` (24000 ticks per day, can be moved), `daylight_cycle` switch.
 - World ticks in `VoxelWorld`: scheduled block ticks (merged per position, capped per tick), random ticks (`random_tick_speed` = 3 per chunk per tick) and block updates sent to a changed block and its 6 neighbors; `get_block` / `set_block` in world coordinates.
-- Block tick handlers in `BlockType` (`random_tick`, `scheduled_tick`, `on_update`) and the first behaviors (`scripts/voxel/behaviors/`): grass spreads onto uncovered dirt and turns into dirt under opaque blocks; sand and gravel fall one block every 2 ticks.
+- Block tick handlers in `BlockType` (`random_tick`, `scheduled_tick`, `on_update`) and the first behaviors (`scripts/voxel/behaviors/`): grass spreads onto uncovered dirt and turns into dirt under opaque blocks; sand and gravel fall (now as smooth falling entities, see above).
 - Changed chunks are re-meshed on worker threads (`WorkerThreadPool`) from a snapshot and swapped in when ready, so block changes do not stall frames.
 - Cubic chunks of 16×16×16 blocks: `ChunkData` (`scripts/voxel/chunk_data.gd`), a flat one-byte-per-block array.
 - Block registry `Blocks` (`scripts/voxel/blocks.gd`) and `BlockType` (`scripts/voxel/block_type.gd`): per-face textures, optional per-face overlay, sRGB biome tint, render layer (opaque / cutout / translucent) and same-type face culling. New blocks are one `register()` call.

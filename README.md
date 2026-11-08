@@ -80,6 +80,7 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/voxel/world_clock.gd` - world time in ticks (game time, day time)
 * `scripts/voxel/voxel_world.gd` - chunks, world ticks (scheduled, random, block updates), async re-meshing; `generator` switches terrain / random blocks
 * `scripts/voxel/behaviors/` - block tick behaviors (grass, falling blocks)
+* `scripts/entities/falling_blocks.gd` - falling sand/gravel entities: tick physics on packed arrays, MultiMesh rendering
 * `scripts/voxel/random_blocks_generator.gd` - debug world: every block type scattered randomly
 * `scripts/day_night_cycle.gd` - sun/moon movement (latitude, seasons, analemma), day counter, moon phases, light; drives the sky
 * `scripts/free_camera.gd` - free camera

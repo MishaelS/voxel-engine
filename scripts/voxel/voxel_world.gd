@@ -42,6 +42,8 @@ var stats := {}
 var clock := WorldClock.new()
 ## Random source for world logic (random ticks, block behaviors).
 var rng := RandomNumberGenerator.new()
+## Falling block entities in this world.
+var falling_blocks: FallingBlocks
 
 var _chunks := {}          # Vector3i -> ChunkData
 var _chunk_nodes := {}     # Vector3i -> MeshInstance3D
@@ -68,6 +70,10 @@ class MeshJob:
 
 
 func _ready() -> void:
+	falling_blocks = FallingBlocks.new()
+	falling_blocks.name = "FallingBlocks"
+	falling_blocks.world = self
+	add_child(falling_blocks)
 	generate()
 	TickLoop.add_listener(_tick, TickLoop.Phase.WORLD)
 
@@ -96,6 +102,7 @@ func _process(_delta: float) -> void:
 func generate() -> void:
 	rng.seed = world_seed
 	clock = WorldClock.new(start_day_time)
+	falling_blocks.clear()
 	_scheduled.clear()
 	_scheduled_count = 0
 	var data := ChunkData.new()
@@ -225,6 +232,15 @@ func schedule_tick(pos: Vector3i, delay: int) -> void:
 	if not bucket.has(pos):
 		bucket[pos] = true
 		_scheduled_count += 1
+
+
+## Turns the block at `pos` into a falling entity (sand, gravel).
+func start_falling(pos: Vector3i) -> void:
+	var id := get_block(pos)
+	if id == Blocks.AIR:
+		return
+	set_block(pos, Blocks.AIR) # updates neighbors: blocks above start falling too
+	falling_blocks.spawn(pos, id)
 
 
 func mesh_jobs_count() -> int:

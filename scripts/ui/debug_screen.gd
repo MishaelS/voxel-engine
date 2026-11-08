@@ -94,6 +94,7 @@ func _left_lines() -> PackedStringArray:
 		lines.append("Game time: %d, day time: %d%s" % [clock.game_time, int(clock.day_time),
 			"" if clock.daylight_cycle else " (stopped)"])
 		lines.append("Random tick speed: %d, scheduled ticks: %d" % [world.random_tick_speed, world.scheduled_tick_count()])
+		lines.append("Entities: %d falling blocks" % world.falling_blocks.count())
 	if sun:
 		lines.append("Time: %s" % sun.describe())
 		var to_sun := sun.sun_direction()

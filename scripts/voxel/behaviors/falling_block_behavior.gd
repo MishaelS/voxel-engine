@@ -1,10 +1,9 @@
 class_name FallingBlockBehavior
 extends RefCounted
 ## Sand and gravel: when the block or a neighbor changes, check again in
-## FALL_DELAY ticks; if there is air or water below, move one block down and
-## repeat (falls 10 blocks per second at 20 TPS).
-## Simplification: the classic game turns the block into a falling entity;
-## until entities exist the block moves block by block.
+## FALL_DELAY ticks; if there is air or water below, the block becomes a
+## falling entity (FallingBlocks) that accelerates down smoothly and turns
+## back into a block where it lands - like the classic game.
 
 const FALL_DELAY := 2
 
@@ -24,6 +23,4 @@ static func scheduled_tick(world: VoxelWorld, pos: Vector3i) -> void:
 	var below_id := world.get_block(below)
 	if below_id != Blocks.AIR and below_id != _water:
 		return
-	var id := world.get_block(pos)
-	world.set_block(pos, Blocks.AIR)
-	world.set_block(below, id) # the update at the new position schedules the next step
+	world.start_falling(pos)
