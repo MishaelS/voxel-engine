@@ -5,12 +5,13 @@ A voxel engine for Godot 4.5.
 ## Running
 Open the project folder in Godot 4.5+ (Import → `project.godot`) and press F5.
 Controls
-* LMB: capture the mouse, then break blocks; RMB: place the selected block; MMB: pick the targeted block
-* 1-9 / mouse wheel: hotbar slot; Ctrl + mouse wheel: fly speed
+* LMB: capture the mouse, then break blocks (survival: hold); RMB: place the selected block; MMB: pick the targeted block
+* 1-9 / mouse wheel: hotbar slot; E: inventory (survival: 2x2 crafting; creative: all blocks)
 * F3: debug screen; F4: toggle VSync
 * Esc: menu (pauses the game): Options - video, controls (key rebinding), world
-* WASD: movement, E/Space - up, Q - down
-* Shift: speed boost
+* WASD: walk; Space: jump (creative: double-tap to fly, then Space / Shift up and down)
+* Ctrl or double-tap W: sprint; Shift: sneak (slower, doesn't fall off edges)
+* `/gamemode survival|creative`: game mode (the game starts in creative)
 * R: regenerate the world with a new seed
 * Up/Down arrows: time of day, Left/Right: rotate the sun path
 * T: open the chat, /: open it with a command (Tab completes, Up/Down choose, Esc closes)
@@ -75,6 +76,12 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/core/tick_loop.gd` - autoload: fixed-rate game tick loop (20 TPS), phases, freeze/step
 * `scripts/core/game_input.gd` - blocks gameplay input while typing
 * `scripts/commands/` - command system: dispatcher, nodes, argument types, game rules, built-in commands
+* `scripts/player/player.gd` - the player: classic movement physics (20 steps/s, box collision), camera, game mode
+* `scripts/player/inventory.gd` - 36-slot inventory (hotbar + main), stacks of 64
+* `scripts/player/crafting.gd` - shaped crafting recipes
+* `scripts/player/block_interaction.gd` - breaking (survival progress and cracks), placing, picking blocks
+* `scripts/ui/inventory/` - inventory windows (survival / creative) and the item slot widget
+* `scripts/ui/block_icons.gd` - block icons rendered by the GPU (orthographic view of the block mesh)
 * `scripts/ui/chat.gd` - chat with command suggestions and history
 * `scripts/ui/ui_theme.gd` - shared UI look (pixel font, GUI widget textures)
 * `scripts/ui/menu/` - in-game menu: menu stack, screen base, screens

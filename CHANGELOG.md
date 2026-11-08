@@ -14,6 +14,14 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Player (`scripts/player/player.gd`) with the movement of the classic game, replacing the free-flying camera: physics in fixed steps of 20 per second with the classic constants (blocks per tick), interpolated for rendering; a 0.6 x 1.8 box colliding with blocks axis by axis (Y, X, Z), eyes at 1.62. Walking 4.32 m/s, sprinting 5.66 m/s (**Ctrl** or double-tap **W**, sprint-jumps push forward, FOV widens), jump height 1.25 blocks, ground friction (ice is slippery), stepping up to 0.6 blocks, sneaking (**Shift**: x0.3 speed, eyes lower, no walking off edges), swimming (Space swims up, climbing out onto the shore), creative flying (double-tap **Space**, Space / Shift up and down, ends on landing), view bobbing (new Video setting).
+- Game modes, survival and creative, and `/gamemode <survival|creative>` (also `s`/`c`, `0`/`1`). The game starts in creative.
+- Inventory (`scripts/player/inventory.gd`): 36 slots (hotbar + main), stacks of up to 64. The hotbar shows the first 9 slots with item counts.
+- Inventory windows on **E** (`scripts/ui/inventory/`), built on the container textures: survival with armor slots (empty for now), a 2x2 crafting grid and result, the main inventory and the hotbar; creative with every block in a scrollable 9x6 catalog. Classic mouse handling: pick up / put down / swap stacks, right click for half / one, shift-click to move between hotbar and inventory, number keys over a slot to swap with the hotbar, tooltips with block names. Closing returns the held stack and the crafting grid to the inventory.
+- Crafting (`scripts/player/crafting.gd`): shaped recipes matched anywhere in the grid; logs -> 4 planks, 2x2 planks -> crafting table, 2x2 sand -> sandstone.
+- Survival block breaking: hold LMB, time = hardness x 1.5 s by hand (new `BlockType.hardness`, classic values; bedrock and water can't be broken), crack stages from the atlas drawn over the block; the block (or its drop: stone -> cobblestone, grass -> dirt, glass / leaves / ice -> nothing) goes into the inventory. Placing uses up one item. Creative: instant breaking and placing without using items. Holding the buttons repeats (5 / 4 ticks) like the classic game.
+- `BlockType.collides`, `slipperiness`, `drop`; `Blocks.collides_table`, `Blocks.drop_of()`, `Blocks.display_name()`.
+- Debug screen: game mode, horizontal speed and player state (on ground, flying, sprinting, sneaking, in water); XYZ is now the feet position.
 - Sky light like the classic game (`scripts/voxel/sky_light.gd`): every block has a light level 0..15; full light comes straight down from the sky (leaves take 1, water and ice 2, solid blocks stop it), then spreads sideways and down into overhangs and caves, losing at least 1 per block. A column is lit on a worker thread from the 3x3 columns around it, so there are no seams at column borders; cells above the heightmap are never stored or visited, so it stays cheap.
 - Re-lighting on block changes: light removal and re-spreading from the changed block (the classic algorithm); only chunks whose light changed are re-meshed.
 - Smooth lighting in the mesher: each vertex gets the average light of the up to 4 clear cells around the corner, mapped with the classic light curve (level 0 keeps 5%) and combined with voxel AO. With Smooth Lighting off, faces get flat light.
@@ -67,6 +75,14 @@ Sections:
 - Seasons and the analemma: the sun position is computed for an observer at `latitude_deg` with the sun's declination (axial tilt 23.44°) and the equation of time (orbit eccentricity 0.0167) over a 365.24-day year, so at the same clock time the sun traces a figure 8 over the year; summer days are longer and the noon sun higher. The game starts at the March equinox; HUD shows the calendar date. `analemma_enabled` turns it off.
 
 ### Changed
+- Controls like the classic game: **Space** jumps, **Shift** sneaks, **Ctrl** sprints, **E** opens the inventory (were fly up / fly down / speed boost); key binding actions `jump`, `sneak`, `inventory`.
+- Block icons are rendered by the GPU (`BlockIcons`): an orthographic view of the block's own mesh at the classic angle, at exactly the slot's pixel size, so texture pixels are sharp and even (the old CPU projection drew them unevenly). Placement is refused only where the block would overlap the player's box.
+- Faster world loading (render distance 6: first chunk 2.5 s -> 0.7 s, whole area 20.9 s -> 5.3 s). In GDScript, function calls, engine method calls, Dictionary and generic Array reads serialize across worker threads, so the hot loops of generation, sky light and meshing now use only inline arithmetic on packed arrays (block / light tables, AO offsets and corner offsets as packed arrays, biomes as packed tables). Worker scaling: generation 3.6x, light 7.1x, meshing 4.6x (was below 1x).
+- Columns that start no caves are skipped with an inline hash before creating a random generator; tunnels that can never reach the column are dropped early; bedrock no longer draws a random number for every block of the column. World generation for a given seed differs slightly (cave placement, bedrock pattern).
+- Chunks to mesh are kept in a sorted queue rebuilt only when something changes (column lit or loaded, player moved, block changed) instead of rescanning every waiting chunk each frame: worst main-thread cost while flying dropped from ~11 ms to ~1 ms.
+- Opaque and cutout block shaders use Lambert diffuse without specular (blocks are fully rough anyway).
+- The crosshair copies only its own rectangle of the screen to invert the colors behind it, instead of the whole (Retina-sized) frame every frame.
+- Debug screen text is rebuilt every 50 ms instead of every frame.
 - Streaming pipeline: generate (render distance + 1) -> light (when the 8 neighbor columns exist; the outer ring treats unloaded neighbors as solid) -> mesh (when the 8 neighbor columns are lit). Caves are dark now instead of lit by the sky everywhere.
 - `threading/worker_pool/low_priority_thread_ratio` raised to 0.75 so world jobs may use more worker threads.
 - `ChunkMesher` works on a padded 18³ volume (the chunk plus a border from its 26 neighbors): faces and AO are correct across chunk borders and neighbor lookups are plain index offsets; fully buried chunks are skipped. Editing a block on a chunk border re-meshes the neighbor chunks too.
@@ -88,6 +104,7 @@ Sections:
 - Voxel AO was 2–3× too dark: the AO factor was applied to sRGB vertex colors and then gamma-expanded by the material (0.5 became ~0.22). Block colors are now converted to linear once and AO is applied in linear space (`vertex_color_is_srgb = false`).
 
 ### Removed
+- Free-flying camera (`FreeCamera`, Ctrl + mouse wheel fly speed): replaced by the player and creative flying.
 - The single-chunk heightmap `TerrainGenerator` (replaced by the beta generator).
 - `VoxelBlock` (`scripts/voxel_block.gd`), replaced by chunk meshing.
 

@@ -1,89 +1,97 @@
 class_name BlockIcons
 extends RefCounted
-## Isometric inventory icons of blocks, drawn from the texture atlas like
-## the classic game: top face, south face on the left (front of furnaces
-## and crafting tables) and east face on the right, with face shading,
-## biome tints and overlays (grass sides). Icons are made once and cached.
+## Inventory icons of blocks, rendered like the classic game: the block
+## mesh (the same one the world uses) seen from above at an isometric angle
+## through an orthographic camera, with fixed face shading (top bright,
+## south face on the left, east face on the right). Rasterized by the GPU at
+## exactly the pixel size of a slot on screen, so texture pixels stay sharp
+## and even at any GUI scale.
+##
+## Each icon is a small SubViewport that renders once; its texture stays
+## valid afterwards. Icons are cached per block and re-made when the GUI
+## scale changes.
 
-const SIZE := 64 ## Icon image size in pixels.
-const TILE := 16 ## Atlas tile size.
+## Ortho camera height in blocks: the cube (1.57 high at this angle) nearly
+## fills the icon.
+const VIEW_SIZE := 1.65
+## Slot size in UI units.
+const SLOT := 16 * UiTheme.PIXEL
 
-## Brightness of the visible faces.
-const TOP_SHADE := 1.0
-const LEFT_SHADE := 0.8
-const RIGHT_SHADE := 0.6
-
-## Face index (BlockType order), shade, origin and the two edge vectors of
-## each face in icon pixels: p = origin + u * edge_u + v * edge_v (u, v in 0..1).
-const FACES := [
-	[0, TOP_SHADE, Vector2(32, 0), Vector2(32, 16), Vector2(-32, 16)],   # +Y: NW corner, east, south
-	[4, LEFT_SHADE, Vector2(0, 16), Vector2(32, 16), Vector2(0, 32)],    # +Z (south)
-	[2, RIGHT_SHADE, Vector2(32, 32), Vector2(32, -16), Vector2(0, 32)], # +X (east)
-]
-
-static var _cache := {}
-static var _atlas: Image
+static var _cache := {} # id -> Texture2D
+static var _holder: Node
+static var _pixels := 0
+static var _material: ShaderMaterial
 
 
 static func get_icon(id: int) -> Texture2D:
+	if id == Blocks.AIR:
+		return null
+	var pixels := icon_pixels()
+	if pixels != _pixels:
+		clear()
+		_pixels = pixels
 	if not _cache.has(id):
-		_cache[id] = ImageTexture.create_from_image(render(id))
+		_cache[id] = _render(id, pixels)
 	return _cache[id]
 
 
-## Drops cached icons (e.g. after replacing the atlas).
+## Icon size in screen pixels: a slot (16 texture pixels) at the GUI scale.
+static func icon_pixels() -> int:
+	var tree := Engine.get_main_loop() as SceneTree
+	var scale := tree.root.content_scale_factor if tree else 1.0
+	return maxi(roundi(SLOT * scale), 16)
+
+
+## Drops cached icons (GUI scale changed, atlas replaced).
 static func clear() -> void:
 	_cache.clear()
-	_atlas = null
+	if is_instance_valid(_holder):
+		_holder.queue_free()
+	_holder = null
 
 
-static func render(id: int) -> Image:
-	if _atlas == null:
-		_atlas = (load(Blocks.ATLAS_PATH) as Texture2D).get_image()
-		if _atlas.is_compressed():
-			_atlas.decompress()
-		_atlas.convert(Image.FORMAT_RGBA8)
-	var icon := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
-	if id == Blocks.AIR:
-		return icon
-	var block := Blocks.get_type(id)
+static func _render(id: int, pixels: int) -> Texture2D:
+	if not is_instance_valid(_holder):
+		_holder = Node.new()
+		_holder.name = "BlockIcons"
+		(Engine.get_main_loop() as SceneTree).root.add_child.call_deferred(_holder)
 
-	for y in SIZE:
-		for x in SIZE:
-			var point := Vector2(x + 0.5, y + 0.5)
-			for face: Array in FACES:
-				var uv := _face_uv(point, face[2], face[3], face[4])
-				if uv.x < 0.0 or uv.y < 0.0 or uv.x >= 1.0 or uv.y >= 1.0:
-					continue
-				var color := _sample(block, face[0], uv)
-				color.r *= face[1]
-				color.g *= face[1]
-				color.b *= face[1]
-				icon.set_pixel(x, y, color)
-				break
-	return icon
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(pixels, pixels)
+	viewport.transparent_bg = true
+	viewport.own_world_3d = true
+	viewport.msaa_3d = Viewport.MSAA_DISABLED
+	viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
+	var camera := Camera3D.new()
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = VIEW_SIZE
+	camera.near = 0.1
+	camera.far = 10.0
+	viewport.add_child(camera)
+	# 45 degrees around, 30 degrees down: top, +Z (left) and +X (right) faces.
+	var center := Vector3(0.5, 0.5, 0.5)
+	var pitch := deg_to_rad(30.0)
+	var direction := Vector3(sin(PI / 4) * cos(pitch), sin(pitch), cos(PI / 4) * cos(pitch))
+	camera.look_at_from_position(center + direction * 4.0, center, Vector3.UP)
 
-## (u, v) of a point inside a parallelogram face; outside 0..1 = not on it.
-static func _face_uv(point: Vector2, origin: Vector2, edge_u: Vector2, edge_v: Vector2) -> Vector2:
-	var d := point - origin
-	var det := edge_u.x * edge_v.y - edge_u.y * edge_v.x
-	return Vector2((d.x * edge_v.y - d.y * edge_v.x) / det, (edge_u.x * d.y - edge_u.y * d.x) / det)
-
-
-static func _sample(block: BlockType, face: int, uv: Vector2) -> Color:
-	var base := _tile_pixel(block.tiles[face], uv)
-	var overlay_tile := block.overlays[face]
-	if overlay_tile >= 0:
-		var overlay := _tile_pixel(overlay_tile, uv)
-		var tinted := overlay * block.tint
-		return Color(base.lerp(tinted, overlay.a), base.a)
-	var color := base * block.tint
-	color.a = base.a
-	return color
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.mesh = _block_mesh(id)
+	viewport.add_child(mesh_instance)
+	_holder.add_child(viewport)
+	return viewport.get_texture()
 
 
-static func _tile_pixel(tile: int, uv: Vector2) -> Color:
-	var px := (tile % Blocks.ATLAS_TILES_PER_ROW) * TILE + mini(int(uv.x * TILE), TILE - 1)
-	var py := (tile / Blocks.ATLAS_TILES_PER_ROW) * TILE + mini(int(uv.y * TILE), TILE - 1)
-	return _atlas.get_pixel(px, py)
+static func _block_mesh(id: int) -> ArrayMesh:
+	if _material == null:
+		_material = ShaderMaterial.new()
+		_material.shader = preload("res://shaders/block_icon.gdshader")
+		_material.set_shader_parameter("tiles",
+			BlockMaterials.get_material(Blocks.Layer.OPAQUE).get_shader_parameter("tiles"))
+	var mesh := ArrayMesh.new()
+	var surfaces := ChunkMesher.build(ChunkMesher.single_block(id), ChunkMesher.full_light())
+	for layer: int in surfaces:
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, surfaces[layer])
+		mesh.surface_set_material(mesh.get_surface_count() - 1, _material)
+	return mesh

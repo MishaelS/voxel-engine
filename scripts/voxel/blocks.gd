@@ -47,77 +47,84 @@ static var tints_linear := PackedColorArray()  # [id]
 static var ticks_randomly := PackedByteArray()
 # Light lost when passing through the block (0..15, see BlockType.light_opacity).
 static var light_opacity_table := PackedByteArray()
+## 1 if entities collide with the block (see BlockType.collides).
+static var collides_table := PackedByteArray()
 
 static var _registered := _register_all()
 
 
 static func _register_all() -> bool:
-	register(BlockType.cube("air", 0).set_layer(Layer.TRANSLUCENT)) # id 0, never drawn
+	register(BlockType.cube("air", 0).set_layer(Layer.TRANSLUCENT).set_collides(false).set_hardness(-1)) # id 0, never drawn
 
 	# Terrain
-	register(BlockType.cube("stone", 1))
-	register(BlockType.cube("dirt", 2))
+	register(BlockType.cube("stone", 1).set_hardness(1.5).set_drop("cobblestone"))
+	register(BlockType.cube("dirt", 2).set_hardness(0.5))
 	register(_grass("grass_plains", GRASS_PLAINS))
 	register(_grass("grass_forest", GRASS_FOREST))
 	register(_grass("grass_taiga", GRASS_TAIGA))
 	register(_grass("grass_swamp", GRASS_SWAMP))
 	register(_grass("grass_savanna", GRASS_SAVANNA))
-	register(BlockType.cube("cobblestone", 16))
-	register(BlockType.cube("bedrock", 17))
-	register(_falling(BlockType.cube("sand", 18)))
-	register(_falling(BlockType.cube("gravel", 19)))
-	register(BlockType.column("sandstone", 176, 192, 208))
-	register(BlockType.cube("obsidian", 37))
-	register(BlockType.cube("water", 205).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2))
+	register(BlockType.cube("cobblestone", 16).set_hardness(2.0))
+	register(BlockType.cube("bedrock", 17).set_hardness(-1))
+	register(_falling(BlockType.cube("sand", 18).set_hardness(0.5)))
+	register(_falling(BlockType.cube("gravel", 19).set_hardness(0.6)))
+	register(BlockType.column("sandstone", 176, 192, 208).set_hardness(0.8))
+	register(BlockType.cube("obsidian", 37).set_hardness(10.0))
+	register(BlockType.cube("water", 205).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2) \
+		.set_collides(false).set_hardness(-1))
 
 	# Trees
-	register(BlockType.column("oak_log", 21, 20))
-	register(BlockType.column("birch_log", 21, 117))
-	register(BlockType.column("spruce_log", 21, 116))
-	register(BlockType.cube("oak_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_OAK).set_light_opacity(1))
-	register(BlockType.cube("birch_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_BIRCH).set_light_opacity(1))
-	register(BlockType.cube("spruce_leaves", 132).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_SPRUCE).set_light_opacity(1))
-	register(BlockType.cube("oak_planks", 4))
-	register(BlockType.cube("birch_planks", 214))
-	register(BlockType.cube("spruce_planks", 198))
+	register(BlockType.column("oak_log", 21, 20).set_hardness(2.0))
+	register(BlockType.column("birch_log", 21, 117).set_hardness(2.0))
+	register(BlockType.column("spruce_log", 21, 116).set_hardness(2.0))
+	register(BlockType.cube("oak_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_OAK).set_light_opacity(1) \
+		.set_hardness(0.2).set_drop("none"))
+	register(BlockType.cube("birch_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_BIRCH).set_light_opacity(1) \
+		.set_hardness(0.2).set_drop("none"))
+	register(BlockType.cube("spruce_leaves", 132).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_SPRUCE).set_light_opacity(1) \
+		.set_hardness(0.2).set_drop("none"))
+	register(BlockType.cube("oak_planks", 4).set_hardness(2.0))
+	register(BlockType.cube("birch_planks", 214).set_hardness(2.0))
+	register(BlockType.cube("spruce_planks", 198).set_hardness(2.0))
 
 	# Ores and mineral blocks
-	register(BlockType.cube("coal_ore", 34))
-	register(BlockType.cube("iron_ore", 33))
-	register(BlockType.cube("gold_ore", 32))
-	register(BlockType.cube("lapis_ore", 160))
-	register(BlockType.cube("diamond_ore", 50))
-	register(BlockType.cube("redstone_ore", 51))
-	register(BlockType.cube("iron_block", 22))
-	register(BlockType.cube("gold_block", 23))
-	register(BlockType.cube("lapis_block", 144))
-	register(BlockType.cube("diamond_block", 24))
+	register(BlockType.cube("coal_ore", 34).set_hardness(3.0))
+	register(BlockType.cube("iron_ore", 33).set_hardness(3.0))
+	register(BlockType.cube("gold_ore", 32).set_hardness(3.0))
+	register(BlockType.cube("lapis_ore", 160).set_hardness(3.0))
+	register(BlockType.cube("diamond_ore", 50).set_hardness(3.0))
+	register(BlockType.cube("redstone_ore", 51).set_hardness(3.0))
+	register(BlockType.cube("iron_block", 22).set_hardness(5.0))
+	register(BlockType.cube("gold_block", 23).set_hardness(3.0))
+	register(BlockType.cube("lapis_block", 144).set_hardness(3.0))
+	register(BlockType.cube("diamond_block", 24).set_hardness(5.0))
 
 	# Building
-	register(BlockType.cube("glass", 49).set_layer(Layer.CUTOUT).set_cull_self())
+	register(BlockType.cube("glass", 49).set_layer(Layer.CUTOUT).set_cull_self().set_hardness(0.3).set_drop("none"))
 	for wool: Array in [
 		["white", 64], ["orange", 210], ["magenta", 194], ["light_blue", 178],
 		["yellow", 162], ["lime", 146], ["pink", 130], ["gray", 114],
 		["light_gray", 225], ["cyan", 209], ["purple", 193], ["blue", 177],
 		["brown", 161], ["green", 145], ["red", 129], ["black", 113],
 	]:
-		register(BlockType.cube("%s_wool" % wool[0], wool[1]))
+		register(BlockType.cube("%s_wool" % wool[0], wool[1]).set_hardness(0.8))
 
 	# Workstations (front faces +Z until blocks get orientation)
-	register(BlockType.with_front("crafting_table", 43, 4, 59, 60))
-	register(BlockType.with_front("furnace", 62, 62, 44, 45))
+	register(BlockType.with_front("crafting_table", 43, 4, 59, 60).set_hardness(2.5))
+	register(BlockType.with_front("furnace", 62, 62, 44, 45).set_hardness(3.5))
 
 	# Cold biomes (appended: ids must stay stable)
-	register(BlockType.column("snowy_grass", 66, 68, 2))
-	register(BlockType.cube("snow", 66))
-	register(BlockType.cube("ice", 67).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2))
+	register(BlockType.column("snowy_grass", 66, 68, 2).set_hardness(0.6).set_drop("dirt"))
+	register(BlockType.cube("snow", 66).set_hardness(0.2))
+	register(BlockType.cube("ice", 67).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2) \
+		.set_hardness(0.5).set_slipperiness(0.98).set_drop("none"))
 	return true
 
 
 static func _grass(block_name: String, tint: Color) -> BlockType:
 	# Top: grayscale grass tinted. Sides: dirt-based tile + tinted grass fringe.
 	return BlockType.column(block_name, 0, 3, 2).set_side_overlay(38).set_tint(tint) \
-		.set_random_tick(Callable(GrassBehavior, "random_tick"))
+		.set_hardness(0.6).set_drop("dirt").set_random_tick(Callable(GrassBehavior, "random_tick"))
 
 
 ## Sand, gravel: fall when the block below is air or water.
@@ -144,6 +151,7 @@ static func register(block: BlockType) -> int:
 	if block.light_opacity < 0:
 		block.light_opacity = 15 if is_opaque_table[id] == 1 else 0
 	light_opacity_table.append(block.light_opacity)
+	collides_table.append(1 if block.collides else 0)
 	return id
 
 
@@ -163,3 +171,18 @@ static func is_opaque(id: int) -> bool:
 
 static func get_type(id: int) -> BlockType:
 	return types[id]
+
+
+## Block given when `id` is broken in survival; AIR = nothing.
+static func drop_of(id: int) -> int:
+	var drop := types[id].drop
+	if drop == "":
+		return id
+	if drop == "none":
+		return AIR
+	return id_of(drop)
+
+
+## Display name ("oak_planks" -> "Oak Planks").
+static func display_name(id: int) -> String:
+	return types[id].name.capitalize()

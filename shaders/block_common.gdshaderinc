@@ -4,13 +4,24 @@
 //   UV2    - x: base tile layer, y: overlay tile layer (-1 = none)
 //   COLOR  - rgb: biome tint (linear), a: baked voxel AO (linear multiplier)
 
-uniform sampler2DArray tiles : source_color, filter_nearest_mipmap_anisotropic, repeat_disable;
+//
+// Includers may #define before including:
+//   BLOCK_TILE_FILTER   - texture filter of the tiles (default: mipmapped)
+//   BLOCK_CUSTOM_VERTEX - write their own vertex() (must set tile_layers = UV2)
+
+#ifndef BLOCK_TILE_FILTER
+#define BLOCK_TILE_FILTER filter_nearest_mipmap_anisotropic
+#endif
+
+uniform sampler2DArray tiles : source_color, BLOCK_TILE_FILTER, repeat_disable;
 
 varying flat vec2 tile_layers;
 
+#ifndef BLOCK_CUSTOM_VERTEX
 void vertex() {
 	tile_layers = UV2;
 }
+#endif
 
 // Returns linear albedo (rgb) and coverage (a).
 vec4 block_albedo(vec2 uv, vec4 vertex_color) {

@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode cull_back;
+render_mode cull_back, diffuse_lambert, specular_disabled;
 
 #include "res://shaders/block_common.gdshaderinc"
 

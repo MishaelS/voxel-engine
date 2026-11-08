@@ -22,6 +22,10 @@ const FACE_NAMES := {
 var _left: VBoxContainer
 var _right: VBoxContainer
 var _box: StyleBoxFlat
+var _next_refresh_ms := 0
+## The text is rebuilt this often (re-laying out ~40 labels every frame
+## costs about 1 ms of CPU).
+const REFRESH_MS := 50
 
 
 func _ready() -> void:
@@ -47,6 +51,10 @@ func _input(event: InputEvent) -> void:
 func _process(_delta: float) -> void:
 	if not visible:
 		return
+	var now := Time.get_ticks_msec()
+	if now < _next_refresh_ms:
+		return
+	_next_refresh_ms = now + REFRESH_MS
 	_fill(_left, _left_lines(), HORIZONTAL_ALIGNMENT_LEFT)
 	_fill(_right, _right_lines(), HORIZONTAL_ALIGNMENT_RIGHT)
 
@@ -79,7 +87,9 @@ func _left_lines() -> PackedStringArray:
 	lines.append("")
 
 	if camera:
-		var pos := camera.global_position
+		# Like the classic game: the player's feet, not the eyes.
+		var player := camera.get_parent() as Player
+		var pos := player.global_position if player else camera.global_position
 		var block := Vector3i(pos.floor())
 		var chunk := VoxelWorld.chunk_coord_of(block)
 		var local := block - chunk * ChunkData.SIZE
@@ -87,6 +97,15 @@ func _left_lines() -> PackedStringArray:
 		lines.append("Block: %d %d %d" % [block.x, block.y, block.z])
 		lines.append("Chunk: %d %d %d in %d %d %d" % [local.x, local.y, local.z, chunk.x, chunk.y, chunk.z])
 		lines.append(_facing_line(-camera.global_basis.z))
+		if player:
+			var states := PackedStringArray()
+			for state: Array in [[player.on_ground, "on ground"], [player.flying, "flying"],
+					[player.sprinting, "sprinting"], [player.sneaking, "sneaking"], [player.in_water, "in water"]]:
+				if state[0]:
+					states.append(state[1])
+			var v := player.velocity * 20.0
+			lines.append("Player: %s mode, %.2f m/s%s" % [Player.GameMode.keys()[player.game_mode].capitalize(),
+				Vector2(v.x, v.z).length(), (", " + ", ".join(states)) if not states.is_empty() else ""])
 		if world:
 			lines.append("Biome: %s" % world.biome_at(block.x, block.z))
 			lines.append("Sky light: %d" % world.get_light(block))

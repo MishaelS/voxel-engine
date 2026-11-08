@@ -53,6 +53,7 @@ func _register_all() -> void:
 		PackedStringArray(["Off", "FXAA", "MSAA 2x", "MSAA 4x"]), 1))
 	define("video", Setting.choice("shadows", "Shadows", PackedStringArray(["Off", "Low", "High"]), 2))
 	define("video", Setting.toggle("smooth_lighting", "Smooth Lighting", true))
+	define("video", Setting.toggle("view_bobbing", "View Bobbing", true))
 	define("video", Setting.toggle("clouds", "Clouds", true))
 	define("video", Setting.toggle("fog", "Fog", true))
 	define("video", Setting.range_of("brightness", "Brightness", 0, 100, 50) \

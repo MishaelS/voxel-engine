@@ -1,8 +1,9 @@
 class_name Hotbar
 extends Control
-## The hotbar at the bottom of the screen: 9 slots with block icons and a
-## selection frame, drawn with hotbar.png / hotbarSelector.png. When the
-## selection changes, the block name shows above it for a moment.
+## The hotbar at the bottom of the screen: the first 9 slots of the
+## player's inventory with block icons, counts and a selection frame, drawn
+## with hotbar.png / hotbarSelector.png. When the selection changes, the
+## block name shows above it for a moment.
 ## Slots are chosen with 1-9 or the mouse wheel (see BlockInteraction).
 
 signal selection_changed(slot: int)
@@ -12,16 +13,16 @@ const NAME_SECONDS := 2.0
 const NAME_FADE := 0.5
 const P := UiTheme.PIXEL
 
-## Starting blocks of the slots (registry names).
+## Starting blocks of a new player's hotbar (registry names).
 const DEFAULT_BLOCKS := [
 	"grass_plains", "dirt", "stone", "cobblestone", "oak_planks",
 	"oak_log", "glass", "oak_leaves", "sand",
 ]
 
-var slots := PackedInt32Array()
+@export var player: Player
 var selected := 0
 
-var _icons: Array[TextureRect] = []
+var _icons: Array[ItemSlotView] = []
 var _selector: TextureRect
 var _name_label: Label
 var _name_shown_at := -100.0
@@ -46,12 +47,8 @@ func _ready() -> void:
 	add_child(background)
 
 	for i in SLOT_COUNT:
-		var icon := TextureRect.new()
+		var icon := ItemSlotView.new()
 		icon.position = Vector2(3 + i * 20, 3) * P
-		icon.size = Vector2(16, 16) * P
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(icon)
 		_icons.append(icon)
 
@@ -67,8 +64,12 @@ func _ready() -> void:
 	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_name_label)
 
-	for block_name: String in DEFAULT_BLOCKS:
-		slots.append(Blocks.id_of(block_name))
+	if player:
+		player.inventory.changed.connect(_refresh)
+		player.game_mode_changed.connect(func(_mode: Player.GameMode) -> void: _refresh())
+	Settings.changed.connect(func(key: String, _value: Variant) -> void:
+		if key == "gui_scale":
+			_refresh.call_deferred())
 	_refresh()
 
 
@@ -78,7 +79,7 @@ func _process(_delta: float) -> void:
 
 
 func selected_block() -> int:
-	return slots[selected]
+	return player.inventory.id_at(selected) if player else Blocks.AIR
 
 
 func select(slot: int) -> void:
@@ -93,33 +94,40 @@ func scroll(direction: int) -> void:
 	select(selected + direction)
 
 
-func set_slot(slot: int, block_id: int) -> void:
-	slots[slot] = block_id
-	_refresh()
-	if slot == selected:
-		_show_name()
-
-
-## Puts a block in the hotbar like picking it in creative mode: selects the
-## slot that already has it, otherwise replaces the selected slot.
+## Pick block (middle click) like the classic game: select the hotbar slot
+## that has the block; otherwise in creative put it into the selected slot
+## (or the first empty one), in survival swap it in from the main inventory.
 func pick(block_id: int) -> void:
-	var existing := slots.find(block_id)
+	var inventory := player.inventory
+	var existing := inventory.find(block_id, 0, SLOT_COUNT)
 	if existing >= 0:
 		select(existing)
+		return
+	if player.is_creative():
+		var target := selected
+		if not inventory.is_empty_slot(target):
+			for slot in SLOT_COUNT:
+				if inventory.is_empty_slot(slot):
+					target = slot
+					break
+		inventory.set_slot(target, block_id, 1)
+		select(target)
 	else:
-		set_slot(selected, block_id)
-
-
-static func display_name(block_id: int) -> String:
-	return Blocks.get_type(block_id).name.capitalize()
+		var stored := inventory.find(block_id, SLOT_COUNT)
+		if stored >= 0:
+			inventory.swap(stored, selected)
+			_show_name()
 
 
 func _refresh() -> void:
+	if player == null:
+		return
 	for i in SLOT_COUNT:
-		_icons[i].texture = BlockIcons.get_icon(slots[i]) if slots[i] != Blocks.AIR else null
+		_icons[i].set_item(player.inventory.id_at(i), player.inventory.count_at(i))
 	_selector.position = Vector2(-1 + selected * 20, -1) * P
 
 
 func _show_name() -> void:
-	_name_label.text = display_name(slots[selected])
+	var id := selected_block()
+	_name_label.text = Blocks.display_name(id) if id != Blocks.AIR else ""
 	_name_shown_at = Time.get_ticks_msec() / 1000.0

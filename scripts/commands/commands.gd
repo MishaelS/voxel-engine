@@ -20,6 +20,7 @@ static func _create() -> CommandDispatcher:
 	SetBlockCommand.register(d)
 	FillCommand.register(d)
 	TeleportCommand.register(d)
+	GameModeCommand.register(d)
 	SeedCommand.register(d)
 	SayCommand.register(d)
 	return d

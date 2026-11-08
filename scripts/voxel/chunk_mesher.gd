@@ -61,27 +61,11 @@ static var _face_deltas := _build_face_deltas()
 ## Per face and corner: index offsets (from the block in front of the face)
 ## of the two side neighbors and the diagonal one, for AO.
 static var _ao_deltas := _build_ao_deltas()
-
-
-## Geometry buffers of one render layer.
-class Surface:
-	var vertices := PackedVector3Array()
-	var normals := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var layers := PackedVector2Array()
-	var colors := PackedColorArray()
-	var indices := PackedInt32Array()
-
-	func to_arrays() -> Array:
-		var arrays := []
-		arrays.resize(Mesh.ARRAY_MAX)
-		arrays[Mesh.ARRAY_VERTEX] = vertices
-		arrays[Mesh.ARRAY_NORMAL] = normals
-		arrays[Mesh.ARRAY_TEX_UV] = uvs
-		arrays[Mesh.ARRAY_TEX_UV2] = layers
-		arrays[Mesh.ARRAY_COLOR] = colors
-		arrays[Mesh.ARRAY_INDEX] = indices
-		return arrays
+## FACE_CORNERS, FACE_NORMALS and AO_BRIGHTNESS as packed arrays for the
+## mesher's hot loop ([face * 4 + corner], [face], [ao level]).
+static var _corner_offsets := _build_corner_offsets()
+static var _normals := PackedVector3Array(FACE_NORMALS)
+static var _ao_brightness := PackedFloat32Array(AO_BRIGHTNESS)
 
 
 static func _build_light_curve() -> PackedFloat32Array:
@@ -90,13 +74,6 @@ static func _build_light_curve() -> PackedFloat32Array:
 		var darkness := 1.0 - level / float(SkyLight.MAX)
 		curve.append((1.0 - darkness) / (darkness * 3.0 + 1.0) * 0.95 + 0.05)
 	return curve
-
-
-static func _brightness(level: float) -> float:
-	var low := floori(level)
-	if low >= SkyLight.MAX:
-		return 1.0
-	return lerpf(LIGHT_BRIGHTNESS[low], LIGHT_BRIGHTNESS[low + 1], level - low)
 
 
 static func padded_index(x: int, y: int, z: int) -> int:
@@ -114,23 +91,30 @@ static func _build_face_deltas() -> PackedInt32Array:
 	return deltas
 
 
-static func _build_ao_deltas() -> Array:
-	var table := []
+static func _build_corner_offsets() -> PackedVector3Array:
+	var offsets := PackedVector3Array()
+	for corners: Array in FACE_CORNERS:
+		for corner: Vector3 in corners:
+			offsets.append(corner)
+	return offsets
+
+
+## [face * 12 + corner * 3 + (side a, side b, diagonal)].
+static func _build_ao_deltas() -> PackedInt32Array:
+	var table := PackedInt32Array()
 	for face in 6:
 		var normal := FACE_OFFSETS[face]
 		var axis := 0 if normal.x != 0 else (1 if normal.y != 0 else 2)
 		var tangent_a := (axis + 1) % 3
 		var tangent_b := (axis + 2) % 3
-		var per_corner := PackedInt32Array()
 		for corner: Vector3 in FACE_CORNERS[face]:
 			var side_a := Vector3i.ZERO
 			var side_b := Vector3i.ZERO
 			side_a[tangent_a] = int(corner[tangent_a]) * 2 - 1
 			side_b[tangent_b] = int(corner[tangent_b]) * 2 - 1
-			per_corner.append(_delta(side_a))
-			per_corner.append(_delta(side_b))
-			per_corner.append(_delta(side_a + side_b))
-		table.append(per_corner)
+			table.append(_delta(side_a))
+			table.append(_delta(side_b))
+			table.append(_delta(side_a + side_b))
 	return table
 
 
@@ -142,28 +126,31 @@ static func pad(center: PackedByteArray, neighbors: Dictionary, fill: int = 0) -
 	padded.resize(PADDED_VOLUME)
 	if fill != 0:
 		padded.fill(fill)
+	var src := 0
 	for y in SIZE:
 		for z in SIZE:
-			var src := SIZE * (z + SIZE * y)
-			var dst := padded_index(0, y, z)
+			var dst := 1 + P * ((z + 1) + P * (y + 1))
 			for x in SIZE:
-				padded[dst + x] = center[src + x]
+				padded[dst + x] = center[src]
+				src += 1
 	for offset: Vector3i in neighbors:
 		var blocks: PackedByteArray = neighbors[offset]
 		if blocks.is_empty():
 			continue
 		# Which cells of the border this neighbor fills, in its own coordinates.
-		var ranges := []
-		for axis in 3:
-			match offset[axis]:
-				-1: ranges.append([SIZE - 1, SIZE - 1])
-				1: ranges.append([0, 0])
-				_: ranges.append([0, SIZE - 1])
-		for y in range(ranges[1][0], ranges[1][1] + 1):
-			for z in range(ranges[2][0], ranges[2][1] + 1):
-				for x in range(ranges[0][0], ranges[0][1] + 1):
-					var target := Vector3i(x, y, z) + offset * SIZE
-					padded[padded_index(target.x, target.y, target.z)] = blocks[x + SIZE * (z + SIZE * y)]
+		var x0 := SIZE - 1 if offset.x < 0 else 0
+		var x1 := 0 if offset.x > 0 else SIZE - 1
+		var y0 := SIZE - 1 if offset.y < 0 else 0
+		var y1 := 0 if offset.y > 0 else SIZE - 1
+		var z0 := SIZE - 1 if offset.z < 0 else 0
+		var z1 := 0 if offset.z > 0 else SIZE - 1
+		var shift := (1 + offset.x * SIZE) + P * (1 + offset.z * SIZE) + P2 * (1 + offset.y * SIZE)
+		for y in range(y0, y1 + 1):
+			for z in range(z0, z1 + 1):
+				var row := SIZE * (z + SIZE * y)
+				var dst := shift + P * z + P2 * y
+				for x in range(x0, x1 + 1):
+					padded[dst + x] = blocks[row + x]
 	return padded
 
 
@@ -196,100 +183,166 @@ static func build(padded: PackedByteArray, light: PackedByteArray) -> Dictionary
 	if not see_through:
 		return {}
 
-	var surfaces: Array[Surface] = []
-	for i in Blocks.LAYER_COUNT:
-		surfaces.append(Surface.new())
-	var cull_self := Blocks.cull_self_table
+	# Sort the chunk's blocks by render layer, then mesh layer by layer so the
+	# hot loop writes into plain local arrays.
 	var layer_of := Blocks.layer_table
-	var face_tiles := Blocks.face_tiles
-	var face_overlays := Blocks.face_overlays
-	var tints := Blocks.tints_linear
-	var face_deltas := _face_deltas
-	var ao := PackedInt32Array([3, 3, 3, 3])
-	var corner_light := PackedFloat32Array([15.0, 15.0, 15.0, 15.0])
-
+	var opaque_cells := PackedInt32Array()
+	var cutout_cells := PackedInt32Array()
+	var translucent_cells := PackedInt32Array()
 	for y in SIZE:
 		for z in SIZE:
-			var row := padded_index(0, y, z)
+			var row := 1 + P * ((z + 1) + P * (y + 1))
 			for x in SIZE:
 				var i := row + x
-				var id: int = padded[i]
+				var id := padded[i]
 				if id == Blocks.AIR:
 					continue
-				var layer: int = layer_of[id]
-				var surface := surfaces[layer]
-				var tint := tints[id]
-				var origin := Vector3(x, y, z)
-				var smooth := ao_enabled and layer != Blocks.Layer.TRANSLUCENT
-
-				for face in 6:
-					var front := i + face_deltas[face]
-					var neighbor: int = padded[front]
-					if opaque[neighbor] == 1:
-						continue # hidden by an opaque block: never sent to the GPU
-					if neighbor == id and cull_self[id] == 1:
-						continue # glass next to glass, water next to water
-
-					if smooth:
-						_compute_corners(padded, light, opaque, _ao_deltas[face], front, ao, corner_light)
-					else:
-						ao.fill(3)
-						corner_light.fill(light[front])
-
-					var index := id * 6 + face
-					var tile_layers := Vector2(face_tiles[index], face_overlays[index])
-					var start := surface.vertices.size()
-					var corners: Array = FACE_CORNERS[face]
-					var normal := FACE_NORMALS[face]
-					for c in 4:
-						surface.vertices.append(origin + corners[c])
-						surface.normals.append(normal)
-						surface.uvs.append(CORNER_UVS[c])
-						surface.layers.append(tile_layers)
-						var shade := AO_BRIGHTNESS[ao[c]] * _brightness(corner_light[c])
-						surface.colors.append(Color(tint.r, tint.g, tint.b, shade))
-
-					# Split the quad along the diagonal through the darker corners,
-					# otherwise AO interpolates unevenly (anisotropy artifact).
-					if ao[0] + ao[2] > ao[1] + ao[3]:
-						surface.indices.append_array([start, start + 1, start + 3, start + 1, start + 2, start + 3])
-					else:
-						surface.indices.append_array([start, start + 1, start + 2, start, start + 2, start + 3])
+				var layer := layer_of[id]
+				if layer == Blocks.Layer.OPAQUE:
+					opaque_cells.append(i)
+				elif layer == Blocks.Layer.CUTOUT:
+					cutout_cells.append(i)
+				else:
+					translucent_cells.append(i)
 
 	var result := {}
-	for layer in Blocks.LAYER_COUNT:
-		if not surfaces[layer].vertices.is_empty():
-			result[layer] = surfaces[layer].to_arrays()
+	var smooth := ao_enabled
+	var arrays := _build_layer(padded, light, opaque_cells, smooth)
+	if not arrays.is_empty():
+		result[Blocks.Layer.OPAQUE] = arrays
+	arrays = _build_layer(padded, light, cutout_cells, smooth)
+	if not arrays.is_empty():
+		result[Blocks.Layer.CUTOUT] = arrays
+	arrays = _build_layer(padded, light, translucent_cells, false)
+	if not arrays.is_empty():
+		result[Blocks.Layer.TRANSLUCENT] = arrays
 	return result
 
 
+## Surface arrays for the given cells (padded indices) of one layer, or []
+## if no face is visible. Everything inside the loops is inline arithmetic
+## on packed arrays: in GDScript, function calls and generic Array indexing
+## serialize across worker threads.
+##
 ## Per corner, from the layer of cells in front of the face (the front cell,
 ## two side neighbors and the diagonal one):
 ## - voxel AO (0fps method): how many of the side / diagonal cells are opaque;
 ## - smooth light: the average light of those of the 4 cells that are clear.
-static func _compute_corners(padded: PackedByteArray, light: PackedByteArray, opaque: PackedByteArray,
-		deltas: PackedInt32Array, front: int, ao: PackedInt32Array, corner_light: PackedFloat32Array) -> void:
-	var front_light := light[front]
-	for c in 4:
-		var a := front + deltas[c * 3]
-		var b := front + deltas[c * 3 + 1]
-		var side_a := opaque[padded[a]] == 1
-		var side_b := opaque[padded[b]] == 1
-		var total := front_light
-		var count := 1
-		if not side_a:
-			total += light[a]
-			count += 1
-		if not side_b:
-			total += light[b]
-			count += 1
-		if side_a and side_b:
-			ao[c] = 0 # both sides block it: corner fully occluded
-		else:
-			var d := front + deltas[c * 3 + 2]
-			var diagonal := opaque[padded[d]] == 1
-			if not diagonal:
-				total += light[d]
-				count += 1
-			ao[c] = 3 - int(side_a) - int(side_b) - int(diagonal)
-		corner_light[c] = float(total) / count
+static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells: PackedInt32Array, smooth: bool) -> Array:
+	if cells.is_empty():
+		return []
+	var opaque := Blocks.is_opaque_table
+	var cull_self := Blocks.cull_self_table
+	var face_tiles := Blocks.face_tiles
+	var face_overlays := Blocks.face_overlays
+	var tints := Blocks.tints_linear
+	var face_deltas := _face_deltas
+	var ao_deltas := _ao_deltas
+	var corner_offsets := _corner_offsets
+	var normals_table := _normals
+	var ao_brightness := _ao_brightness
+	var curve := LIGHT_BRIGHTNESS
+
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var layers := PackedVector2Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	var uv0 := Vector2(0, 0)
+	var uv1 := Vector2(1, 0)
+	var uv2 := Vector2(1, 1)
+	var uv3 := Vector2(0, 1)
+
+	for i in cells:
+		var id := padded[i]
+		var tint := tints[id]
+		var origin := Vector3(i % P - 1, i / P2 - 1, (i / P) % P - 1)
+		var self_culls := cull_self[id] == 1
+
+		for face in 6:
+			var front := i + face_deltas[face]
+			var neighbor := padded[front]
+			if opaque[neighbor] == 1:
+				continue # hidden by an opaque block: never sent to the GPU
+			if neighbor == id and self_culls:
+				continue # glass next to glass, water next to water
+
+			var index := id * 6 + face
+			var tile_layers := Vector2(face_tiles[index], face_overlays[index])
+			var normal := normals_table[face]
+			var start := vertices.size()
+			var front_light := light[front]
+			var ao_sum_02 := 0
+			var ao_sum_13 := 0
+			for c in 4:
+				var ao := 3
+				var level := float(front_light)
+				if smooth:
+					var base := face * 12 + c * 3
+					var a := front + ao_deltas[base]
+					var b := front + ao_deltas[base + 1]
+					var side_a := opaque[padded[a]] == 1
+					var side_b := opaque[padded[b]] == 1
+					var total := front_light
+					var count := 1
+					if not side_a:
+						total += light[a]
+						count += 1
+					if not side_b:
+						total += light[b]
+						count += 1
+					if side_a and side_b:
+						ao = 0 # both sides block it: corner fully occluded
+					else:
+						var d := front + ao_deltas[base + 2]
+						var diagonal := opaque[padded[d]] == 1
+						if not diagonal:
+							total += light[d]
+							count += 1
+						ao = 3 - int(side_a) - int(side_b) - int(diagonal)
+					level = float(total) / count
+				var low := int(level)
+				var brightness := 1.0
+				if low < SkyLight.MAX:
+					var from := curve[low]
+					brightness = from + (curve[low + 1] - from) * (level - low)
+				if c == 0 or c == 2:
+					ao_sum_02 += ao
+				else:
+					ao_sum_13 += ao
+				vertices.append(origin + corner_offsets[face * 4 + c])
+				normals.append(normal)
+				layers.append(tile_layers)
+				colors.append(Color(tint.r, tint.g, tint.b, ao_brightness[ao] * brightness))
+			uvs.append(uv0)
+			uvs.append(uv1)
+			uvs.append(uv2)
+			uvs.append(uv3)
+
+			# Split the quad along the diagonal through the darker corners,
+			# otherwise AO interpolates unevenly (anisotropy artifact).
+			indices.append(start)
+			indices.append(start + 1)
+			if ao_sum_02 > ao_sum_13:
+				indices.append(start + 3)
+				indices.append(start + 1)
+				indices.append(start + 2)
+				indices.append(start + 3)
+			else:
+				indices.append(start + 2)
+				indices.append(start)
+				indices.append(start + 2)
+				indices.append(start + 3)
+
+	if vertices.is_empty():
+		return []
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = layers
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+	return arrays

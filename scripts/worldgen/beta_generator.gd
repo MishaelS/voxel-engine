@@ -68,6 +68,18 @@ var _soil_noise := FastNoiseLite.new()
 var _tree_noise := FastNoiseLite.new()
 
 var _id := {} # block name -> id (read-only after _init, safe across threads)
+## BIOMES as packed tables indexed by biome number (BIOME_NAMES order), so
+## the per-block loops don't read dictionaries.
+const BIOME_NAMES: Array[String] = [
+	"tundra", "taiga", "swampland", "forest", "seasonal_forest",
+	"rainforest", "savanna", "shrubland", "plains", "desert",
+]
+var _biome_top := PackedInt32Array()
+var _biome_filler := PackedInt32Array()
+var _biome_trees := PackedInt32Array()
+var _biome_cold := PackedByteArray()
+var _water := 0
+var _bedrock := 0
 
 
 func _init(seed_value: int) -> void:
@@ -86,6 +98,14 @@ func _init(seed_value: int) -> void:
 	_setup(_tree_noise, 12, 0.02, 2)
 	for block in Blocks.types:
 		_id[block.name] = block.id
+	for biome_name_key in BIOME_NAMES:
+		var biome: Dictionary = BIOMES[biome_name_key]
+		_biome_top.append(_id[biome.top])
+		_biome_filler.append(_id[biome.filler])
+		_biome_trees.append(biome.trees)
+		_biome_cold.append(1 if biome.cold else 0)
+	_water = _id["water"]
+	_bedrock = _id["bedrock"]
 
 
 func _setup(noise: FastNoiseLite, salt: int, frequency: float, octaves: int) -> void:
@@ -108,22 +128,27 @@ func humidity(x: float, z: float) -> float:
 
 ## The classic biome table.
 static func biome_for(temp: float, humid: float) -> String:
+	return BIOME_NAMES[biome_index(temp, humid)]
+
+
+## Biome number (index in BIOME_NAMES).
+static func biome_index(temp: float, humid: float) -> int:
 	if temp < 0.1:
-		return "tundra"
+		return 0 # tundra
 	humid *= temp
 	if humid < 0.2:
 		if temp < 0.5:
-			return "tundra"
-		return "savanna" if temp < 0.95 else "desert"
+			return 0 # tundra
+		return 6 if temp < 0.95 else 9 # savanna / desert
 	if humid > 0.5 and temp < 0.7:
-		return "swampland"
+		return 2 # swampland
 	if temp < 0.5:
-		return "taiga"
+		return 1 # taiga
 	if temp < 0.97:
-		return "shrubland" if humid < 0.35 else "forest"
+		return 7 if humid < 0.35 else 3 # shrubland / forest
 	if humid < 0.45:
-		return "plains"
-	return "seasonal_forest" if humid < 0.9 else "rainforest"
+		return 8 # plains
+	return 4 if humid < 0.9 else 5 # seasonal forest / rainforest
 
 
 func biome_name(x: int, z: int) -> String:
@@ -134,10 +159,13 @@ func biome_name(x: int, z: int) -> String:
 
 func generate_blocks(cx: int, cz: int) -> PackedByteArray:
 	var blocks := super(cx, cz)
-	var biomes: Array[String] = []
+	var biomes := PackedByteArray()
+	biomes.resize(256)
 	for z in 16:
 		for x in 16:
-			biomes.append(biome_name(cx * 16 + x, cz * 16 + z))
+			var wx := cx * 16 + x
+			var wz := cz * 16 + z
+			biomes[x + 16 * z] = biome_index(temperature(wx, wz), humidity(wx, wz))
 	_shape_terrain(blocks, cx, cz)
 	_replace_surface(blocks, cx, cz, biomes)
 	_carve_caves(blocks, cx, cz)
@@ -240,11 +268,11 @@ func _shape_terrain(blocks: PackedByteArray, cx: int, cz: int) -> void:
 							elif y < SEA_LEVEL:
 								id = water
 							if id != Blocks.AIR:
-								blocks[index(x, y, gz * GRID_X + sz)] = id
+								blocks[x + 16 * (gz * GRID_X + sz + 16 * y)] = id
 
 
 ## Step 3: biome surface, beaches and bedrock, top-down per block column.
-func _replace_surface(blocks: PackedByteArray, cx: int, cz: int, biomes: Array[String]) -> void:
+func _replace_surface(blocks: PackedByteArray, cx: int, cz: int, biomes: PackedByteArray) -> void:
 	var rng := column_rng(cx, cz, 1)
 	var stone: int = _id["stone"]
 	var water: int = _id["water"]
@@ -256,16 +284,23 @@ func _replace_surface(blocks: PackedByteArray, cx: int, cz: int, biomes: Array[S
 		for x in 16:
 			var wx := float(cx * 16 + x)
 			var wz := float(cz * 16 + z)
-			var biome: Dictionary = BIOMES[biomes[z * 16 + x]]
+			var biome := biomes[z * 16 + x]
+			var biome_top := _biome_top[biome]
+			var biome_filler := _biome_filler[biome]
 			var sand_beach := _sand_noise.get_noise_2d(wx, wz) + rng.randf() * 0.2 > 0.0
 			var gravel_beach := _gravel_noise.get_noise_2d(wz, wx) * 15.0 + rng.randf() * 0.2 > 3.0
 			var soil_depth := int(_soil_noise.get_noise_2d(wx, wz) * 5.0 + 3.0 + rng.randf() * 0.25)
-			var top: int = _id[biome.top]
-			var filler: int = _id[biome.filler]
+			var top := biome_top
+			var filler := biome_filler
 			var depth_left := -1
+			# Uneven bedrock floor: layer y (0..4) is bedrock with chance (5 - y) / 5.
+			var bedrock_mask := 1
+			for y in range(1, 5):
+				if rng.randi_range(0, 4) >= y:
+					bedrock_mask |= 1 << y
 			for y in range(HEIGHT - 1, -1, -1):
-				var i := index(x, y, z)
-				if y <= rng.randi_range(0, 4):
+				var i := x + 16 * (z + 16 * y)
+				if y <= 4 and (bedrock_mask >> y) & 1 == 1:
 					blocks[i] = bedrock
 					continue
 				var id := blocks[i]
@@ -279,8 +314,8 @@ func _replace_surface(blocks: PackedByteArray, cx: int, cz: int, biomes: Array[S
 						top = Blocks.AIR
 						filler = stone
 					elif y >= SEA_LEVEL - 4 and y <= SEA_LEVEL + 1:
-						top = _id[biome.top]
-						filler = _id[biome.filler]
+						top = biome_top
+						filler = biome_filler
 						if gravel_beach:
 							top = Blocks.AIR
 							filler = gravel
@@ -304,10 +339,16 @@ func _replace_surface(blocks: PackedByteArray, cx: int, cz: int, biomes: Array[S
 func _carve_caves(blocks: PackedByteArray, cx: int, cz: int) -> void:
 	for ox in range(-CAVE_RANGE, CAVE_RANGE + 1):
 		for oz in range(-CAVE_RANGE, CAVE_RANGE + 1):
+			# Only 1 column in 15 starts caves: decide that with an inline hash
+			# before paying for a random generator.
+			var h := world_seed * 6364136223846793005 + (cx + ox) * 1442695040888963407 + (cz + oz) * 3935559000370003845
+			h ^= h >> 29
+			h *= -4658895280553007687
+			h ^= h >> 32
+			if (h & 0xFFFFFF) % 15 != 0:
+				continue
 			var rng := column_rng(cx + ox, cz + oz, 2)
 			var count := rng.randi_range(0, rng.randi_range(0, rng.randi_range(0, 39) + 1))
-			if rng.randi_range(0, 14) != 0:
-				count = 0
 			for i in count:
 				var start := Vector3(
 					(cx + ox) * 16 + rng.randi_range(0, 15),
@@ -342,6 +383,12 @@ func _carve_tunnel(blocks: PackedByteArray, cx: int, cz: int, seed_value: int, p
 	var is_room := step == -1
 	if is_room:
 		step = length / 2
+	# A tunnel moves 1 block per step: skip it when even its full remaining
+	# length can't bring it close enough to carve this column.
+	var start_dx := pos.x - center_x
+	var start_dz := pos.z - center_z
+	if sqrt(start_dx * start_dx + start_dz * start_dz) - (length - step) > 8.0 + 2.0 * (1.5 + width) + 2.0:
+		return
 	var split_at := rng.randi_range(length / 4, length / 2 + length / 4)
 	var steep := rng.randi_range(0, 5) == 0
 
@@ -380,8 +427,8 @@ func _carve_tunnel(blocks: PackedByteArray, cx: int, cz: int, seed_value: int, p
 
 
 func _carve_ellipsoid(blocks: PackedByteArray, cx: int, cz: int, center: Vector3, radius: float, radius_y: float) -> void:
-	var water: int = _id["water"]
-	var bedrock: int = _id["bedrock"]
+	var water := _water
+	var bedrock := _bedrock
 	var min_x := maxi(floori(center.x - radius) - cx * 16 - 1, 0)
 	var max_x := mini(floori(center.x + radius) - cx * 16 + 1, 15)
 	var min_z := maxi(floori(center.z - radius) - cz * 16 - 1, 0)
@@ -394,7 +441,7 @@ func _carve_ellipsoid(blocks: PackedByteArray, cx: int, cz: int, center: Vector3
 	for x in range(min_x, max_x + 1):
 		for z in range(min_z, max_z + 1):
 			for y in range(min_y, max_y + 2):
-				if y < HEIGHT and blocks[index(x, y, z)] == water:
+				if y < HEIGHT and blocks[x + 16 * (z + 16 * y)] == water:
 					return
 	for x in range(min_x, max_x + 1):
 		var fx := (x + cx * 16 + 0.5 - center.x) / radius
@@ -405,7 +452,7 @@ func _carve_ellipsoid(blocks: PackedByteArray, cx: int, cz: int, center: Vector3
 			for y in range(max_y, min_y - 1, -1):
 				var fy := (y + 0.5 - center.y) / radius_y
 				if fy > -0.7 and fx * fx + fy * fy + fz * fz < 1.0:
-					var i := index(x, y, z)
+					var i := x + 16 * (z + 16 * y)
 					if blocks[i] != bedrock:
 						blocks[i] = Blocks.AIR
 
@@ -429,21 +476,31 @@ func _place_vein(blocks: PackedByteArray, rng: RandomNumberGenerator, id: int, s
 	for i in size + 1:
 		var center := a.lerp(b, float(i) / size)
 		var radius := ((sin(i * PI / size) + 1.0) * rng.randf() * size / 16.0 + 1.0) / 2.0
-		for x in range(maxi(floori(center.x - radius), 0), mini(floori(center.x + radius), 15) + 1):
-			for y in range(maxi(floori(center.y - radius), 1), mini(floori(center.y + radius), HEIGHT - 1) + 1):
-				for z in range(maxi(floori(center.z - radius), 0), mini(floori(center.z + radius), 15) + 1):
-					var d := Vector3(x + 0.5, y + 0.5, z + 0.5) - center
-					if d.length_squared() < radius * radius:
-						var j := index(x, y, z)
+		var radius_squared := radius * radius
+		var x0 := maxi(floori(center.x - radius), 0)
+		var x1 := mini(floori(center.x + radius), 15)
+		var y0 := maxi(floori(center.y - radius), 1)
+		var y1 := mini(floori(center.y + radius), HEIGHT - 1)
+		var z0 := maxi(floori(center.z - radius), 0)
+		var z1 := mini(floori(center.z + radius), 15)
+		for y in range(y0, y1 + 1):
+			var dy := y + 0.5 - center.y
+			for z in range(z0, z1 + 1):
+				var dz := z + 0.5 - center.z
+				var row := 16 * (z + 16 * y)
+				for x in range(x0, x1 + 1):
+					var dx := x + 0.5 - center.x
+					if dx * dx + dy * dy + dz * dz < radius_squared:
+						var j := row + x
 						if blocks[j] == stone:
 							blocks[j] = id
 
 
 ## Step 6: trees. Kept 2 blocks away from the column edge so the leaves fit.
-func _place_trees(blocks: PackedByteArray, cx: int, cz: int, biomes: Array[String], rng: RandomNumberGenerator) -> void:
-	var biome_here: String = biomes[8 * 16 + 8]
+func _place_trees(blocks: PackedByteArray, cx: int, cz: int, biomes: PackedByteArray, rng: RandomNumberGenerator) -> void:
+	var biome_here := biomes[8 * 16 + 8]
 	var count := int((_tree_noise.get_noise_2d(cx * 16 + 8, cz * 16 + 8) * 4.0 + rng.randf() * 4.0 + 4.0) / 3.0)
-	count += BIOMES[biome_here].trees
+	count += _biome_trees[biome_here]
 	if rng.randi_range(0, 9) == 0:
 		count += 1
 	for t in maxi(count, 0):
@@ -457,7 +514,7 @@ func _place_trees(blocks: PackedByteArray, cx: int, cz: int, biomes: Array[Strin
 				and ground != _id["grass_swamp"] and ground != _id["grass_savanna"] and ground != _id["snowy_grass"] \
 				and ground != _id["dirt"]:
 			continue
-		match biomes[z * 16 + x]:
+		match BIOME_NAMES[biomes[z * 16 + x]]:
 			"taiga":
 				if rng.randi_range(0, 2) == 0:
 					_pine(blocks, rng, x, y + 1, z)
@@ -559,13 +616,13 @@ func _pine(blocks: PackedByteArray, rng: RandomNumberGenerator, x: int, y: int, 
 
 
 ## Ice on the sea surface of cold biomes.
-func _freeze(blocks: PackedByteArray, biomes: Array[String]) -> void:
+func _freeze(blocks: PackedByteArray, biomes: PackedByteArray) -> void:
 	var water: int = _id["water"]
 	var ice: int = _id["ice"]
 	var y := SEA_LEVEL - 1
 	for z in 16:
 		for x in 16:
-			if BIOMES[biomes[z * 16 + x]].cold:
+			if _biome_cold[biomes[z * 16 + x]] == 1:
 				var i := index(x, y, z)
 				if blocks[i] == water and blocks[index(x, y + 1, z)] == Blocks.AIR:
 					blocks[i] = ice

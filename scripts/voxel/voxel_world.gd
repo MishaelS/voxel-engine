@@ -89,6 +89,8 @@ var _last_generation_ms := 0.0
 ## the waiting chunks every frame.
 var _mesh_scan_needed := true
 var _light_scan_needed := true
+## Meshable dirty chunks, nearest at the end (see _rebuild_mesh_queue).
+var _mesh_queue: Array[Vector3i] = []
 var _opacity := Blocks.light_opacity_table
 
 
@@ -768,28 +770,17 @@ func _run_random_ticks() -> void:
 func _start_mesh_jobs() -> void:
 	var max_jobs := maxi(OS.get_processor_count() - 2, 1)
 	var free_slots := max_jobs - _mesh_jobs.size()
-	if free_slots <= 0 or not _mesh_scan_needed:
+	if free_slots <= 0:
 		return
-	# The nearest meshable chunks, in one pass (keeps the best `free_slots`).
-	var center := Vector3(_player_column.x, (player.global_position.y if player else 64.0) / ChunkData.SIZE, _player_column.y)
-	var best: Array = [] # [distance, coord], ascending
-	for coord: Vector3i in _dirty:
-		if _mesh_jobs.has(coord) or not _can_mesh(coord):
-			continue
-		var distance := Vector3(coord).distance_squared_to(center)
-		if best.size() == free_slots and distance >= best[-1][0]:
-			continue
-		var at := best.size()
-		while at > 0 and best[at - 1][0] > distance:
-			at -= 1
-		best.insert(at, [distance, coord])
-		if best.size() > free_slots:
-			best.pop_back()
-	if best.is_empty():
+	if _mesh_scan_needed:
 		_mesh_scan_needed = false
-		return
-	for entry: Array in best:
-		var coord: Vector3i = entry[1]
+		_rebuild_mesh_queue()
+	var picked: Array[Vector3i] = []
+	while picked.size() < free_slots and not _mesh_queue.is_empty():
+		var coord: Vector3i = _mesh_queue.pop_back()
+		if _dirty.has(coord) and not _mesh_jobs.has(coord) and _chunks.has(coord):
+			picked.append(coord)
+	for coord in picked:
 		_dirty.erase(coord)
 		var job := MeshJob.new()
 		job.coord = coord
@@ -808,6 +799,35 @@ func _start_mesh_jobs() -> void:
 		_mesh_jobs[coord] = job
 
 
+## Sorts the meshable dirty chunks, nearest last (popped first). Rebuilt
+## only when something changed what can be meshed (a column lit or loaded,
+## the player moved to another column, a block changed), not every time a
+## mesh finishes: scanning all waiting chunks is the expensive part.
+func _rebuild_mesh_queue() -> void:
+	_mesh_queue.clear()
+	var center := Vector3(_player_column.x, (player.global_position.y if player else 64.0) / ChunkData.SIZE, _player_column.y)
+	var meshable_columns := {} # Vector2i -> bool, checked once per column
+	var keys := PackedInt64Array()
+	var coords: Array[Vector3i] = []
+	for coord: Vector3i in _dirty:
+		if _mesh_jobs.has(coord):
+			continue
+		var column := Vector2i(coord.x, coord.z)
+		var meshable: Variant = meshable_columns.get(column)
+		if meshable == null:
+			meshable = _can_mesh(coord)
+			meshable_columns[column] = meshable
+		if not meshable:
+			continue
+		# Farthest first after sorting: key = -distance (fixed point), index.
+		var distance := int(Vector3(coord).distance_squared_to(center) * 16.0)
+		keys.append((-distance << 20) | coords.size())
+		coords.append(coord)
+	keys.sort()
+	for key in keys:
+		_mesh_queue.append(coords[key & 0xFFFFF])
+
+
 func _finish_mesh_jobs() -> void:
 	var uploads := 0
 	for coord: Vector3i in _mesh_jobs.keys():
@@ -818,7 +838,8 @@ func _finish_mesh_jobs() -> void:
 			continue
 		WorkerThreadPool.wait_for_task_completion(job.task_id)
 		_mesh_jobs.erase(coord)
-		_mesh_scan_needed = true
+		if _dirty.has(coord):
+			_mesh_scan_needed = true # changed again while it was being meshed
 		if _chunks.has(coord):
 			_apply_mesh(job)
 			uploads += 1

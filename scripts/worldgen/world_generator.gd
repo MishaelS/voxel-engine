@@ -35,14 +35,15 @@ static func heightmap(blocks: PackedByteArray) -> PackedInt32Array:
 	var opacity := Blocks.light_opacity_table
 	var heights := PackedInt32Array()
 	heights.resize(256)
-	for z in 16:
-		for x in 16:
-			var top := -1
-			for y in range(HEIGHT - 1, -1, -1):
-				if opacity[blocks[index(x, y, z)]] > 0:
-					top = y
-					break
-			heights[x + 16 * z] = top
+	for column in 256:
+		var top := -1
+		var i := column + 256 * (HEIGHT - 1)
+		for y in range(HEIGHT - 1, -1, -1):
+			if opacity[blocks[i]] > 0:
+				top = y
+				break
+			i -= 256
+		heights[column] = top
 	return heights
 
 

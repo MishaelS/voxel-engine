@@ -13,21 +13,29 @@ extends RefCounted
 ## Cheap by design: cells above a column's heightmap are implicitly 15 and
 ## never stored or visited; only columns' lower parts near terrain steps are
 ## seeded, and the flood fill only touches cells that end up darker.
+##
+## Written for worker threads: the hot loops touch only packed arrays and
+## inline arithmetic. In GDScript, function calls and generic Array indexing
+## serialize across threads, so they stay out of the loops.
 
 const MAX := 15
 const W := 48 ## area width in blocks (3 columns)
 const H := WorldGenerator.HEIGHT
+const WW := W * W
 
 
 ## `chunks`: 9 arrays (index (dx + 1) * 3 + (dz + 1)) of the 8 chunk block
 ## arrays of each column; `heights`: the 9 heightmaps. Returns the 8 light
 ## arrays of the center column, bottom to top.
 static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArray]:
-	var opacity := Blocks.light_opacity_table
+	var opacity_of := Blocks.light_opacity_table
+	# Light opacity of every cell of the area, index x + W * (z + W * y).
+	var opacity := PackedByteArray()
+	opacity.resize(WW * H)
 	var stored := PackedByteArray()
-	stored.resize(W * W * H)
+	stored.resize(WW * H)
 	var area_heights := PackedInt32Array()
-	area_heights.resize(W * W)
+	area_heights.resize(WW)
 	for c in 9:
 		var ox := (c / 3) * 16
 		var oz := (c % 3) * 16
@@ -35,73 +43,111 @@ static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArr
 		for z in 16:
 			for x in 16:
 				area_heights[(ox + x) + W * (oz + z)] = column_heights[x + 16 * z]
+		var column: Array = chunks[c]
+		for k in WorldGenerator.HEIGHT_CHUNKS:
+			var blocks: PackedByteArray = column[k]
+			var i := 0
+			for ly in 16:
+				var row := ox + W * (oz + W * (k * 16 + ly))
+				for lz in 16:
+					var base := row + W * lz
+					for lx in 16:
+						opacity[base + lx] = opacity_of[blocks[i]]
+						i += 1
 
 	# 1. Straight down from the sky through leaves / water.
-	for z in W:
-		for x in W:
-			var y := area_heights[x + W * z]
-			var level := MAX
-			while y >= 0:
-				var op := opacity[_block(chunks, x, y, z)]
-				if op >= MAX:
-					break
-				level -= op
-				if level <= 0:
-					break
-				stored[_index(x, y, z)] = level
-				y -= 1
+	for column_index in WW:
+		var y := area_heights[column_index]
+		var level := MAX
+		var cell := column_index + WW * y
+		while y >= 0:
+			var op := opacity[cell]
+			if op >= MAX:
+				break
+			level -= op
+			if level <= 0:
+				break
+			stored[cell] = level
+			y -= 1
+			cell -= WW
 
 	# 2. Seeds: lit cells next to a neighbor column's darker cells at the
 	# same height (terrain steps, cliffs, cave mouths).
 	var queue := PackedInt32Array()
 	for z in W:
 		for x in W:
-			var top := area_heights[x + W * z]
+			var column_index := x + W * z
+			var top := area_heights[column_index]
 			for d in 4:
-				var nx := x + (1 if d == 0 else (-1 if d == 1 else 0))
-				var nz := z + (1 if d == 2 else (-1 if d == 3 else 0))
+				var nx := x
+				var nz := z
+				if d == 0:
+					nx += 1
+				elif d == 1:
+					nx -= 1
+				elif d == 2:
+					nz += 1
+				else:
+					nz -= 1
 				if nx < 0 or nz < 0 or nx >= W or nz >= W:
 					continue
-				var neighbor_top := area_heights[nx + W * nz]
+				var neighbor_index := nx + W * nz
+				var neighbor_top := area_heights[neighbor_index]
 				for y in range(mini(neighbor_top, H - 1), -1, -1):
-					var level := MAX if y > top else stored[_index(x, y, z)]
+					var cell := column_index + WW * y
+					var level := MAX if y > top else stored[cell]
 					if level <= 1:
 						break
-					var target := _index(nx, y, nz)
-					if stored[target] < level - 1 and opacity[_block(chunks, nx, y, nz)] < MAX:
-						queue.append(_index(x, y, z))
+					var target := neighbor_index + WW * y
+					if stored[target] < level - 1 and opacity[target] < MAX:
+						queue.append(cell)
 
 	# 3. Flood fill.
 	var head := 0
 	while head < queue.size():
 		var cell := queue[head]
 		head += 1
-		var x := cell % W
-		var z := (cell / W) % W
-		var y := cell / (W * W)
-		var level := MAX if y > area_heights[x + W * z] else stored[cell]
+		var column_index := cell % WW
+		var x := column_index % W
+		var z := column_index / W
+		var y := cell / WW
+		var level := MAX if y > area_heights[column_index] else stored[cell]
 		if level <= 1:
 			continue
 		for d in 6:
-			var nx := x
+			var target := cell
+			var target_column := column_index
 			var ny := y
-			var nz := z
-			match d:
-				0: nx += 1
-				1: nx -= 1
-				2: nz += 1
-				3: nz -= 1
-				4: ny += 1
-				5: ny -= 1
-			if nx < 0 or nz < 0 or ny < 0 or nx >= W or nz >= W or ny >= H:
-				continue
-			if ny > area_heights[nx + W * nz]:
+			if d == 0:
+				if x == W - 1: continue
+				target += 1
+				target_column += 1
+			elif d == 1:
+				if x == 0: continue
+				target -= 1
+				target_column -= 1
+			elif d == 2:
+				if z == W - 1: continue
+				target += W
+				target_column += W
+			elif d == 3:
+				if z == 0: continue
+				target -= W
+				target_column -= W
+			elif d == 4:
+				if y == H - 1: continue
+				target += WW
+				ny += 1
+			else:
+				if y == 0: continue
+				target -= WW
+				ny -= 1
+			if ny > area_heights[target_column]:
 				continue # open sky: already full
-			var op := opacity[_block(chunks, nx, ny, nz)]
+			var op := opacity[target]
 			if op >= MAX:
 				continue
-			var candidate := level - maxi(op, 1)
-			var target := _index(nx, ny, nz)
+			var candidate := level - (op if op > 1 else 1)
 			if candidate > stored[target]:
 				stored[target] = candidate
 				queue.append(target)
@@ -111,24 +157,17 @@ static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArr
 	for k in WorldGenerator.HEIGHT_CHUNKS:
 		var light := PackedByteArray()
 		light.resize(ChunkData.VOLUME)
+		var i := 0
 		for ly in 16:
 			var y := k * 16 + ly
 			for lz in 16:
+				var base := 16 + W * (16 + lz + W * y)
+				var height_base := 16 + W * (16 + lz)
 				for lx in 16:
-					var i := lx + 16 * (lz + 16 * ly)
-					if y > area_heights[(16 + lx) + W * (16 + lz)]:
+					if y > area_heights[height_base + lx]:
 						light[i] = MAX
 					else:
-						light[i] = stored[_index(16 + lx, y, 16 + lz)]
+						light[i] = stored[base + lx]
+					i += 1
 		result.append(light)
 	return result
-
-
-static func _index(x: int, y: int, z: int) -> int:
-	return x + W * (z + W * y)
-
-
-static func _block(chunks: Array, x: int, y: int, z: int) -> int:
-	var column: Array = chunks[(x >> 4) * 3 + (z >> 4)]
-	var blocks: PackedByteArray = column[y >> 4]
-	return blocks[(x & 15) + 16 * ((z & 15) + 16 * (y & 15))]

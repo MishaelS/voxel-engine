@@ -25,6 +25,16 @@ var cull_self := false
 ## 0 = clear (air, glass), 1 = leaves, 2 = water / ice, 15 = blocks light.
 ## -1 = derived from the render layer (opaque blocks 15, others 0).
 var light_opacity := -1
+## Seconds-ish toughness like the classic game: breaking by hand takes
+## hardness * 1.5 seconds in survival. -1 = unbreakable (bedrock, water).
+var hardness := 1.0
+## Whether entities (the player) collide with it. Off for air and liquids.
+var collides := true
+## Ground friction factor (0.6 normal, 0.98 ice: entities slide).
+var slipperiness := 0.6
+## What breaking it gives in survival: "" = the block itself, "none" =
+## nothing, otherwise a block name (stone -> cobblestone).
+var drop := ""
 
 ## Tick behavior (all optional), each called as f(world: VoxelWorld, pos: Vector3i):
 ## - random_tick: picked at random a few times per chunk per tick
@@ -85,6 +95,26 @@ func set_cull_self(value: bool = true) -> BlockType:
 
 func set_light_opacity(value: int) -> BlockType:
 	light_opacity = value
+	return self
+
+
+func set_hardness(value: float) -> BlockType:
+	hardness = value
+	return self
+
+
+func set_collides(value: bool) -> BlockType:
+	collides = value
+	return self
+
+
+func set_slipperiness(value: float) -> BlockType:
+	slipperiness = value
+	return self
+
+
+func set_drop(block_name: String) -> BlockType:
+	drop = block_name
 	return self
 
 
