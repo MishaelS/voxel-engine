@@ -40,6 +40,9 @@ const AO_BRIGHTNESS: Array[float] = [0.5, 0.68, 0.84, 1.0]
 ## face) of the two side neighbors and the diagonal neighbor of that corner.
 static var _ao_offsets: Array = _build_ao_offsets()
 
+## Voxel AO on/off ("Smooth Lighting" setting). Re-mesh chunks after changing.
+static var ao_enabled := true
+
 
 ## Geometry buffers of one render layer.
 class Surface:
@@ -104,7 +107,7 @@ static func build(data: ChunkData) -> Dictionary:
 				var surface := surfaces[layer]
 				var tint := tints[id]
 				var origin := Vector3(x, y, z)
-				var with_ao := layer != Blocks.Layer.TRANSLUCENT
+				var with_ao := ao_enabled and layer != Blocks.Layer.TRANSLUCENT
 
 				for face in 6:
 					var offset := FACE_OFFSETS[face]

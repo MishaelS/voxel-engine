@@ -49,6 +49,7 @@ var _dirty := {}           # Vector3i -> true: chunks waiting for a new mesh
 var _mesh_jobs := {}       # Vector3i -> MeshJob running on a worker thread
 var _scheduled := {}       # game_time -> {Vector3i: true}
 var _scheduled_count := 0
+var _water := -1
 
 
 ## A chunk mesh being built on a worker thread. The worker only writes
@@ -117,6 +118,12 @@ func add_chunk(coord: Vector3i, data: ChunkData) -> void:
 	_apply_mesh(job)
 
 
+## Rebuilds the meshes of all chunks in the background.
+func remesh_all() -> void:
+	for coord: Vector3i in _chunks:
+		_dirty[coord] = true
+
+
 # --- Blocks ----------------------------------------------------------------
 
 static func chunk_coord_of(pos: Vector3i) -> Vector3i:
@@ -138,6 +145,45 @@ func get_block(pos: Vector3i) -> int:
 		return Blocks.AIR
 	var local := pos - coord * ChunkData.SIZE
 	return data.get_block(local.x, local.y, local.z)
+
+
+## First block hit by a ray (voxel traversal, Amanatides & Woo).
+## Air and water are passed through. Returns {hit: bool, pos: Vector3i,
+## normal: Vector3i (face that was hit, ZERO if the ray starts inside),
+## block: int, distance: float}.
+func raycast(origin: Vector3, direction: Vector3, max_distance: float) -> Dictionary:
+	if _water < 0:
+		_water = Blocks.id_of("water")
+	var dir := direction.normalized()
+	var pos := Vector3i(origin.floor())
+	var step := Vector3i(int(signf(dir.x)), int(signf(dir.y)), int(signf(dir.z)))
+	var t_delta := Vector3.ZERO
+	var t_max := Vector3.ZERO
+	for axis in 3:
+		if dir[axis] == 0.0:
+			t_delta[axis] = INF
+			t_max[axis] = INF
+		else:
+			t_delta[axis] = absf(1.0 / dir[axis])
+			var boundary := pos[axis] + (1.0 if dir[axis] > 0.0 else 0.0)
+			t_max[axis] = (boundary - origin[axis]) / dir[axis]
+	var normal := Vector3i.ZERO
+	var distance := 0.0
+	while distance <= max_distance:
+		var id := get_block(pos)
+		if id != Blocks.AIR and id != _water:
+			return {"hit": true, "pos": pos, "normal": normal, "block": id, "distance": distance}
+		var axis := 0
+		if t_max.y < t_max[axis]:
+			axis = 1
+		if t_max.z < t_max[axis]:
+			axis = 2
+		distance = t_max[axis]
+		pos[axis] += step[axis]
+		t_max[axis] += t_delta[axis]
+		normal = Vector3i.ZERO
+		normal[axis] = -step[axis]
+	return {"hit": false}
 
 
 ## Changes a block, sends block updates to it and its neighbors and marks
@@ -179,6 +225,10 @@ func schedule_tick(pos: Vector3i, delay: int) -> void:
 	if not bucket.has(pos):
 		bucket[pos] = true
 		_scheduled_count += 1
+
+
+func mesh_jobs_count() -> int:
+	return _mesh_jobs.size()
 
 
 func scheduled_tick_count() -> int:

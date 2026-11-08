@@ -13,8 +13,7 @@ extends Control
 ## Up/Down without suggestions browse sent messages; Page Up/Down scroll the
 ## log; Esc closes. Closed, the chat shows new messages for 10 seconds.
 
-const FONT_PATH := "res://assets/fonts/Minecraft Rus/minecraft.ttf"
-const FONT_SIZE := 16
+const FONT_SIZE := UiTheme.FONT_SIZE
 const LOG_WIDTH := 640.0
 const MARGIN := 4.0
 const INPUT_HEIGHT := 24.0
@@ -342,20 +341,14 @@ func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	var font_file: FontFile = load(FONT_PATH)
-	font_file.antialiasing = TextServer.FONT_ANTIALIASING_NONE
-	font_file.hinting = TextServer.HINTING_NONE
-	font_file.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
-	_font = font_file
-	var ui_theme := Theme.new()
-	ui_theme.default_font = font_file
-	ui_theme.default_font_size = FONT_SIZE
-	theme = ui_theme
+	_font = UiTheme.font()
+	theme = UiTheme.theme()
 
 	# Message log, growing upward from just above the input line.
 	_log_panel = PanelContainer.new()
 	_log_panel.add_theme_stylebox_override("panel", _box(Color(0, 0, 0, 0.45)))
-	_anchor_bottom_left(_log_panel, MARGIN, -(MARGIN + INPUT_HEIGHT + MARGIN))
+	# Above the hotbar (22 texture pixels + margins), like the classic game.
+	_anchor_bottom_left(_log_panel, MARGIN, -(24 * UiTheme.PIXEL + MARGIN + INPUT_HEIGHT))
 	_log = RichTextLabel.new()
 	_log.bbcode_enabled = true
 	_log.fit_content = true

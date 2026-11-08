@@ -14,6 +14,16 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Hotbar (`scripts/ui/hotbar.gd`) drawn with hotbar.png / hotbarSelector.png: 9 slots with isometric block icons generated from the atlas (`BlockIcons`: top, south and east faces with shading, biome tints and overlays), selection with **1-9** or the mouse wheel, block name shown above for 2 s.
+- Crosshair (`scripts/ui/crosshair.gd`, cursor.png) that inverts the colors behind it.
+- Block interaction (`scripts/player/block_interaction.gd`) with the mouse captured: **LMB** breaks, **RMB** places the selected block, **MMB** picks the targeted block into the hotbar; reach 5 blocks, outline around the targeted block. Edits go through `set_block`, so block updates apply (sand falls, grass reacts).
+- `VoxelWorld.raycast()`: voxel traversal (Amanatides & Woo) returning the hit block, face and distance; air and water are passed through.
+- Debug screen (`scripts/ui/debug_screen.gd`) in the style of the classic F3 screen, toggled with **F3**: version, FPS, render stats, ticks, chunks and faces, XYZ / block / chunk position, facing with yaw and pitch, world, clock, sun and light on the left; renderer, memory, CPU, GPU, display, render settings and the targeted block (name, id, layer, face, distance, tick behaviors) on the right. Each line on a translucent gray background.
+- `application/config/version` in project.godot (shown on the debug screen).
+- In-game menu (`scripts/ui/menu/`): **Esc** pauses the game (ticks stop) and opens a minimal Game Menu with one button, Options; Esc / Done go back. Options: FOV, Video Settings, Controls, World Settings. Styled like the classic game with the GUI widget textures (buttons, sliders) and the pixel font with shadows (`UiTheme`, shared with the chat).
+- Settings system (`scripts/settings/`): every option is a `Setting` (toggle, choice or range) registered by category in the `Settings` autoload and saved to `user://settings.cfg`; menus build widgets from settings automatically. Video: render scale, max framerate, VSync, fullscreen, GUI scale, anti-aliasing, shadows, smooth lighting (voxel AO), clouds, fog, brightness, debug info. Controls: mouse sensitivity, invert mouse.
+- Key bindings (`KeyBindings`): every action can be rebound on the Controls screen (click, press a key, Esc cancels), conflicts are shown in red, Reset Keys restores the defaults; saved with the settings.
+- World Settings screen built from the `GameRules` registry (doDaylightCycle, randomTickSpeed) plus generator, seed and world regeneration.
 - Command system modeled on Brigadier (`scripts/commands/`): commands are trees of literals and typed arguments (`CommandNode`); `CommandDispatcher` parses and runs them, suggests completions for the text being typed and builds usage strings and `/help` from the same tree, so every command is described once. Errors are reported like the classic game (`...<--[HERE]`).
 - Reusable argument types with their own parsing and suggestions (`scripts/commands/arguments/`): integer, float, bool, choice (fixed or dynamic list), block (from the registry), position with `~` relative coordinates, time (`100`, `5s`, `2d`), message (rest of the line).
 - Commands: `/help [command]`, `/time set|add|query`, `/tick query|freeze|unfreeze|step|rate`, `/gamerule <rule> [value]` (generated from the `GameRules` registry: `doDaylightCycle`, `randomTickSpeed`), `/setblock`, `/fill`, `/tp`, `/seed`, `/say`.
@@ -33,7 +43,7 @@ Sections:
 - `TerrainGenerator` (`scripts/voxel/terrain_generator.gd`): noise heightmap terrain.
 - `VoxelWorld` (`scripts/voxel/voxel_world.gd`): owns chunks, builds their meshes and collects render stats.
 - HUD shows chunk count, visible vs. naive face count, triangles, vertices and meshing time.
-- `WindowControls` autoload (`scripts/window_controls.gd`): F11 / Alt+Enter toggles fullscreen, minimum window size 640×360, UI scaled by the screen DPI factor (readable HUD on Retina).
+- `WindowControls` autoload (`scripts/window_controls.gd`): F11 / Alt+Enter toggles fullscreen and F4 VSync (both change the same settings as the Video menu), minimum window size 640×360.
 - HUD shows the current window size.
 - Baked per-vertex voxel ambient occlusion in `ChunkMesher`: corners and creases are darkened (0fps method: two side neighbors + diagonal), quads are split along the darker diagonal to avoid AO anisotropy.
 - F3 toggles VSync; HUD shows VSync state and frame time (total and render CPU).
@@ -47,6 +57,11 @@ Sections:
 - Seasons and the analemma: the sun position is computed for an observer at `latitude_deg` with the sun's declination (axial tilt 23.44°) and the equation of time (orbit eccentricity 0.0167) over a 365.24-day year, so at the same clock time the sun traces a figure 8 over the year; summer days are longer and the noon sun higher. The game starts at the March equinox; HUD shows the calendar date. `analemma_enabled` turns it off.
 
 ### Changed
+- The old HUD label is replaced by the debug screen (hidden by default, F3 shows it); the controls hint moved to the Controls screen.
+- VSync hotkey moved from F3 to F4 (F3 is the debug screen, like the classic game).
+- Mouse wheel selects the hotbar slot; fly speed is now Ctrl + mouse wheel.
+- The first click only captures the mouse; clicks with the mouse captured act on blocks.
+- Chat messages are shown above the hotbar.
 - Main scene renders a terrain chunk instead of a single voxel; camera moved to frame the chunk.
 - Blocks are textured instead of vertex-colored; voxel AO and biome tint are passed in the vertex color (rgb = tint, a = AO).
 - The window starts maximized and is explicitly resizable.

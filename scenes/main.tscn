@@ -1,13 +1,18 @@
-[gd_scene load_steps=12 format=3 uid="uid://6r4lkmcwjoy"]
+[gd_scene load_steps=17 format=3 uid="uid://6r4lkmcwjoy"]
 
 [ext_resource type="Script" path="res://scripts/voxel/voxel_world.gd" id="1_world"]
 [ext_resource type="Script" uid="uid://cdbkby38acxr" path="res://scripts/free_camera.gd" id="2_camera"]
-[ext_resource type="Script" uid="uid://c0tqrvqgc8qgr" path="res://scripts/hud.gd" id="3_hud"]
+[ext_resource type="Script" path="res://scripts/ui/debug_screen.gd" id="3_hud"]
 [ext_resource type="Script" path="res://scripts/day_night_cycle.gd" id="4_sun"]
 [ext_resource type="Shader" path="res://shaders/sky.gdshader" id="5_sky"]
 [ext_resource type="Texture2D" path="res://assets/textures/sky/sun.png" id="6_sun_tex"]
 [ext_resource type="Texture2D" path="res://assets/textures/sky/moon.png" id="7_moon_tex"]
 [ext_resource type="Script" path="res://scripts/ui/chat.gd" id="8_chat"]
+[ext_resource type="Script" path="res://scripts/ui/menu/menu.gd" id="9_menu"]
+[ext_resource type="Script" path="res://scripts/settings/settings_applier.gd" id="10_settings"]
+[ext_resource type="Script" path="res://scripts/ui/crosshair.gd" id="11_crosshair"]
+[ext_resource type="Script" path="res://scripts/ui/hotbar.gd" id="12_hotbar"]
+[ext_resource type="Script" path="res://scripts/player/block_interaction.gd" id="13_interaction"]
 
 [sub_resource type="ShaderMaterial" id="sky_mat"]
 shader = ExtResource("5_sky")
@@ -55,17 +60,26 @@ script = ExtResource("2_camera")
 
 [node name="UI" type="CanvasLayer" parent="."]
 
-[node name="HUD" type="Label" parent="UI" node_paths=PackedStringArray("camera", "world", "sun")]
-offset_left = 12.0
-offset_top = 12.0
-offset_right = 512.0
-offset_bottom = 480.0
-theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 4
+[node name="DebugScreen" type="Control" parent="UI" node_paths=PackedStringArray("camera", "world", "sun", "interaction")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 script = ExtResource("3_hud")
 camera = NodePath("../../Camera")
 world = NodePath("../../VoxelWorld")
 sun = NodePath("../../Sun")
+interaction = NodePath("../../BlockInteraction")
+
+[node name="Crosshair" type="TextureRect" parent="UI"]
+script = ExtResource("11_crosshair")
+
+[node name="Hotbar" type="Control" parent="UI"]
+layout_mode = 3
+script = ExtResource("12_hotbar")
 
 [node name="Chat" type="Control" parent="UI" node_paths=PackedStringArray("world", "player")]
 layout_mode = 3
@@ -78,3 +92,29 @@ mouse_filter = 2
 script = ExtResource("8_chat")
 world = NodePath("../../VoxelWorld")
 player = NodePath("../../Camera")
+
+[node name="Menu" type="Control" parent="UI" node_paths=PackedStringArray("world", "chat")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("9_menu")
+world = NodePath("../../VoxelWorld")
+chat = NodePath("../Chat")
+
+[node name="SettingsApplier" type="Node" parent="." node_paths=PackedStringArray("camera", "sun", "world_environment", "world", "hud")]
+script = ExtResource("10_settings")
+camera = NodePath("../Camera")
+sun = NodePath("../Sun")
+world_environment = NodePath("../WorldEnvironment")
+world = NodePath("../VoxelWorld")
+hud = NodePath("../UI/DebugScreen")
+
+[node name="BlockInteraction" type="Node3D" parent="." node_paths=PackedStringArray("camera", "world", "hotbar")]
+script = ExtResource("13_interaction")
+camera = NodePath("../Camera")
+world = NodePath("../VoxelWorld")
+hotbar = NodePath("../UI/Hotbar")
