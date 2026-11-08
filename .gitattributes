@@ -1,7 +1,7 @@
-# Нормализуем переносы строк: в репозитории всегда LF
+# Normalize line breaks: always LF in the repository
 * text=auto eol=lf
 
-# Бинарные ресурсы — не трогать переносы и не делать diff
+# Binary resources - do not touch hyphenation and do not make diff
 *.png binary
 *.jpg binary
 *.jpeg binary

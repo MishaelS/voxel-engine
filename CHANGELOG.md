@@ -13,6 +13,23 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Cubic chunks of 16×16×16 blocks: `ChunkData` (`scripts/voxel/chunk_data.gd`), a flat one-byte-per-block array.
+- Block registry `Blocks` (`scripts/voxel/blocks.gd`): air, stone, dirt, grass (vertex colors for now).
+- `ChunkMesher` (`scripts/voxel/chunk_mesher.gd`): builds chunk geometry with hidden face culling; returns plain surface arrays so it can later run on worker threads.
+- `TerrainGenerator` (`scripts/voxel/terrain_generator.gd`): noise heightmap terrain.
+- `VoxelWorld` (`scripts/voxel/voxel_world.gd`): owns chunks, builds their meshes and collects render stats.
+- HUD shows chunk count, visible vs. naive face count, triangles, vertices and meshing time.
+- `WindowControls` autoload (`scripts/window_controls.gd`): F11 / Alt+Enter toggles fullscreen, minimum window size 640×360, UI scaled by the screen DPI factor (readable HUD on Retina).
+- HUD shows the current window size.
+
+### Changed
+- Main scene renders a terrain chunk instead of a single voxel; camera moved to frame the chunk.
+- The window starts maximized and is explicitly resizable.
+
+### Removed
+- `VoxelBlock` (`scripts/voxel_block.gd`), replaced by chunk meshing.
+
 ## [0.0.1] - 2026-11-08
 
 ### Added

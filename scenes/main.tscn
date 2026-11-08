@@ -1,6 +1,6 @@
-[gd_scene load_steps=9 format=4 uid="uid://6r4lkmcwjoy"]
+[gd_scene load_steps=7 format=3 uid="uid://6r4lkmcwjoy"]
 
-[ext_resource type="Script" uid="uid://icpntccyqjhc" path="res://scripts/voxel_block.gd" id="1_voxel"]
+[ext_resource type="Script" path="res://scripts/voxel/voxel_world.gd" id="1_world"]
 [ext_resource type="Script" uid="uid://cdbkby38acxr" path="res://scripts/free_camera.gd" id="2_camera"]
 [ext_resource type="Script" uid="uid://c0tqrvqgc8qgr" path="res://scripts/hud.gd" id="3_hud"]
 
@@ -19,23 +19,6 @@ reflected_light_source = 2
 tonemap_mode = 2
 ssao_enabled = true
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sugp2"]
-albedo_color = Color(0.45, 0.75, 0.35, 1)
-
-[sub_resource type="ArrayMesh" id="ArrayMesh_jyhfs"]
-_surfaces = [{
-"aabb": AABB(0, 0, 0, 1, 1, 1),
-"attribute_data": PackedByteArray("AAAAAAAAAAAAAIA/AAAAAAAAgD8AAIA/AAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAACAPwAAgD8AAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAIA/AACAPwAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAgD8AAIA/AAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAACAPwAAgD8AAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAIA/AACAPwAAAAAAAIA/"),
-"format": 34359742487,
-"index_count": 36,
-"index_data": PackedByteArray("AAABAAIAAAACAAMABAAFAAYABAAGAAcACAAJAAoACAAKAAsADAANAA4ADAAOAA8AEAARABIAEAASABMAFAAVABYAFAAWABcA"),
-"material": SubResource("StandardMaterial3D_sugp2"),
-"primitive": 3,
-"uv_scale": Vector4(0, 0, 0, 0),
-"vertex_count": 24,
-"vertex_data": PackedByteArray("AAAAAAAAgD8AAAAAAACAPwAAgD8AAAAAAACAPwAAgD8AAIA/AAAAAAAAgD8AAIA/AAAAAAAAAAAAAIA/AACAPwAAAAAAAIA/AACAPwAAAAAAAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAIA/AACAPwAAgD8AAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAIA/AAAAAAAAgD8AAAAAAAAAAAAAgD8AAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAAAAAAIA/AAAAAAAAAAAAAIA/AACAPwAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAA/3///wAA/7//f///AAD/v/9///8AAP+//3///wAA/7//fwAAAAD/v/9/AAAAAP+//38AAAAA/7//fwAAAAD/v////3//f/+/////f/9//7////9//3//v////3//f/+/AAD/f/9//78AAP9//3//vwAA/3//f/+/AAD/f/9//7//f/9//38AgP9//3//fwCA/3//f/9/AID/f/9//38AgP//////fwCA//////9/AID//////38AgP//////fwCA")
-}]
-
 [node name="Main" type="Node3D"]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
@@ -46,23 +29,23 @@ transform = Transform3D(0.819152, 0.469846, -0.32899, 0, 0.573576, 0.819152, 0.5
 light_energy = 1.2
 shadow_enabled = true
 
-[node name="Voxel" type="MeshInstance3D" parent="."]
-mesh = SubResource("ArrayMesh_jyhfs")
-script = ExtResource("1_voxel")
+[node name="VoxelWorld" type="Node3D" parent="."]
+script = ExtResource("1_world")
 
 [node name="Camera" type="Camera3D" parent="."]
-transform = Transform3D(0.707107, -0.301511, 0.639602, 0, 0.904534, 0.426401, -0.707107, -0.301511, 0.639602, 3.5, 2.5, 3.5)
+transform = Transform3D(0.707107, -0.372053, 0.601317, 0, 0.85038, 0.52616, -0.707107, -0.372053, 0.601317, 24, 20, 24)
 current = true
 script = ExtResource("2_camera")
 
 [node name="UI" type="CanvasLayer" parent="."]
 
-[node name="HUD" type="Label" parent="UI" node_paths=PackedStringArray("camera")]
+[node name="HUD" type="Label" parent="UI" node_paths=PackedStringArray("camera", "world")]
 offset_left = 12.0
 offset_top = 12.0
 offset_right = 512.0
-offset_bottom = 160.0
+offset_bottom = 260.0
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 4
 script = ExtResource("3_hud")
 camera = NodePath("../../Camera")
+world = NodePath("../../VoxelWorld")
