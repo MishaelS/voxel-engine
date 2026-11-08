@@ -1,35 +1,50 @@
 class_name VoxelWorld
 extends Node3D
-## A world: chunks of blocks, its clock and everything that happens in ticks.
-## For now a single chunk at the origin.
+## An endless world of 16^3 chunks, 128 blocks high (columns of 8 chunks),
+## loaded around the player; its clock and everything that happens in ticks.
+##
+## Streaming: columns within render_distance (+1 for neighbors) of the
+## player are generated on worker threads, nearest first; a chunk is meshed
+## once its column and the 8 columns around it exist (its border faces and
+## AO depend on them); columns far away are unloaded.
 ##
 ## Every game tick (TickLoop, Phase.WORLD), in this order:
 ## 1. the clock advances (game_time, day_time);
 ## 2. scheduled block ticks that are due run (falling sand, ...);
 ## 3. random ticks: random_tick_speed random blocks per chunk get a random
-##    tick if their type has one (grass spreading, ...).
+##    tick if their type has one (grass spreading, ...). Chunks without such
+##    blocks are skipped.
 ## Changing a block (set_block) sends a "block update" to it and its 6
-## neighbors and marks the chunk for re-meshing. Meshes are rebuilt on
-## worker threads and swapped in when ready, so block changes never stall
-## the frame.
+## neighbors and marks the affected chunks for re-meshing. Meshes are built
+## on worker threads and swapped in when ready.
 ##
 ## R regenerates the world with a new seed.
 
 enum Generator {
-	TERRAIN,       ## Heightmap terrain.
+	BETA,          ## Beta 1.7.3 style terrain, biomes, caves, ores, trees.
 	RANDOM_BLOCKS, ## Debug: every block type scattered randomly.
 }
 
 const NEIGHBORS: Array[Vector3i] = [
 	Vector3i.UP, Vector3i.DOWN, Vector3i.RIGHT, Vector3i.LEFT, Vector3i.BACK, Vector3i.FORWARD,
 ]
+const COLUMN_NEIGHBORS: Array[Vector2i] = [
+	Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1), Vector2i(-1, 0),
+	Vector2i(1, 0), Vector2i(-1, 1), Vector2i(0, 1), Vector2i(1, 1),
+]
 ## Like the classic game: scheduled ticks beyond this per game tick wait.
 const MAX_SCHEDULED_TICKS_PER_TICK := 65536
+## Finished meshes uploaded per frame (uploading is main-thread work).
+const MAX_MESH_UPLOADS_PER_FRAME := 12
 
-@export var generator: Generator = Generator.TERRAIN
+@export var generator: Generator = Generator.BETA
 @export var world_seed: int = 1337
 ## Share of non-floor cells filled in RANDOM_BLOCKS mode.
 @export_range(0.0, 1.0) var random_density: float = 0.3
+## Chunks are loaded around this node (the player / camera).
+@export var player: Node3D
+## Radius in chunks of the area kept loaded and visible.
+@export_range(2, 32) var render_distance: int = 6
 
 @export_group("Ticks")
 ## Random ticks per chunk per game tick (randomTickSpeed, 3 by default).
@@ -37,36 +52,65 @@ const MAX_SCHEDULED_TICKS_PER_TICK := 65536
 ## Time of day of a new world in ticks (0 = 06:00, 3333 ~ 09:20).
 @export var start_day_time: float = 3333.0
 
-## Filled after meshing; read by the HUD.
+## Read by the debug screen.
 var stats := {}
 var clock := WorldClock.new()
 ## Random source for world logic (random ticks, block behaviors).
 var rng := RandomNumberGenerator.new()
 ## Falling block entities in this world.
 var falling_blocks: FallingBlocks
+## The active world generator.
+var world_generator: WorldGenerator
 
 var _chunks := {}          # Vector3i -> ChunkData
+var _columns := {}         # Vector2i -> true: generated columns
 var _chunk_nodes := {}     # Vector3i -> MeshInstance3D
+var _chunk_faces := {}     # Vector3i -> visible faces
 var _dirty := {}           # Vector3i -> true: chunks waiting for a new mesh
-var _mesh_jobs := {}       # Vector3i -> MeshJob running on a worker thread
+var _mesh_jobs := {}       # Vector3i -> MeshJob on a worker thread
+var _gen_jobs := {}        # Vector2i -> GenerationJob on a worker thread
 var _scheduled := {}       # game_time -> {Vector3i: true}
 var _scheduled_count := 0
 var _water := -1
+var _player_column := Vector2i(2147483647, 0)
+var _wanted_columns: Array[Vector2i] = []
+var _total_faces := 0
+var _last_mesh_ms := 0.0
+var _last_generation_ms := 0.0
+## Set when something may have made a chunk meshable; avoids rescanning
+## the waiting chunks every frame.
+var _mesh_scan_needed := true
 
 
-## A chunk mesh being built on a worker thread. The worker only writes
-## `surfaces`/`mesh_ms`; the main thread reads them after the task finished.
+## A chunk mesh built on a worker thread from the chunk's blocks and its 26
+## neighbors' (shared copy-on-write arrays: later edits on the main thread
+## do not affect the job).
 class MeshJob:
 	var coord: Vector3i
-	var data: ChunkData
+	var center: PackedByteArray
+	var neighbors := {}
 	var surfaces := {}
 	var mesh_ms := 0.0
 	var task_id := -1
 
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
-		surfaces = ChunkMesher.build(data)
+		surfaces = ChunkMesher.build(ChunkMesher.pad(center, neighbors))
 		mesh_ms = (Time.get_ticks_usec() - start_us) / 1000.0
+
+
+## A column generated on a worker thread.
+class GenerationJob:
+	var column: Vector2i
+	var generator: WorldGenerator
+	var chunks: Array[ChunkData] = []
+	var generation_ms := 0.0
+	var task_id := -1
+
+	func run() -> void:
+		var start_us := Time.get_ticks_usec()
+		chunks = generator.generate_column(column.x, column.y)
+		generation_ms = (Time.get_ticks_usec() - start_us) / 1000.0
 
 
 func _ready() -> void:
@@ -80,9 +124,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	TickLoop.remove_listener(_tick)
-	for job: MeshJob in _mesh_jobs.values():
-		WorkerThreadPool.wait_for_task_completion(job.task_id)
-	_mesh_jobs.clear()
+	_wait_for_jobs()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -93,45 +135,206 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(_delta: float) -> void:
+	_update_streaming()
+	_finish_generation_jobs()
+	_start_generation_jobs()
 	_finish_mesh_jobs()
 	_start_mesh_jobs()
+	_update_stats()
 
 
-# --- World generation ------------------------------------------------------
+# --- World lifecycle ---------------------------------------------------------------
 
+## Starts a new world with the current generator and seed: drops everything,
+## generates the spawn column right away and puts the player on the ground.
 func generate() -> void:
+	_wait_for_jobs()
+	for node: Node in _chunk_nodes.values():
+		node.queue_free()
+	_chunks.clear()
+	_columns.clear()
+	_chunk_nodes.clear()
+	_chunk_faces.clear()
+	_dirty.clear()
+	_total_faces = 0
+	_player_column = Vector2i(2147483647, 0)
 	rng.seed = world_seed
 	clock = WorldClock.new(start_day_time)
 	falling_blocks.clear()
 	_scheduled.clear()
 	_scheduled_count = 0
-	var data := ChunkData.new()
 	match generator:
-		Generator.TERRAIN:
-			TerrainGenerator.new(world_seed).fill(data, Vector3i.ZERO)
+		Generator.BETA:
+			world_generator = BetaGenerator.new(world_seed)
 		Generator.RANDOM_BLOCKS:
-			RandomBlocksGenerator.new(world_seed, random_density).fill(data, Vector3i.ZERO)
-	add_chunk(Vector3i.ZERO, data)
+			world_generator = RandomBlocksGenerator.new(world_seed, random_density)
+
+	if player:
+		player.global_position = find_spawn()
 
 
-## Adds or replaces a chunk and builds its mesh right away (synchronously).
-func add_chunk(coord: Vector3i, data: ChunkData) -> void:
-	_chunks[coord] = data
-	_dirty.erase(coord)
-	var job := MeshJob.new()
-	job.coord = coord
-	job.data = data
+## Like the classic game, spawn on land: search columns in a spiral from the
+## origin (generating them right away; they stay loaded) for a block column
+## whose top is a solid block, not water. Falls back to the origin.
+const SPAWN_SEARCH_RADIUS := 6
+
+func find_spawn() -> Vector3:
+	if generator == Generator.RANDOM_BLOCKS:
+		_generate_now(Vector2i.ZERO)
+		return Vector3(24, 20, 24)
+	for ring in SPAWN_SEARCH_RADIUS + 1:
+		for dx in range(-ring, ring + 1):
+			for dz in range(-ring, ring + 1):
+				if maxi(absi(dx), absi(dz)) != ring:
+					continue
+				var column := Vector2i(dx, dz)
+				_generate_now(column)
+				for local in [Vector2i(8, 8), Vector2i(4, 4), Vector2i(12, 12), Vector2i(4, 12), Vector2i(12, 4)]:
+					var x: int = column.x * 16 + local.x
+					var z: int = column.y * 16 + local.y
+					var top := _top_block_y(x, z)
+					if top >= WorldGenerator.SEA_LEVEL - 1 and get_block(Vector3i(x, top, z)) != _water_id():
+						return Vector3(x + 0.5, top + 2.6, z + 0.5)
+	return Vector3(8.5, WorldGenerator.SEA_LEVEL + 2.6, 8.5)
+
+
+func _generate_now(column: Vector2i) -> void:
+	if _columns.has(column):
+		return
+	var job := GenerationJob.new()
+	job.column = column
+	job.generator = world_generator
 	job.run()
-	_apply_mesh(job)
+	_add_column(job)
+
+
+func _top_block_y(x: int, z: int) -> int:
+	for y in range(WorldGenerator.HEIGHT - 1, 0, -1):
+		if get_block(Vector3i(x, y, z)) != Blocks.AIR:
+			return y
+	return -1
+
+
+func _water_id() -> int:
+	if _water < 0:
+		_water = Blocks.id_of("water")
+	return _water
 
 
 ## Rebuilds the meshes of all chunks in the background.
 func remesh_all() -> void:
 	for coord: Vector3i in _chunks:
 		_dirty[coord] = true
+	_mesh_scan_needed = true
 
 
-# --- Blocks ----------------------------------------------------------------
+## Changes the loaded radius (Render Distance setting).
+func set_render_distance(chunks: int) -> void:
+	render_distance = chunks
+	_player_column = Vector2i(2147483647, 0) # recompute what to load
+	_mesh_scan_needed = true
+
+
+func _wait_for_jobs() -> void:
+	for job: MeshJob in _mesh_jobs.values():
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+	_mesh_jobs.clear()
+	for job: GenerationJob in _gen_jobs.values():
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+	_gen_jobs.clear()
+
+
+# --- Streaming -----------------------------------------------------------------------
+
+func _player_column_now() -> Vector2i:
+	var position := player.global_position if player else Vector3.ZERO
+	return Vector2i(floori(position.x / ChunkData.SIZE), floori(position.z / ChunkData.SIZE))
+
+
+## When the player enters another column: list columns to generate (nearest
+## first) and unload the ones that are too far.
+func _update_streaming() -> void:
+	var center := _player_column_now()
+	if center == _player_column:
+		return
+	_player_column = center
+	_mesh_scan_needed = true
+	var radius := render_distance + 1
+	_wanted_columns.clear()
+	for dx in range(-radius, radius + 1):
+		for dz in range(-radius, radius + 1):
+			var column := center + Vector2i(dx, dz)
+			if not _columns.has(column):
+				_wanted_columns.append(column)
+	_wanted_columns.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		return (a - center).length_squared() > (b - center).length_squared()) # nearest at the end
+
+	var unload_radius := render_distance + 3
+	for column: Vector2i in _columns.keys():
+		if absi(column.x - center.x) > unload_radius or absi(column.y - center.y) > unload_radius:
+			_unload_column(column)
+
+
+func _start_generation_jobs() -> void:
+	var max_jobs := maxi(OS.get_processor_count() - 2, 1)
+	while _gen_jobs.size() < max_jobs and not _wanted_columns.is_empty():
+		var column: Vector2i = _wanted_columns.pop_back()
+		if _columns.has(column) or _gen_jobs.has(column):
+			continue
+		var job := GenerationJob.new()
+		job.column = column
+		job.generator = world_generator
+		job.task_id = WorkerThreadPool.add_task(job.run, false, "Column generation")
+		_gen_jobs[column] = job
+
+
+func _finish_generation_jobs() -> void:
+	for column: Vector2i in _gen_jobs.keys():
+		var job: GenerationJob = _gen_jobs[column]
+		if not WorkerThreadPool.is_task_completed(job.task_id):
+			continue
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+		_gen_jobs.erase(column)
+		if job.generator == world_generator:
+			_add_column(job)
+
+
+func _add_column(job: GenerationJob) -> void:
+	_columns[job.column] = true
+	_last_generation_ms = job.generation_ms
+	for k in job.chunks.size():
+		var coord := Vector3i(job.column.x, k, job.column.y)
+		_chunks[coord] = job.chunks[k]
+		_dirty[coord] = true
+	_mesh_scan_needed = true
+
+
+func _unload_column(column: Vector2i) -> void:
+	_columns.erase(column)
+	for k in WorldGenerator.HEIGHT_CHUNKS:
+		var coord := Vector3i(column.x, k, column.y)
+		_chunks.erase(coord)
+		_dirty.erase(coord)
+		_total_faces -= _chunk_faces.get(coord, 0)
+		_chunk_faces.erase(coord)
+		var node: Node = _chunk_nodes.get(coord)
+		if node:
+			node.queue_free()
+			_chunk_nodes.erase(coord)
+
+
+## A chunk can be meshed once all columns around it exist.
+func _can_mesh(coord: Vector3i) -> bool:
+	var column := Vector2i(coord.x, coord.z)
+	if absi(column.x - _player_column.x) > render_distance or absi(column.y - _player_column.y) > render_distance:
+		return false
+	for offset in COLUMN_NEIGHBORS:
+		if not _columns.has(column + offset):
+			return false
+	return true
+
+
+# --- Blocks --------------------------------------------------------------------------
 
 static func chunk_coord_of(pos: Vector3i) -> Vector3i:
 	return Vector3i(
@@ -152,6 +355,11 @@ func get_block(pos: Vector3i) -> int:
 		return Blocks.AIR
 	var local := pos - coord * ChunkData.SIZE
 	return data.get_block(local.x, local.y, local.z)
+
+
+## Biome name at a block column (debug screen).
+func biome_at(x: int, z: int) -> String:
+	return world_generator.biome_name(x, z) if world_generator else ""
 
 
 ## First block hit by a ray (voxel traversal, Amanatides & Woo).
@@ -194,7 +402,8 @@ func raycast(origin: Vector3, direction: Vector3, max_distance: float) -> Dictio
 
 
 ## Changes a block, sends block updates to it and its neighbors and marks
-## the chunk for re-meshing. Ignored where no chunk is loaded.
+## for re-meshing its chunk and the neighbor chunks that see it (their
+## border faces and AO). Ignored where no chunk is loaded.
 func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 	var coord := chunk_coord_of(pos)
 	var data: ChunkData = _chunks.get(coord)
@@ -204,13 +413,26 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 	if data.get_block(local.x, local.y, local.z) == id:
 		return
 	data.set_block(local.x, local.y, local.z, id)
-	_dirty[coord] = true
-	# TODO: also mark neighbor chunks dirty for blocks on a chunk border
-	# (their faces and AO depend on this block) once there are many chunks.
+	_mark_dirty_around(coord, local)
 	if notify:
 		_update_block(pos)
 		for offset in NEIGHBORS:
 			_update_block(pos + offset)
+
+
+func _mark_dirty_around(coord: Vector3i, local: Vector3i) -> void:
+	var ranges := []
+	for axis in 3:
+		var low := -1 if local[axis] == 0 else 0
+		var high := 1 if local[axis] == ChunkData.SIZE - 1 else 0
+		ranges.append([low, high])
+	for dx in range(ranges[0][0], ranges[0][1] + 1):
+		for dy in range(ranges[1][0], ranges[1][1] + 1):
+			for dz in range(ranges[2][0], ranges[2][1] + 1):
+				var neighbor := coord + Vector3i(dx, dy, dz)
+				if _chunks.has(neighbor):
+					_dirty[neighbor] = true
+	_mesh_scan_needed = true
 
 
 ## Sends a "block update" to the block at pos (its on_update handler).
@@ -220,7 +442,16 @@ func _update_block(pos: Vector3i) -> void:
 		handler.call(self, pos)
 
 
-# --- Ticks -----------------------------------------------------------------
+## Turns the block at `pos` into a falling entity (sand, gravel).
+func start_falling(pos: Vector3i) -> void:
+	var id := get_block(pos)
+	if id == Blocks.AIR:
+		return
+	set_block(pos, Blocks.AIR) # updates neighbors: blocks above start falling too
+	falling_blocks.spawn(pos, id)
+
+
+# --- Ticks -----------------------------------------------------------------------------
 
 ## Requests a scheduled tick for the block at pos in `delay` game ticks.
 ## Several requests for the same position and tick are merged.
@@ -234,21 +465,16 @@ func schedule_tick(pos: Vector3i, delay: int) -> void:
 		_scheduled_count += 1
 
 
-## Turns the block at `pos` into a falling entity (sand, gravel).
-func start_falling(pos: Vector3i) -> void:
-	var id := get_block(pos)
-	if id == Blocks.AIR:
-		return
-	set_block(pos, Blocks.AIR) # updates neighbors: blocks above start falling too
-	falling_blocks.spawn(pos, id)
+func scheduled_tick_count() -> int:
+	return _scheduled_count
 
 
 func mesh_jobs_count() -> int:
 	return _mesh_jobs.size()
 
 
-func scheduled_tick_count() -> int:
-	return _scheduled_count
+func generation_jobs_count() -> int:
+	return _gen_jobs.size()
 
 
 func _tick(_tick_index: int) -> void:
@@ -279,6 +505,8 @@ func _run_random_ticks() -> void:
 	var ticks_randomly := Blocks.ticks_randomly
 	for coord: Vector3i in _chunks:
 		var data: ChunkData = _chunks[coord]
+		if data.tickable_count == 0:
+			continue
 		var origin: Vector3i = coord * ChunkData.SIZE
 		for i in random_tick_speed:
 			var index := rng.randi_range(0, ChunkData.VOLUME - 1)
@@ -292,56 +520,103 @@ func _run_random_ticks() -> void:
 			Blocks.get_type(id).random_tick.call(self, origin + local)
 
 
-# --- Meshing ---------------------------------------------------------------
+# --- Meshing -----------------------------------------------------------------------------
 
 func _start_mesh_jobs() -> void:
-	for coord: Vector3i in _dirty.keys():
-		if _mesh_jobs.has(coord):
-			continue # rebuilt again after the running job finishes
+	var max_jobs := maxi(OS.get_processor_count() - 2, 1)
+	var free_slots := max_jobs - _mesh_jobs.size()
+	if free_slots <= 0 or not _mesh_scan_needed:
+		return
+	# The nearest meshable chunks, in one pass (keeps the best `free_slots`).
+	var center := Vector3(_player_column.x, (player.global_position.y if player else 64.0) / ChunkData.SIZE, _player_column.y)
+	var best: Array = [] # [distance, coord], ascending
+	for coord: Vector3i in _dirty:
+		if _mesh_jobs.has(coord) or not _can_mesh(coord):
+			continue
+		var distance := Vector3(coord).distance_squared_to(center)
+		if best.size() == free_slots and distance >= best[-1][0]:
+			continue
+		var at := best.size()
+		while at > 0 and best[at - 1][0] > distance:
+			at -= 1
+		best.insert(at, [distance, coord])
+		if best.size() > free_slots:
+			best.pop_back()
+	if best.is_empty():
+		_mesh_scan_needed = false
+		return
+	for entry: Array in best:
+		var coord: Vector3i = entry[1]
 		_dirty.erase(coord)
 		var job := MeshJob.new()
 		job.coord = coord
-		job.data = (_chunks[coord] as ChunkData).copy() # snapshot for the worker
+		job.center = (_chunks[coord] as ChunkData).blocks # copy-on-write snapshot
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				for dz in range(-1, 2):
+					var offset := Vector3i(dx, dy, dz)
+					if offset != Vector3i.ZERO:
+						var neighbor: ChunkData = _chunks.get(coord + offset)
+						job.neighbors[offset] = neighbor.blocks if neighbor else PackedByteArray()
 		job.task_id = WorkerThreadPool.add_task(job.run, false, "Chunk mesh")
 		_mesh_jobs[coord] = job
 
 
 func _finish_mesh_jobs() -> void:
+	var uploads := 0
 	for coord: Vector3i in _mesh_jobs.keys():
+		if uploads >= MAX_MESH_UPLOADS_PER_FRAME:
+			break
 		var job: MeshJob = _mesh_jobs[coord]
 		if not WorkerThreadPool.is_task_completed(job.task_id):
 			continue
 		WorkerThreadPool.wait_for_task_completion(job.task_id)
 		_mesh_jobs.erase(coord)
+		_mesh_scan_needed = true
 		if _chunks.has(coord):
 			_apply_mesh(job)
+			uploads += 1
 
 
 func _apply_mesh(job: MeshJob) -> void:
 	var faces := 0
-	var mesh := ArrayMesh.new()
-	for layer: int in job.surfaces:
-		var arrays: Array = job.surfaces[layer]
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		mesh.surface_set_material(mesh.get_surface_count() - 1, BlockMaterials.get_material(layer))
-		faces += arrays[Mesh.ARRAY_VERTEX].size() / 4
+	var mesh: ArrayMesh = null
+	if not job.surfaces.is_empty():
+		mesh = ArrayMesh.new()
+		for layer: int in job.surfaces:
+			var arrays: Array = job.surfaces[layer]
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			mesh.surface_set_material(mesh.get_surface_count() - 1, BlockMaterials.get_material(layer))
+			faces += arrays[Mesh.ARRAY_VERTEX].size() / 4
+	_total_faces += faces - _chunk_faces.get(job.coord, 0)
+	_chunk_faces[job.coord] = faces
+	_last_mesh_ms = job.mesh_ms
 
 	var instance: MeshInstance3D = _chunk_nodes.get(job.coord)
+	if mesh == null:
+		if instance:
+			instance.queue_free()
+			_chunk_nodes.erase(job.coord)
+		return
 	if instance == null:
 		instance = MeshInstance3D.new()
-		instance.name = "Chunk_%d_%d_%d" % [job.coord.x, job.coord.y, job.coord.z]
 		instance.position = Vector3(job.coord * ChunkData.SIZE)
 		add_child(instance)
 		_chunk_nodes[job.coord] = instance
-	instance.mesh = mesh if faces > 0 else null
+	instance.mesh = mesh
 
+
+func _update_stats() -> void:
 	stats = {
 		"generator": Generator.keys()[generator],
 		"seed": world_seed,
 		"chunks": _chunks.size(),
-		"faces": faces,
-		"faces_naive": job.data.count_solid() * 6, # what we'd draw without culling
-		"triangles": faces * 2,
-		"vertices": faces * 4,
-		"mesh_ms": job.mesh_ms,
+		"columns": _columns.size(),
+		"visible_chunks": _chunk_nodes.size(),
+		"faces": _total_faces,
+		"triangles": _total_faces * 2,
+		"vertices": _total_faces * 4,
+		"mesh_ms": _last_mesh_ms,
+		"generation_ms": _last_generation_ms,
+		"pending": _dirty.size(),
 	}

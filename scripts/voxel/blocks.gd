@@ -104,6 +104,11 @@ static func _register_all() -> bool:
 	# Workstations (front faces +Z until blocks get orientation)
 	register(BlockType.with_front("crafting_table", 43, 4, 59, 60))
 	register(BlockType.with_front("furnace", 62, 62, 44, 45))
+
+	# Cold biomes (appended: ids must stay stable)
+	register(BlockType.column("snowy_grass", 66, 68, 2))
+	register(BlockType.cube("snow", 66))
+	register(BlockType.cube("ice", 67).set_layer(Layer.TRANSLUCENT).set_cull_self())
 	return true
 
 

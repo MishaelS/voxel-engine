@@ -32,6 +32,7 @@ reflected_light_source = 2
 tonemap_mode = 2
 fog_enabled = true
 fog_light_color = Color(0.75, 0.85, 1, 1)
+fog_mode = 1
 fog_density = 0.004
 fog_aerial_perspective = 1.0
 fog_sky_affect = 0.0
@@ -49,9 +50,9 @@ script = ExtResource("4_sun")
 world_environment = NodePath("../WorldEnvironment")
 world = NodePath("../VoxelWorld")
 
-[node name="VoxelWorld" type="Node3D" parent="."]
+[node name="VoxelWorld" type="Node3D" parent="." node_paths=PackedStringArray("player")]
 script = ExtResource("1_world")
-generator = 1
+player = NodePath("../Camera")
 
 [node name="Camera" type="Camera3D" parent="."]
 transform = Transform3D(0.707107, -0.372053, 0.601317, 0, 0.85038, 0.52616, -0.707107, -0.372053, 0.601317, 24, 20, 24)

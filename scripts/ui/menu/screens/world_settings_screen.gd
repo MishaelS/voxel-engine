@@ -4,7 +4,7 @@ extends MenuScreen
 ## and world generation. Not saved with the player options: they belong to
 ## the world.
 
-const GENERATORS := ["Terrain", "Random Blocks"]
+const GENERATORS := ["Beta 1.7.3", "Random Blocks"]
 
 
 func _init() -> void:

@@ -39,6 +39,8 @@ func _register_all() -> void:
 	# General (shown on the main options screen)
 	define("general", Setting.range_of("fov", "FOV", 30, 110, 75))
 	# Video
+	define("video", Setting.range_of("render_distance", "Render Distance", 2, 16, 6) \
+		.format_with(func(v: float) -> String: return "%d chunks" % int(v)))
 	define("video", Setting.range_of("render_scale", "Render Scale", 50, 100, 100, 5) \
 		.format_with(func(v: float) -> String: return "%d%%" % int(v)))
 	define("video", Setting.choice("max_fps", "Max Framerate",

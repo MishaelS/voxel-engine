@@ -2,15 +2,24 @@ class_name ChunkMesher
 extends RefCounted
 ## Builds chunk geometry, one surface per render layer (Blocks.Layer).
 ##
+## Input is a "padded" volume: the chunk's 16^3 blocks plus a one-block
+## border taken from the 26 neighbor chunks (18^3, see pad()). Every
+## neighbor lookup - face culling and AO across chunk borders included - is
+## then a plain index offset, with no bounds checks or chunk lookups.
+##
 ## Face culling: a face is emitted only if the neighbor in that direction is
 ## not opaque; faces between two blocks of the same "cull_self" type (glass,
 ## water) are skipped too.
 ## Each vertex gets baked voxel ambient occlusion (darker corners/creases).
 ##
-## build() only reads ChunkData and returns plain surface arrays (no
-## Resources, no scene tree), so it can later run on worker threads.
-## Swapping in another mesher (e.g. greedy) means writing another function
-## with the same input and output.
+## build() only reads byte arrays and returns plain surface arrays (no
+## Resources, no scene tree), so it runs on worker threads.
+
+const SIZE := ChunkData.SIZE
+## Edge of the padded volume.
+const P := SIZE + 2
+const P2 := P * P
+const PADDED_VOLUME := P * P * P
 
 ## Face order matches BlockType: +Y, -Y, +X, -X, +Z, -Z.
 const FACE_OFFSETS: Array[Vector3i] = [
@@ -36,12 +45,14 @@ const CORNER_UVS: Array[Vector2] = [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1),
 ## Linear light multipliers (the shader works in linear space).
 const AO_BRIGHTNESS: Array[float] = [0.5, 0.68, 0.84, 1.0]
 
-## For every face and corner: offsets (relative to the block in front of the
-## face) of the two side neighbors and the diagonal neighbor of that corner.
-static var _ao_offsets: Array = _build_ao_offsets()
-
 ## Voxel AO on/off ("Smooth Lighting" setting). Re-mesh chunks after changing.
 static var ao_enabled := true
+
+## Index offset in the padded volume for each face direction.
+static var _face_deltas := _build_face_deltas()
+## Per face and corner: index offsets (from the block in front of the face)
+## of the two side neighbors and the diagonal one, for AO.
+static var _ao_deltas := _build_ao_deltas()
 
 
 ## Geometry buffers of one render layer.
@@ -65,42 +76,110 @@ class Surface:
 		return arrays
 
 
-static func _build_ao_offsets() -> Array:
+static func padded_index(x: int, y: int, z: int) -> int:
+	return (x + 1) + P * ((z + 1) + P * (y + 1))
+
+
+static func _delta(offset: Vector3i) -> int:
+	return offset.x + P * offset.z + P2 * offset.y
+
+
+static func _build_face_deltas() -> PackedInt32Array:
+	var deltas := PackedInt32Array()
+	for offset in FACE_OFFSETS:
+		deltas.append(_delta(offset))
+	return deltas
+
+
+static func _build_ao_deltas() -> Array:
 	var table := []
 	for face in 6:
 		var normal := FACE_OFFSETS[face]
 		var axis := 0 if normal.x != 0 else (1 if normal.y != 0 else 2)
 		var tangent_a := (axis + 1) % 3
 		var tangent_b := (axis + 2) % 3
-		var per_corner := []
+		var per_corner := PackedInt32Array()
 		for corner: Vector3 in FACE_CORNERS[face]:
 			var side_a := Vector3i.ZERO
 			var side_b := Vector3i.ZERO
 			side_a[tangent_a] = int(corner[tangent_a]) * 2 - 1
 			side_b[tangent_b] = int(corner[tangent_b]) * 2 - 1
-			per_corner.append([side_a, side_b, side_a + side_b])
+			per_corner.append(_delta(side_a))
+			per_corner.append(_delta(side_b))
+			per_corner.append(_delta(side_a + side_b))
 		table.append(per_corner)
 	return table
 
 
+## Builds the padded volume of a chunk. `neighbors` maps each of the 26
+## offsets (Vector3i, components -1..1) to that chunk's block array; missing
+## neighbors count as air.
+static func pad(center: PackedByteArray, neighbors: Dictionary) -> PackedByteArray:
+	var padded := PackedByteArray()
+	padded.resize(PADDED_VOLUME)
+	for y in SIZE:
+		for z in SIZE:
+			var src := SIZE * (z + SIZE * y)
+			var dst := padded_index(0, y, z)
+			for x in SIZE:
+				padded[dst + x] = center[src + x]
+	for offset: Vector3i in neighbors:
+		var blocks: PackedByteArray = neighbors[offset]
+		if blocks.is_empty():
+			continue
+		# Which cells of the border this neighbor fills, in its own coordinates.
+		var ranges := []
+		for axis in 3:
+			match offset[axis]:
+				-1: ranges.append([SIZE - 1, SIZE - 1])
+				1: ranges.append([0, 0])
+				_: ranges.append([0, SIZE - 1])
+		for y in range(ranges[1][0], ranges[1][1] + 1):
+			for z in range(ranges[2][0], ranges[2][1] + 1):
+				for x in range(ranges[0][0], ranges[0][1] + 1):
+					var target := Vector3i(x, y, z) + offset * SIZE
+					padded[padded_index(target.x, target.y, target.z)] = blocks[x + SIZE * (z + SIZE * y)]
+	return padded
+
+
+## Padded volume holding one block at local (0, 0, 0) (falling blocks).
+static func single_block(block_id: int) -> PackedByteArray:
+	var padded := PackedByteArray()
+	padded.resize(PADDED_VOLUME)
+	padded[padded_index(0, 0, 0)] = block_id
+	return padded
+
+
 ## Returns {Blocks.Layer: surface arrays} for every non-empty layer.
-static func build(data: ChunkData) -> Dictionary:
+static func build(padded: PackedByteArray) -> Dictionary:
+	var opaque := Blocks.is_opaque_table
+	# Fully buried chunk (no see-through block anywhere, border included):
+	# nothing can be visible.
+	var see_through := false
+	for id in padded:
+		if opaque[id] == 0:
+			see_through = true
+			break
+	if not see_through:
+		return {}
+
 	var surfaces: Array[Surface] = []
 	for i in Blocks.LAYER_COUNT:
 		surfaces.append(Surface.new())
-
-	var opaque := Blocks.is_opaque_table
 	var cull_self := Blocks.cull_self_table
 	var layer_of := Blocks.layer_table
 	var face_tiles := Blocks.face_tiles
 	var face_overlays := Blocks.face_overlays
 	var tints := Blocks.tints_linear
+	var face_deltas := _face_deltas
 	var ao := PackedInt32Array([3, 3, 3, 3])
 
-	for y in ChunkData.SIZE:
-		for z in ChunkData.SIZE:
-			for x in ChunkData.SIZE:
-				var id := data.get_block(x, y, z)
+	for y in SIZE:
+		for z in SIZE:
+			var row := padded_index(0, y, z)
+			for x in SIZE:
+				var i := row + x
+				var id: int = padded[i]
 				if id == Blocks.AIR:
 					continue
 				var layer: int = layer_of[id]
@@ -110,18 +189,15 @@ static func build(data: ChunkData) -> Dictionary:
 				var with_ao := ao_enabled and layer != Blocks.Layer.TRANSLUCENT
 
 				for face in 6:
-					var offset := FACE_OFFSETS[face]
-					var fx := x + offset.x
-					var fy := y + offset.y
-					var fz := z + offset.z
-					var neighbor := data.get_block_or_air(fx, fy, fz)
+					var front := i + face_deltas[face]
+					var neighbor: int = padded[front]
 					if opaque[neighbor] == 1:
 						continue # hidden by an opaque block: never sent to the GPU
 					if neighbor == id and cull_self[id] == 1:
 						continue # glass next to glass, water next to water
 
 					if with_ao:
-						_compute_ao(data, face, fx, fy, fz, opaque, ao)
+						_compute_ao(padded, opaque, _ao_deltas[face], front, ao)
 					else:
 						ao.fill(3)
 
@@ -130,12 +206,12 @@ static func build(data: ChunkData) -> Dictionary:
 					var start := surface.vertices.size()
 					var corners: Array = FACE_CORNERS[face]
 					var normal := FACE_NORMALS[face]
-					for i in 4:
-						surface.vertices.append(origin + corners[i])
+					for c in 4:
+						surface.vertices.append(origin + corners[c])
 						surface.normals.append(normal)
-						surface.uvs.append(CORNER_UVS[i])
+						surface.uvs.append(CORNER_UVS[c])
 						surface.layers.append(tile_layers)
-						surface.colors.append(Color(tint.r, tint.g, tint.b, AO_BRIGHTNESS[ao[i]]))
+						surface.colors.append(Color(tint.r, tint.g, tint.b, AO_BRIGHTNESS[ao[c]]))
 
 					# Split the quad along the diagonal through the darker corners,
 					# otherwise AO interpolates unevenly (anisotropy artifact).
@@ -153,17 +229,12 @@ static func build(data: ChunkData) -> Dictionary:
 
 ## Voxel AO (0fps method): per corner, count opaque blocks in the layer in
 ## front of the face - two side neighbors and the diagonal one.
-static func _compute_ao(data: ChunkData, face: int, fx: int, fy: int, fz: int, opaque: PackedByteArray, ao: PackedInt32Array) -> void:
-	var face_ao: Array = _ao_offsets[face]
-	for i in 4:
-		var n: Array = face_ao[i]
-		var a: Vector3i = n[0]
-		var b: Vector3i = n[1]
-		var side_a := opaque[data.get_block_or_air(fx + a.x, fy + a.y, fz + a.z)] == 1
-		var side_b := opaque[data.get_block_or_air(fx + b.x, fy + b.y, fz + b.z)] == 1
+static func _compute_ao(padded: PackedByteArray, opaque: PackedByteArray, deltas: PackedInt32Array, front: int, ao: PackedInt32Array) -> void:
+	for c in 4:
+		var side_a := opaque[padded[front + deltas[c * 3]]] == 1
+		var side_b := opaque[padded[front + deltas[c * 3 + 1]]] == 1
 		if side_a and side_b:
-			ao[i] = 0 # both sides block it: corner fully occluded
+			ao[c] = 0 # both sides block it: corner fully occluded
 		else:
-			var c: Vector3i = n[2]
-			var diagonal := opaque[data.get_block_or_air(fx + c.x, fy + c.y, fz + c.z)] == 1
-			ao[i] = 3 - int(side_a) - int(side_b) - int(diagonal)
+			var diagonal := opaque[padded[front + deltas[c * 3 + 2]]] == 1
+			ao[c] = 3 - int(side_a) - int(side_b) - int(diagonal)

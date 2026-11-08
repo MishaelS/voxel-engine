@@ -14,6 +14,11 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Endless world (`VoxelWorld`): columns of 8 chunks (128 blocks high) are generated around the player on worker threads, nearest first, meshed once their neighbor columns exist and unloaded when far away; `Render Distance` setting (2-16 chunks, default 6) with fog starting at 60% of it like the classic game. Spawn is searched on land.
+- Beta 1.7.3 style world generator (`scripts/worldgen/beta_generator.gd`, own implementation of the same approach): 3D density terrain from limit / main / depth / scale noises with overhangs, sea level 64; biomes from temperature and humidity with the classic table (tundra, taiga, swampland, forest, seasonal forest, rainforest, savanna, shrubland, plains, desert); grass / dirt surface, sand and gravel beaches, sandstone, uneven bedrock; worm caves and rooms crossing columns; ore veins and dirt / gravel pockets at the classic heights; oak, birch, spruce and pine trees by biome; ice on cold water. Deterministic per seed.
+- `WorldGenerator` base class for column generators; the random-blocks debug world is one of them.
+- Blocks: snowy grass, snow, ice.
+- Debug screen: biome, loaded / visible chunks, columns, render distance, generation and meshing jobs.
 - Falling block entities (`scripts/entities/falling_blocks.gd`): sand and gravel with nothing below turn into entities that accelerate down smoothly (classic physics per tick: gravity 0.04, drag 0.98) and become blocks again where they land; blocks landing in the same column in the same tick stack up. Simulated in game ticks on packed arrays (no node per entity), rendered with one MultiMesh per block type using the chunk block mesh and materials, positions interpolated between ticks. Tested with 256 blocks falling at once: under 1 ms per tick.
 - Debug screen shows the number of falling block entities.
 - Hotbar (`scripts/ui/hotbar.gd`) drawn with hotbar.png / hotbarSelector.png: 9 slots with isometric block icons generated from the atlas (`BlockIcons`: top, south and east faces with shading, biome tints and overlays), selection with **1-9** or the mouse wheel, block name shown above for 2 s.
@@ -42,7 +47,6 @@ Sections:
 - Texture atlas `assets/textures/terrain.png` (16×16 tiles), sliced into a `Texture2DArray` at runtime by `BlockMaterials` (`scripts/voxel/block_materials.gd`): no tile bleeding at mip levels, nearest filtering with mipmaps and anisotropy.
 - Block shaders (`shaders/`): opaque, cutout (alpha scissor: glass, leaves) and translucent (water); shared code applies tint, overlay and baked AO.
 - `ChunkMesher` (`scripts/voxel/chunk_mesher.gd`): builds chunk geometry with hidden face culling, one surface per render layer; returns plain surface arrays so it can later run on worker threads.
-- `TerrainGenerator` (`scripts/voxel/terrain_generator.gd`): noise heightmap terrain.
 - `VoxelWorld` (`scripts/voxel/voxel_world.gd`): owns chunks, builds their meshes and collects render stats.
 - HUD shows chunk count, visible vs. naive face count, triangles, vertices and meshing time.
 - `WindowControls` autoload (`scripts/window_controls.gd`): F11 / Alt+Enter toggles fullscreen and F4 VSync (both change the same settings as the Video menu), minimum window size 640×360.
@@ -59,6 +63,9 @@ Sections:
 - Seasons and the analemma: the sun position is computed for an observer at `latitude_deg` with the sun's declination (axial tilt 23.44°) and the equation of time (orbit eccentricity 0.0167) over a 365.24-day year, so at the same clock time the sun traces a figure 8 over the year; summer days are longer and the noon sun higher. The game starts at the March equinox; HUD shows the calendar date. `analemma_enabled` turns it off.
 
 ### Changed
+- `ChunkMesher` works on a padded 18³ volume (the chunk plus a border from its 26 neighbors): faces and AO are correct across chunk borders and neighbor lookups are plain index offsets; fully buried chunks are skipped. Editing a block on a chunk border re-meshes the neighbor chunks too.
+- Random ticks skip chunks without random-ticking blocks (tracked per chunk).
+- Shadow presets: Low = 2 cascades up to 48 blocks, High = 4 cascades up to 64 blocks (far shadows are under fog and cost draw calls).
 - The old HUD label is replaced by the debug screen (hidden by default, F3 shows it); the controls hint moved to the Controls screen.
 - VSync hotkey moved from F3 to F4 (F3 is the debug screen, like the classic game).
 - Mouse wheel selects the hotbar slot; fly speed is now Ctrl + mouse wheel.
@@ -75,6 +82,7 @@ Sections:
 - Voxel AO was 2–3× too dark: the AO factor was applied to sRGB vertex colors and then gamma-expanded by the material (0.5 became ~0.22). Block colors are now converted to linear once and AO is applied in linear space (`vertex_color_is_srgb = false`).
 
 ### Removed
+- The single-chunk heightmap `TerrainGenerator` (replaced by the beta generator).
 - `VoxelBlock` (`scripts/voxel_block.gd`), replaced by chunk meshing.
 
 ## [0.0.1] - 2026-11-08

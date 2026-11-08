@@ -72,9 +72,10 @@ func _left_lines() -> PackedStringArray:
 	if world:
 		var s := world.stats
 		if not s.is_empty():
-			var culled := 100.0 * (1.0 - float(s.faces) / maxi(s.faces_naive, 1))
-			lines.append("C: %d loaded, %d meshing, last mesh %.1f ms" % [s.chunks, world.mesh_jobs_count(), s.mesh_ms])
-			lines.append("Faces: %d of %d (%d%% culled), %d vertices" % [s.faces, s.faces_naive, int(culled), s.vertices])
+			lines.append("C: %d/%d visible, %d columns, D: %d, pending %d" % [s.visible_chunks, s.chunks, s.columns, world.render_distance, s.pending])
+			lines.append("Jobs: %d generating (last %.1f ms), %d meshing (last %.1f ms)" % [
+				world.generation_jobs_count(), s.generation_ms, world.mesh_jobs_count(), s.mesh_ms])
+			lines.append("Faces: %d, vertices: %d" % [s.faces, s.vertices])
 	lines.append("")
 
 	if camera:
@@ -86,6 +87,8 @@ func _left_lines() -> PackedStringArray:
 		lines.append("Block: %d %d %d" % [block.x, block.y, block.z])
 		lines.append("Chunk: %d %d %d in %d %d %d" % [local.x, local.y, local.z, chunk.x, chunk.y, chunk.z])
 		lines.append(_facing_line(-camera.global_basis.z))
+		if world:
+			lines.append("Biome: %s" % world.biome_at(block.x, block.z))
 	lines.append("")
 
 	if world:

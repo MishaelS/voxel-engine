@@ -7,6 +7,9 @@ const SIZE := 16
 const VOLUME := SIZE * SIZE * SIZE
 
 var blocks := PackedByteArray()
+## Number of blocks with a random tick handler (grass...). Chunks with none
+## are skipped by random ticks.
+var tickable_count := 0
 
 
 func _init() -> void:
@@ -27,15 +30,22 @@ func get_block(x: int, y: int, z: int) -> int:
 
 
 func set_block(x: int, y: int, z: int, id: int) -> void:
-	blocks[index(x, y, z)] = id
+	var i := index(x, y, z)
+	tickable_count += Blocks.ticks_randomly[id] - Blocks.ticks_randomly[blocks[i]]
+	blocks[i] = id
 
 
-## Returns AIR outside the chunk.
-## TODO: look up neighbor chunks once there is more than one chunk.
-func get_block_or_air(x: int, y: int, z: int) -> int:
-	if not in_bounds(x, y, z):
-		return Blocks.AIR
-	return blocks[index(x, y, z)]
+## Recounts tickable_count after filling `blocks` directly (generators).
+func count_tickable() -> void:
+	var ticks := Blocks.ticks_randomly
+	tickable_count = 0
+	for id in blocks:
+		tickable_count += ticks[id]
+
+
+## True if every block is air.
+func is_empty() -> bool:
+	return blocks.count(Blocks.AIR) == VOLUME
 
 
 ## Number of non-air blocks.

@@ -68,8 +68,9 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/voxel/block_type.gd` - block type description (faces, overlay, tint, render layer)
 * `scripts/voxel/block_materials.gd` - atlas → Texture2DArray, one material per render layer
 * `scripts/voxel/chunk_data.gd` - block storage of a 16×16×16 chunk
-* `scripts/voxel/chunk_mesher.gd` - chunk meshing with hidden face culling and voxel AO
-* `scripts/voxel/terrain_generator.gd` - noise heightmap terrain
+* `scripts/voxel/chunk_mesher.gd` - chunk meshing on a padded volume (neighbor borders): face culling and voxel AO across chunks
+* `scripts/worldgen/world_generator.gd` - base of column generators (16 x 128 x 16)
+* `scripts/worldgen/beta_generator.gd` - Beta 1.7.3 style terrain, biomes, caves, ores, trees
 * `scripts/core/tick_loop.gd` - autoload: fixed-rate game tick loop (20 TPS), phases, freeze/step
 * `scripts/core/game_input.gd` - blocks gameplay input while typing
 * `scripts/commands/` - command system: dispatcher, nodes, argument types, game rules, built-in commands
@@ -78,10 +79,10 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/ui/menu/` - in-game menu: menu stack, screen base, screens
 * `scripts/settings/` - settings registry and saving, key bindings, scene applier
 * `scripts/voxel/world_clock.gd` - world time in ticks (game time, day time)
-* `scripts/voxel/voxel_world.gd` - chunks, world ticks (scheduled, random, block updates), async re-meshing; `generator` switches terrain / random blocks
+* `scripts/voxel/voxel_world.gd` - endless world: chunk streaming around the player, world ticks (scheduled, random, block updates), async generation and meshing
 * `scripts/voxel/behaviors/` - block tick behaviors (grass, falling blocks)
 * `scripts/entities/falling_blocks.gd` - falling sand/gravel entities: tick physics on packed arrays, MultiMesh rendering
-* `scripts/voxel/random_blocks_generator.gd` - debug world: every block type scattered randomly
+* `scripts/voxel/random_blocks_generator.gd` - debug generator: every block type scattered randomly
 * `scripts/day_night_cycle.gd` - sun/moon movement (latitude, seasons, analemma), day counter, moon phases, light; drives the sky
 * `scripts/free_camera.gd` - free camera
 * `scripts/ui/debug_screen.gd` - F3 debug screen
