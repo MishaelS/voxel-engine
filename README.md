@@ -10,11 +10,26 @@ Controls
 * Shift: speed boost, mouse wheel - base speed
 * R: regenerate the world with a new seed
 * Up/Down arrows: time of day, Left/Right: rotate the sun path
-* T: stop / start time (daylight cycle)
+* T: open the chat, /: open it with a command (Tab completes, Up/Down choose, Esc closes)
 * P: freeze game ticks, . (period): run one tick while frozen
 * M: skip to the next day (moon phases)
 * F3: toggle VSync (off by default)
 * F11 / Alt+Enter: toggle fullscreen (the window starts maximized and can be resized)
+
+## Commands
+Type `/help` in the chat. Commands are trees of literals and typed arguments; parsing, suggestions,
+usage and `/help` all come from the same definition (`scripts/commands/builtin/*_command.gd`):
+
+```gdscript
+d.register(CommandNode.literal("setblock").describe("Changes a block")
+	.then(CommandNode.argument("pos", PositionArgument.new(true))
+		.then(CommandNode.argument("block", BlockArgument.new()).executes(func(ctx: CommandContext) -> int:
+			ctx.source.world.set_block(ctx.arg("pos"), ctx.arg("block"))
+			return ctx.feedback("Changed the block")))))
+```
+
+New command: add a file with a static `register(dispatcher)` and call it in `Commands._create()`.
+New argument type: extend `ArgumentType` (`parse`, `suggest`). New game rule: one `GameRules.register()` call.
 
 ## Game ticks
 All game logic runs in fixed ticks, 20 per second (`TickLoop` autoload), like the classic game:
@@ -41,6 +56,9 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/voxel/chunk_mesher.gd` - chunk meshing with hidden face culling and voxel AO
 * `scripts/voxel/terrain_generator.gd` - noise heightmap terrain
 * `scripts/core/tick_loop.gd` - autoload: fixed-rate game tick loop (20 TPS), phases, freeze/step
+* `scripts/core/game_input.gd` - blocks gameplay input while typing
+* `scripts/commands/` - command system: dispatcher, nodes, argument types, game rules, built-in commands
+* `scripts/ui/chat.gd` - chat with command suggestions and history
 * `scripts/voxel/world_clock.gd` - world time in ticks (game time, day time)
 * `scripts/voxel/voxel_world.gd` - chunks, world ticks (scheduled, random, block updates), async re-meshing; `generator` switches terrain / random blocks
 * `scripts/voxel/behaviors/` - block tick behaviors (grass, falling blocks)

@@ -21,7 +21,7 @@ extends DirectionalLight3D
 ## (the analemma) over year_length_days.
 ##
 ## Up/Down arrows - change time of day, Left/Right - rotate the sun path,
-## T - toggle the daylight cycle (time stops), M - skip to the next day.
+## M - skip to the next day. Time stops with /gamerule doDaylightCycle false.
 
 const PHASE_NAMES: Array[String] = [
 	"new moon", "waxing crescent", "first quarter", "waxing gibbous",
@@ -84,17 +84,17 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if world == null:
 		return
-	if event.is_action_pressed("toggle_day_cycle"):
-		world.clock.daylight_cycle = not world.clock.daylight_cycle
-		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("next_day"):
+	if event.is_action_pressed("next_day"):
 		world.clock.add_day_time(WorldClock.TICKS_PER_DAY)
 		get_viewport().set_input_as_handled()
 
 
 func _process(delta: float) -> void:
-	var time_input := Input.get_axis("sun_lower", "sun_raise")
-	var yaw_input := Input.get_axis("sun_rotate_left", "sun_rotate_right")
+	var time_input := 0.0
+	var yaw_input := 0.0
+	if not GameInput.is_blocked():
+		time_input = Input.get_axis("sun_lower", "sun_raise")
+		yaw_input = Input.get_axis("sun_rotate_left", "sun_rotate_right")
 	path_yaw_deg = wrapf(path_yaw_deg - yaw_input * manual_speed_deg * delta, -180.0, 180.0)
 	if world:
 		if time_input != 0.0:

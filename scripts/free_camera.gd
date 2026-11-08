@@ -21,6 +21,8 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if GameInput.is_blocked():
+		return
 	if event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_LEFT:
@@ -38,6 +40,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if GameInput.is_blocked():
+		return
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var vertical := Input.get_axis("move_down", "move_up")
 

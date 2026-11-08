@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://6r4lkmcwjoy"]
+[gd_scene load_steps=12 format=3 uid="uid://6r4lkmcwjoy"]
 
 [ext_resource type="Script" path="res://scripts/voxel/voxel_world.gd" id="1_world"]
 [ext_resource type="Script" uid="uid://cdbkby38acxr" path="res://scripts/free_camera.gd" id="2_camera"]
@@ -7,6 +7,7 @@
 [ext_resource type="Shader" path="res://shaders/sky.gdshader" id="5_sky"]
 [ext_resource type="Texture2D" path="res://assets/textures/sky/sun.png" id="6_sun_tex"]
 [ext_resource type="Texture2D" path="res://assets/textures/sky/moon.png" id="7_moon_tex"]
+[ext_resource type="Script" path="res://scripts/ui/chat.gd" id="8_chat"]
 
 [sub_resource type="ShaderMaterial" id="sky_mat"]
 shader = ExtResource("5_sky")
@@ -65,3 +66,15 @@ script = ExtResource("3_hud")
 camera = NodePath("../../Camera")
 world = NodePath("../../VoxelWorld")
 sun = NodePath("../../Sun")
+
+[node name="Chat" type="Control" parent="UI" node_paths=PackedStringArray("world", "player")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("8_chat")
+world = NodePath("../../VoxelWorld")
+player = NodePath("../../Camera")
