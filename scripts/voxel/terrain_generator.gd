@@ -7,6 +7,9 @@ const MAX_HEIGHT := 13
 const DIRT_DEPTH := 3
 
 var _noise := FastNoiseLite.new()
+var _grass := Blocks.id_of("grass_plains")
+var _dirt := Blocks.id_of("dirt")
+var _stone := Blocks.id_of("stone")
 
 
 func _init(world_seed: int) -> void:
@@ -25,9 +28,9 @@ func fill(data: ChunkData, chunk_coord: Vector3i) -> void:
 				var world_y := origin.y + y
 				var id := Blocks.AIR
 				if world_y == height - 1:
-					id = Blocks.GRASS
+					id = _grass
 				elif world_y >= height - 1 - DIRT_DEPTH and world_y < height - 1:
-					id = Blocks.DIRT
+					id = _dirt
 				elif world_y < height - 1 - DIRT_DEPTH:
-					id = Blocks.STONE
+					id = _stone
 				data.set_block(x, y, z, id)

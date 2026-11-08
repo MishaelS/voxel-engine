@@ -8,42 +8,44 @@ extends Node3D
 ## Filled after build; read by the HUD.
 var stats := {}
 
-var _material: StandardMaterial3D
 var _generator: TerrainGenerator
 var _chunks := {} # Vector3i -> ChunkData
 
 
 func _ready() -> void:
-	_material = StandardMaterial3D.new()
-	_material.vertex_color_use_as_albedo = true
-	_material.vertex_color_is_srgb = false # mesher emits linear colors
-	_material.roughness = 1.0
-
 	_generator = TerrainGenerator.new(world_seed)
-	_load_chunk(Vector3i.ZERO)
-
-
-func _load_chunk(coord: Vector3i) -> void:
 	var data := ChunkData.new()
-	_generator.fill(data, coord)
+	_generator.fill(data, Vector3i.ZERO)
+	add_chunk(Vector3i.ZERO, data)
+
+
+## Builds and shows the mesh of a chunk; replaces an existing one.
+func add_chunk(coord: Vector3i, data: ChunkData) -> void:
 	_chunks[coord] = data
+	var node_name := "Chunk_%d_%d_%d" % [coord.x, coord.y, coord.z]
+	var old := get_node_or_null(node_name)
+	if old:
+		remove_child(old)
+		old.queue_free()
 
 	var start_us := Time.get_ticks_usec()
-	var arrays := ChunkMesher.build_arrays(data)
+	var surfaces := ChunkMesher.build(data)
 	var mesh_ms := (Time.get_ticks_usec() - start_us) / 1000.0
 
 	var faces := 0
-	if not arrays.is_empty():
+	if not surfaces.is_empty():
 		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		mesh.surface_set_material(0, _material)
+		for layer: int in surfaces:
+			var arrays: Array = surfaces[layer]
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			mesh.surface_set_material(mesh.get_surface_count() - 1, BlockMaterials.get_material(layer))
+			faces += arrays[Mesh.ARRAY_VERTEX].size() / 4
 
 		var instance := MeshInstance3D.new()
-		instance.name = "Chunk_%d_%d_%d" % [coord.x, coord.y, coord.z]
+		instance.name = node_name
 		instance.mesh = mesh
 		instance.position = Vector3(coord * ChunkData.SIZE)
 		add_child(instance)
-		faces = arrays[Mesh.ARRAY_VERTEX].size() / 4
 
 	stats = {
 		"chunks": _chunks.size(),

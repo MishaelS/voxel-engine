@@ -15,8 +15,11 @@ Sections:
 
 ### Added
 - Cubic chunks of 16×16×16 blocks: `ChunkData` (`scripts/voxel/chunk_data.gd`), a flat one-byte-per-block array.
-- Block registry `Blocks` (`scripts/voxel/blocks.gd`): air, stone, dirt, grass (vertex colors for now).
-- `ChunkMesher` (`scripts/voxel/chunk_mesher.gd`): builds chunk geometry with hidden face culling; returns plain surface arrays so it can later run on worker threads.
+- Block registry `Blocks` (`scripts/voxel/blocks.gd`) and `BlockType` (`scripts/voxel/block_type.gd`): per-face textures, optional per-face overlay, sRGB biome tint, render layer (opaque / cutout / translucent) and same-type face culling. New blocks are one `register()` call.
+- 52 block types: stone, dirt, 5 biome grasses (plains, forest, taiga, swamp, savanna), cobblestone, bedrock, sand, gravel, sandstone, obsidian, water; oak/birch/spruce logs, leaves and planks; coal/iron/gold/lapis/diamond/redstone ores; iron/gold/lapis/diamond blocks; glass; 16 wool colors; crafting table and furnace (front faces +Z for now).
+- Texture atlas `assets/textures/terrain.png` (16×16 tiles), sliced into a `Texture2DArray` at runtime by `BlockMaterials` (`scripts/voxel/block_materials.gd`): no tile bleeding at mip levels, nearest filtering with mipmaps and anisotropy.
+- Block shaders (`shaders/`): opaque, cutout (alpha scissor: glass, leaves) and translucent (water); shared code applies tint, overlay and baked AO.
+- `ChunkMesher` (`scripts/voxel/chunk_mesher.gd`): builds chunk geometry with hidden face culling, one surface per render layer; returns plain surface arrays so it can later run on worker threads.
 - `TerrainGenerator` (`scripts/voxel/terrain_generator.gd`): noise heightmap terrain.
 - `VoxelWorld` (`scripts/voxel/voxel_world.gd`): owns chunks, builds their meshes and collects render stats.
 - HUD shows chunk count, visible vs. naive face count, triangles, vertices and meshing time.
@@ -27,6 +30,7 @@ Sections:
 
 ### Changed
 - Main scene renders a terrain chunk instead of a single voxel; camera moved to frame the chunk.
+- Blocks are textured instead of vertex-colored; voxel AO and biome tint are passed in the vertex color (rgb = tint, a = AO).
 - The window starts maximized and is explicitly resizable.
 - VSync is off by default, so FPS is no longer capped at the monitor refresh rate.
 - Rendering optimized for high-DPI screens (measured on Apple M4, 3420×2090: 50 → ~155 FPS): SSAO removed (replaced by voxel AO), MSAA 2x replaced by FXAA, hard directional shadows.

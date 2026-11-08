@@ -13,7 +13,11 @@ Controls
 
 ## Structure
 * `scenes/main.tscn` - main scene (sky, sun, voxel world, camera, HUD)
-* `scripts/voxel/blocks.gd` - block type registry
+* `assets/textures/terrain.png` - block texture atlas (16×16 tiles)
+* `shaders/` - block shaders: opaque, cutout, translucent
+* `scripts/voxel/blocks.gd` - block registry: all block types and their atlas tiles
+* `scripts/voxel/block_type.gd` - block type description (faces, overlay, tint, render layer)
+* `scripts/voxel/block_materials.gd` - atlas → Texture2DArray, one material per render layer
 * `scripts/voxel/chunk_data.gd` - block storage of a 16×16×16 chunk
 * `scripts/voxel/chunk_mesher.gd` - chunk meshing with hidden face culling and voxel AO
 * `scripts/voxel/terrain_generator.gd` - noise heightmap terrain
@@ -21,3 +25,14 @@ Controls
 * `scripts/free_camera.gd` - free camera
 * `scripts/hud.gd` - FPS, render stats and hints
 * `scripts/window_controls.gd` - autoload: minimum window size, fullscreen and VSync toggles
+
+## Adding a block
+Append a `register()` call at the end of `Blocks._register_all()` in `scripts/voxel/blocks.gd`:
+
+```gdscript
+register(BlockType.cube("bricks", 7))                       # same tile on every face
+register(BlockType.column("pumpkin", 102, 118))             # top / sides (/ bottom)
+register(BlockType.cube("ice", 67).set_layer(Layer.CUTOUT)) # transparent pixels cut out
+```
+
+Tile number = `row * 16 + column` in the atlas. Always append at the end: ids follow registration order.

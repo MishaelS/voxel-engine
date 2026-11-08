@@ -38,9 +38,6 @@ func get_block_or_air(x: int, y: int, z: int) -> int:
 	return blocks[index(x, y, z)]
 
 
+## Number of non-air blocks.
 func count_solid() -> int:
-	var count := 0
-	for id in blocks:
-		if id != Blocks.AIR:
-			count += 1
-	return count
+	return VOLUME - blocks.count(Blocks.AIR)
