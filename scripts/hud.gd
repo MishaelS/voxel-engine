@@ -3,6 +3,7 @@ extends Label
 
 @export var camera: Camera3D
 @export var world: VoxelWorld
+@export var sun: DirectionalLight3D
 
 
 func _process(_delta: float) -> void:
@@ -23,14 +24,18 @@ func _process(_delta: float) -> void:
 	if world and not world.stats.is_empty():
 		var s := world.stats
 		var culled: float = 100.0 * (1.0 - float(s.faces) / maxi(s.faces_naive, 1))
+		lines.append("World: %s, seed %d" % [s.generator, s.seed])
 		lines.append("Chunks: %d" % s.chunks)
 		lines.append("Faces: %d of %d (%.0f%% culled)" % [s.faces, s.faces_naive, culled])
 		lines.append("Triangles: %d, vertices: %d" % [s.triangles, s.vertices])
 		lines.append("Meshing: %.2f ms" % s.mesh_ms)
+	if sun and sun.has_method("describe"):
+		lines.append("Sun: %s" % sun.describe())
 
 	lines.append("")
 	lines.append("LMB - capture mouse, Esc - release")
 	lines.append("WASD - movement, E/Space - up, Q - down")
 	lines.append("Shift - speed boost, wheel - speed")
+	lines.append("R - regenerate world, arrows - rotate sun")
 	lines.append("F11 / Alt+Enter - toggle fullscreen, F3 - toggle VSync")
 	text = "\n".join(lines)

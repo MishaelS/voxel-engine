@@ -2,20 +2,42 @@ class_name VoxelWorld
 extends Node3D
 ## Owns chunks: generates their data, builds meshes and keeps render stats.
 ## For now a single chunk at the origin.
+## R regenerates the world with a new seed.
 
+enum Generator {
+	TERRAIN,       ## Heightmap terrain.
+	RANDOM_BLOCKS, ## Debug: every block type scattered randomly.
+}
+
+@export var generator: Generator = Generator.TERRAIN
 @export var world_seed: int = 1337
+## Share of non-floor cells filled in RANDOM_BLOCKS mode.
+@export_range(0.0, 1.0) var random_density: float = 0.3
 
 ## Filled after build; read by the HUD.
 var stats := {}
 
-var _generator: TerrainGenerator
 var _chunks := {} # Vector3i -> ChunkData
 
 
 func _ready() -> void:
-	_generator = TerrainGenerator.new(world_seed)
+	generate()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("regenerate_world"):
+		world_seed = randi()
+		generate()
+		get_viewport().set_input_as_handled()
+
+
+func generate() -> void:
 	var data := ChunkData.new()
-	_generator.fill(data, Vector3i.ZERO)
+	match generator:
+		Generator.TERRAIN:
+			TerrainGenerator.new(world_seed).fill(data, Vector3i.ZERO)
+		Generator.RANDOM_BLOCKS:
+			RandomBlocksGenerator.new(world_seed, random_density).fill(data, Vector3i.ZERO)
 	add_chunk(Vector3i.ZERO, data)
 
 
@@ -48,6 +70,8 @@ func add_chunk(coord: Vector3i, data: ChunkData) -> void:
 		add_child(instance)
 
 	stats = {
+		"generator": Generator.keys()[generator],
+		"seed": world_seed,
 		"chunks": _chunks.size(),
 		"faces": faces,
 		"faces_naive": data.count_solid() * 6, # what we'd draw without culling

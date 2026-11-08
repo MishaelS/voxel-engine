@@ -1,8 +1,9 @@
-[gd_scene load_steps=7 format=3 uid="uid://6r4lkmcwjoy"]
+[gd_scene load_steps=8 format=3 uid="uid://6r4lkmcwjoy"]
 
 [ext_resource type="Script" path="res://scripts/voxel/voxel_world.gd" id="1_world"]
 [ext_resource type="Script" uid="uid://cdbkby38acxr" path="res://scripts/free_camera.gd" id="2_camera"]
 [ext_resource type="Script" uid="uid://c0tqrvqgc8qgr" path="res://scripts/hud.gd" id="3_hud"]
+[ext_resource type="Script" path="res://scripts/debug_sun.gd" id="4_sun"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
 sky_horizon_color = Color(0.66, 0.74, 0.82, 1)
@@ -27,9 +28,11 @@ environment = SubResource("env")
 transform = Transform3D(0.819152, 0.469846, -0.32899, 0, 0.573576, 0.819152, 0.573576, -0.67101, 0.469846, 0, 10, 0)
 light_energy = 1.2
 shadow_enabled = true
+script = ExtResource("4_sun")
 
 [node name="VoxelWorld" type="Node3D" parent="."]
 script = ExtResource("1_world")
+generator = 1
 
 [node name="Camera" type="Camera3D" parent="."]
 transform = Transform3D(0.707107, -0.372053, 0.601317, 0, 0.85038, 0.52616, -0.707107, -0.372053, 0.601317, 24, 20, 24)
@@ -38,13 +41,14 @@ script = ExtResource("2_camera")
 
 [node name="UI" type="CanvasLayer" parent="."]
 
-[node name="HUD" type="Label" parent="UI" node_paths=PackedStringArray("camera", "world")]
+[node name="HUD" type="Label" parent="UI" node_paths=PackedStringArray("camera", "world", "sun")]
 offset_left = 12.0
 offset_top = 12.0
 offset_right = 512.0
-offset_bottom = 260.0
+offset_bottom = 400.0
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 4
 script = ExtResource("3_hud")
 camera = NodePath("../../Camera")
 world = NodePath("../../VoxelWorld")
+sun = NodePath("../../Sun")

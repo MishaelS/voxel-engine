@@ -28,12 +28,17 @@ Sections:
 - Baked per-vertex voxel ambient occlusion in `ChunkMesher`: corners and creases are darkened (0fps method: two side neighbors + diagonal), quads are split along the darker diagonal to avoid AO anisotropy.
 - F3 toggles VSync; HUD shows VSync state and frame time (total and render CPU).
 
+- `RandomBlocksGenerator` (`scripts/voxel/random_blocks_generator.gd`): debug world with a stone floor and every block type scattered randomly, to inspect texture seams, transparency, AO and shadows.
+- `VoxelWorld.generator` (`TERRAIN` / `RANDOM_BLOCKS`) and `random_density`; **R** regenerates the world with a new seed.
+- Debug sun control (`scripts/debug_sun.gd`): arrow keys rotate the sun and change its elevation; HUD shows world generator, seed and sun angles.
+
 ### Changed
 - Main scene renders a terrain chunk instead of a single voxel; camera moved to frame the chunk.
 - Blocks are textured instead of vertex-colored; voxel AO and biome tint are passed in the vertex color (rgb = tint, a = AO).
 - The window starts maximized and is explicitly resizable.
 - VSync is off by default, so FPS is no longer capped at the monitor refresh rate.
 - Rendering optimized for high-DPI screens (measured on Apple M4, 3420×2090: 50 → ~155 FPS): SSAO removed (replaced by voxel AO), MSAA 2x replaced by FXAA, hard directional shadows.
+- Main scene starts in `RANDOM_BLOCKS` mode.
 
 ### Fixed
 - Voxel AO was 2–3× too dark: the AO factor was applied to sRGB vertex colors and then gamma-expanded by the material (0.5 became ~0.22). Block colors are now converted to linear once and AO is applied in linear space (`vertex_color_is_srgb = false`).
