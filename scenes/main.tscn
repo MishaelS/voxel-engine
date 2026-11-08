@@ -1,16 +1,22 @@
-[gd_scene load_steps=8 format=3 uid="uid://6r4lkmcwjoy"]
+[gd_scene load_steps=11 format=3 uid="uid://6r4lkmcwjoy"]
 
 [ext_resource type="Script" path="res://scripts/voxel/voxel_world.gd" id="1_world"]
 [ext_resource type="Script" uid="uid://cdbkby38acxr" path="res://scripts/free_camera.gd" id="2_camera"]
 [ext_resource type="Script" uid="uid://c0tqrvqgc8qgr" path="res://scripts/hud.gd" id="3_hud"]
-[ext_resource type="Script" path="res://scripts/debug_sun.gd" id="4_sun"]
+[ext_resource type="Script" path="res://scripts/day_night_cycle.gd" id="4_sun"]
+[ext_resource type="Shader" path="res://shaders/sky.gdshader" id="5_sky"]
+[ext_resource type="Texture2D" path="res://assets/textures/sky/sun.png" id="6_sun_tex"]
+[ext_resource type="Texture2D" path="res://assets/textures/sky/moon.png" id="7_moon_tex"]
 
-[sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
-sky_horizon_color = Color(0.66, 0.74, 0.82, 1)
-ground_horizon_color = Color(0.66, 0.74, 0.82, 1)
+[sub_resource type="ShaderMaterial" id="sky_mat"]
+shader = ExtResource("5_sky")
+shader_parameter/sun_texture = ExtResource("6_sun_tex")
+shader_parameter/moon_texture = ExtResource("7_moon_tex")
 
 [sub_resource type="Sky" id="sky"]
 sky_material = SubResource("sky_mat")
+process_mode = 2
+radiance_size = 1
 
 [sub_resource type="Environment" id="env"]
 background_mode = 2
@@ -18,17 +24,23 @@ sky = SubResource("sky")
 ambient_light_source = 3
 reflected_light_source = 2
 tonemap_mode = 2
+fog_enabled = true
+fog_light_color = Color(0.75, 0.85, 1, 1)
+fog_density = 0.004
+fog_aerial_perspective = 1.0
+fog_sky_affect = 0.0
 
 [node name="Main" type="Node3D"]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("env")
 
-[node name="Sun" type="DirectionalLight3D" parent="."]
+[node name="Sun" type="DirectionalLight3D" parent="." node_paths=PackedStringArray("world_environment")]
 transform = Transform3D(0.819152, 0.469846, -0.32899, 0, 0.573576, 0.819152, 0.573576, -0.67101, 0.469846, 0, 10, 0)
 light_energy = 1.2
 shadow_enabled = true
 script = ExtResource("4_sun")
+world_environment = NodePath("../WorldEnvironment")
 
 [node name="VoxelWorld" type="Node3D" parent="."]
 script = ExtResource("1_world")

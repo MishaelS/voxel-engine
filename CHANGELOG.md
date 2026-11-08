@@ -30,7 +30,10 @@ Sections:
 
 - `RandomBlocksGenerator` (`scripts/voxel/random_blocks_generator.gd`): debug world with a stone floor and every block type scattered randomly, to inspect texture seams, transparency, AO and shadows.
 - `VoxelWorld.generator` (`TERRAIN` / `RANDOM_BLOCKS`) and `random_density`; **R** regenerates the world with a new seed.
-- Debug sun control (`scripts/debug_sun.gd`): arrow keys rotate the sun and change its elevation; HUD shows world generator, seed and sun angles.
+- Retro sky shader (`shaders/sky.gdshader`): day/night color gradient, sunrise/sunset glow, textured sun and moon with halos (`assets/textures/sky/`, hidden below the horizon; the disc covers the sky and stars, the halo is added), pixel stars after dusk, flat layer of blocky drifting clouds. Details are skipped in the radiance cubemap; the sky updates incrementally at 64 px radiance.
+- Moon phases like the real Moon: the terminator is computed per texture pixel (crescent, quarter, gibbous, full), waxing lit on the right and waning on the left, the dark part keeps a faint earthshine, the halo and the moonlight follow the lit fraction. A full cycle takes `lunar_cycle_days` (8 by default; 29.5 is the real value).
+- Day/night cycle `DayNightCycle` (`scripts/day_night_cycle.gd`): sun path with tilt, warm low sun, dim bluish moonlight at night, drives the sky shader. Up/Down arrows change the time of day, Left/Right rotate the sun path, **T** toggles the automatic cycle (20 min per day), **M** skips to the next day. Days are counted at sunrise. HUD shows world generator, seed, day, clock time and moon phase.
+- Distance fog colored by the sky (aerial perspective).
 
 ### Changed
 - Main scene renders a terrain chunk instead of a single voxel; camera moved to frame the chunk.

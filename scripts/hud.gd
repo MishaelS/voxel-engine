@@ -30,12 +30,13 @@ func _process(_delta: float) -> void:
 		lines.append("Triangles: %d, vertices: %d" % [s.triangles, s.vertices])
 		lines.append("Meshing: %.2f ms" % s.mesh_ms)
 	if sun and sun.has_method("describe"):
-		lines.append("Sun: %s" % sun.describe())
+		lines.append("Time: %s" % sun.describe())
 
 	lines.append("")
 	lines.append("LMB - capture mouse, Esc - release")
 	lines.append("WASD - movement, E/Space - up, Q - down")
 	lines.append("Shift - speed boost, wheel - speed")
-	lines.append("R - regenerate world, arrows - rotate sun")
+	lines.append("R - regenerate world, T - toggle day cycle, M - next day")
+	lines.append("Up/Down - time of day, Left/Right - rotate sun path")
 	lines.append("F11 / Alt+Enter - toggle fullscreen, F3 - toggle VSync")
 	text = "\n".join(lines)

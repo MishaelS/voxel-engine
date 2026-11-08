@@ -9,14 +9,17 @@ Controls
 * WASD: movement, E/Space - up, Q - down
 * Shift: speed boost, mouse wheel - base speed
 * R: regenerate the world with a new seed
-* Arrow keys: rotate the sun / change its elevation
+* Up/Down arrows: time of day, Left/Right: rotate the sun path
+* T: toggle the automatic day/night cycle
+* M: skip to the next day (moon phases)
 * F3: toggle VSync (off by default)
 * F11 / Alt+Enter: toggle fullscreen (the window starts maximized and can be resized)
 
 ## Structure
 * `scenes/main.tscn` - main scene (sky, sun, voxel world, camera, HUD)
 * `assets/textures/terrain.png` - block texture atlas (16×16 tiles)
-* `shaders/` - block shaders: opaque, cutout, translucent
+* `assets/textures/sky/` - sun and moon textures (32×32, 8×8 disc with a halo)
+* `shaders/` - block shaders (opaque, cutout, translucent) and the sky shader
 * `scripts/voxel/blocks.gd` - block registry: all block types and their atlas tiles
 * `scripts/voxel/block_type.gd` - block type description (faces, overlay, tint, render layer)
 * `scripts/voxel/block_materials.gd` - atlas → Texture2DArray, one material per render layer
@@ -25,7 +28,7 @@ Controls
 * `scripts/voxel/terrain_generator.gd` - noise heightmap terrain
 * `scripts/voxel/voxel_world.gd` - owns chunks, builds meshes, render stats; `generator` switches terrain / random blocks
 * `scripts/voxel/random_blocks_generator.gd` - debug world: every block type scattered randomly
-* `scripts/debug_sun.gd` - arrow-key sun control for checking shadows
+* `scripts/day_night_cycle.gd` - sun/moon movement, day counter, moon phases, light; drives the sky
 * `scripts/free_camera.gd` - free camera
 * `scripts/hud.gd` - FPS, render stats and hints
 * `scripts/window_controls.gd` - autoload: minimum window size, fullscreen and VSync toggles
