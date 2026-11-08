@@ -1,0 +1,38 @@
+# --- Godot 4 ---
+# Кэш импорта, шейдеров и настройки редактора (генерируются автоматически)
+.godot/
+# Шаблон сборки под Android
+/android/
+
+# --- Результаты экспорта / сборки ---
+/build/
+/export/
+/exports/
+*.apk
+*.aab
+*.exe
+*.pck
+*.zip
+*.dmg
+
+# --- C# / Mono (на случай, если подключим C#) ---
+.mono/
+data_*/
+mono_crash.*.json
+*.csproj.user
+
+# --- Системные файлы ---
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+
+# --- IDE / редакторы ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- Временные файлы и логи ---
+*.tmp
+*.log
