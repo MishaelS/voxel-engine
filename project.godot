@@ -179,6 +179,10 @@ hotbar_9={
 ]
 }
 
+[threading]
+
+worker_pool/low_priority_thread_ratio=0.75
+
 [rendering]
 
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0

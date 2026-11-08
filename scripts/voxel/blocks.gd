@@ -45,6 +45,8 @@ static var face_overlays := PackedInt32Array() # [id * 6 + face], -1 = none
 static var tints_linear := PackedColorArray()  # [id]
 # 1 if the block has a random tick handler: lets the world skip others fast.
 static var ticks_randomly := PackedByteArray()
+# Light lost when passing through the block (0..15, see BlockType.light_opacity).
+static var light_opacity_table := PackedByteArray()
 
 static var _registered := _register_all()
 
@@ -66,15 +68,15 @@ static func _register_all() -> bool:
 	register(_falling(BlockType.cube("gravel", 19)))
 	register(BlockType.column("sandstone", 176, 192, 208))
 	register(BlockType.cube("obsidian", 37))
-	register(BlockType.cube("water", 205).set_layer(Layer.TRANSLUCENT).set_cull_self())
+	register(BlockType.cube("water", 205).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2))
 
 	# Trees
 	register(BlockType.column("oak_log", 21, 20))
 	register(BlockType.column("birch_log", 21, 117))
 	register(BlockType.column("spruce_log", 21, 116))
-	register(BlockType.cube("oak_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_OAK))
-	register(BlockType.cube("birch_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_BIRCH))
-	register(BlockType.cube("spruce_leaves", 132).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_SPRUCE))
+	register(BlockType.cube("oak_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_OAK).set_light_opacity(1))
+	register(BlockType.cube("birch_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_BIRCH).set_light_opacity(1))
+	register(BlockType.cube("spruce_leaves", 132).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_SPRUCE).set_light_opacity(1))
 	register(BlockType.cube("oak_planks", 4))
 	register(BlockType.cube("birch_planks", 214))
 	register(BlockType.cube("spruce_planks", 198))
@@ -108,7 +110,7 @@ static func _register_all() -> bool:
 	# Cold biomes (appended: ids must stay stable)
 	register(BlockType.column("snowy_grass", 66, 68, 2))
 	register(BlockType.cube("snow", 66))
-	register(BlockType.cube("ice", 67).set_layer(Layer.TRANSLUCENT).set_cull_self())
+	register(BlockType.cube("ice", 67).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2))
 	return true
 
 
@@ -139,6 +141,9 @@ static func register(block: BlockType) -> int:
 	face_overlays.append_array(block.overlays)
 	tints_linear.append(block.tint.srgb_to_linear())
 	ticks_randomly.append(1 if block.random_tick.is_valid() else 0)
+	if block.light_opacity < 0:
+		block.light_opacity = 15 if is_opaque_table[id] == 1 else 0
+	light_opacity_table.append(block.light_opacity)
 	return id
 
 

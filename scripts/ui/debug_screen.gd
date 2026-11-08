@@ -73,8 +73,8 @@ func _left_lines() -> PackedStringArray:
 		var s := world.stats
 		if not s.is_empty():
 			lines.append("C: %d/%d visible, %d columns, D: %d, pending %d" % [s.visible_chunks, s.chunks, s.columns, world.render_distance, s.pending])
-			lines.append("Jobs: %d generating (last %.1f ms), %d meshing (last %.1f ms)" % [
-				world.generation_jobs_count(), s.generation_ms, world.mesh_jobs_count(), s.mesh_ms])
+			lines.append("Jobs: %d generating (last %.1f ms), %d lighting, %d meshing (last %.1f ms)" % [
+				world.generation_jobs_count(), s.generation_ms, world.light_jobs_count(), world.mesh_jobs_count(), s.mesh_ms])
 			lines.append("Faces: %d, vertices: %d" % [s.faces, s.vertices])
 	lines.append("")
 
@@ -89,6 +89,7 @@ func _left_lines() -> PackedStringArray:
 		lines.append(_facing_line(-camera.global_basis.z))
 		if world:
 			lines.append("Biome: %s" % world.biome_at(block.x, block.z))
+			lines.append("Sky light: %d" % world.get_light(block))
 	lines.append("")
 
 	if world:
@@ -133,6 +134,8 @@ func _right_lines() -> PackedStringArray:
 		lines.append("%s (id %d)" % [block.name, block.id])
 		lines.append("layer: %s" % LAYER_NAMES[block.layer])
 		lines.append("face: %s, distance: %.2f" % [FACE_NAMES.get(target.normal, "inside"), target.distance])
+		if world:
+			lines.append("light at face: %d" % world.get_light(pos + target.normal))
 		var ticks := PackedStringArray()
 		if block.random_tick.is_valid():
 			ticks.append("random")

@@ -10,10 +10,14 @@ var blocks := PackedByteArray()
 ## Number of blocks with a random tick handler (grass...). Chunks with none
 ## are skipped by random ticks.
 var tickable_count := 0
+## Sky light per block (0..15), same layout as `blocks`. Filled by
+## SkyLight when the column is lit, then kept up to date by VoxelWorld.
+var light := PackedByteArray()
 
 
 func _init() -> void:
 	blocks.resize(VOLUME) # zero-filled = AIR
+	light.resize(VOLUME)
 
 
 ## Layout: x changes fastest, then z, then y (horizontal layers).

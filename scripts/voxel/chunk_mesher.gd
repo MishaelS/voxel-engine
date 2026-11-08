@@ -10,7 +10,10 @@ extends RefCounted
 ## Face culling: a face is emitted only if the neighbor in that direction is
 ## not opaque; faces between two blocks of the same "cull_self" type (glass,
 ## water) are skipped too.
-## Each vertex gets baked voxel ambient occlusion (darker corners/creases).
+## Each vertex gets baked voxel ambient occlusion (darker corners/creases)
+## and sky light: the average light of the up to 4 clear cells around the
+## corner in front of the face ("smooth lighting" of the classic game),
+## mapped to brightness with the classic light curve.
 ##
 ## build() only reads byte arrays and returns plain surface arrays (no
 ## Resources, no scene tree), so it runs on worker threads.
@@ -45,7 +48,12 @@ const CORNER_UVS: Array[Vector2] = [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1),
 ## Linear light multipliers (the shader works in linear space).
 const AO_BRIGHTNESS: Array[float] = [0.5, 0.68, 0.84, 1.0]
 
-## Voxel AO on/off ("Smooth Lighting" setting). Re-mesh chunks after changing.
+## Brightness of light levels 0..15, the classic curve: each level is a
+## clear step down, level 0 keeps 5% so caves are dark but not black.
+static var LIGHT_BRIGHTNESS := _build_light_curve()
+
+## Smooth lighting (voxel AO + light averaged per corner) on/off ("Smooth
+## Lighting" setting; off = flat light per face). Re-mesh after changing.
 static var ao_enabled := true
 
 ## Index offset in the padded volume for each face direction.
@@ -74,6 +82,21 @@ class Surface:
 		arrays[Mesh.ARRAY_COLOR] = colors
 		arrays[Mesh.ARRAY_INDEX] = indices
 		return arrays
+
+
+static func _build_light_curve() -> PackedFloat32Array:
+	var curve := PackedFloat32Array()
+	for level in SkyLight.MAX + 1:
+		var darkness := 1.0 - level / float(SkyLight.MAX)
+		curve.append((1.0 - darkness) / (darkness * 3.0 + 1.0) * 0.95 + 0.05)
+	return curve
+
+
+static func _brightness(level: float) -> float:
+	var low := floori(level)
+	if low >= SkyLight.MAX:
+		return 1.0
+	return lerpf(LIGHT_BRIGHTNESS[low], LIGHT_BRIGHTNESS[low + 1], level - low)
 
 
 static func padded_index(x: int, y: int, z: int) -> int:
@@ -112,11 +135,13 @@ static func _build_ao_deltas() -> Array:
 
 
 ## Builds the padded volume of a chunk. `neighbors` maps each of the 26
-## offsets (Vector3i, components -1..1) to that chunk's block array; missing
-## neighbors count as air.
-static func pad(center: PackedByteArray, neighbors: Dictionary) -> PackedByteArray:
+## offsets (Vector3i, components -1..1) to that chunk's array; missing
+## neighbors get `fill` (air for blocks, full light for light).
+static func pad(center: PackedByteArray, neighbors: Dictionary, fill: int = 0) -> PackedByteArray:
 	var padded := PackedByteArray()
 	padded.resize(PADDED_VOLUME)
+	if fill != 0:
+		padded.fill(fill)
 	for y in SIZE:
 		for z in SIZE:
 			var src := SIZE * (z + SIZE * y)
@@ -150,8 +175,16 @@ static func single_block(block_id: int) -> PackedByteArray:
 	return padded
 
 
+## Padded light volume at full light (blocks rendered outside the world).
+static func full_light() -> PackedByteArray:
+	var padded := PackedByteArray()
+	padded.resize(PADDED_VOLUME)
+	padded.fill(SkyLight.MAX)
+	return padded
+
+
 ## Returns {Blocks.Layer: surface arrays} for every non-empty layer.
-static func build(padded: PackedByteArray) -> Dictionary:
+static func build(padded: PackedByteArray, light: PackedByteArray) -> Dictionary:
 	var opaque := Blocks.is_opaque_table
 	# Fully buried chunk (no see-through block anywhere, border included):
 	# nothing can be visible.
@@ -173,6 +206,7 @@ static func build(padded: PackedByteArray) -> Dictionary:
 	var tints := Blocks.tints_linear
 	var face_deltas := _face_deltas
 	var ao := PackedInt32Array([3, 3, 3, 3])
+	var corner_light := PackedFloat32Array([15.0, 15.0, 15.0, 15.0])
 
 	for y in SIZE:
 		for z in SIZE:
@@ -186,7 +220,7 @@ static func build(padded: PackedByteArray) -> Dictionary:
 				var surface := surfaces[layer]
 				var tint := tints[id]
 				var origin := Vector3(x, y, z)
-				var with_ao := ao_enabled and layer != Blocks.Layer.TRANSLUCENT
+				var smooth := ao_enabled and layer != Blocks.Layer.TRANSLUCENT
 
 				for face in 6:
 					var front := i + face_deltas[face]
@@ -196,10 +230,11 @@ static func build(padded: PackedByteArray) -> Dictionary:
 					if neighbor == id and cull_self[id] == 1:
 						continue # glass next to glass, water next to water
 
-					if with_ao:
-						_compute_ao(padded, opaque, _ao_deltas[face], front, ao)
+					if smooth:
+						_compute_corners(padded, light, opaque, _ao_deltas[face], front, ao, corner_light)
 					else:
 						ao.fill(3)
+						corner_light.fill(light[front])
 
 					var index := id * 6 + face
 					var tile_layers := Vector2(face_tiles[index], face_overlays[index])
@@ -211,7 +246,8 @@ static func build(padded: PackedByteArray) -> Dictionary:
 						surface.normals.append(normal)
 						surface.uvs.append(CORNER_UVS[c])
 						surface.layers.append(tile_layers)
-						surface.colors.append(Color(tint.r, tint.g, tint.b, AO_BRIGHTNESS[ao[c]]))
+						var shade := AO_BRIGHTNESS[ao[c]] * _brightness(corner_light[c])
+						surface.colors.append(Color(tint.r, tint.g, tint.b, shade))
 
 					# Split the quad along the diagonal through the darker corners,
 					# otherwise AO interpolates unevenly (anisotropy artifact).
@@ -227,14 +263,33 @@ static func build(padded: PackedByteArray) -> Dictionary:
 	return result
 
 
-## Voxel AO (0fps method): per corner, count opaque blocks in the layer in
-## front of the face - two side neighbors and the diagonal one.
-static func _compute_ao(padded: PackedByteArray, opaque: PackedByteArray, deltas: PackedInt32Array, front: int, ao: PackedInt32Array) -> void:
+## Per corner, from the layer of cells in front of the face (the front cell,
+## two side neighbors and the diagonal one):
+## - voxel AO (0fps method): how many of the side / diagonal cells are opaque;
+## - smooth light: the average light of those of the 4 cells that are clear.
+static func _compute_corners(padded: PackedByteArray, light: PackedByteArray, opaque: PackedByteArray,
+		deltas: PackedInt32Array, front: int, ao: PackedInt32Array, corner_light: PackedFloat32Array) -> void:
+	var front_light := light[front]
 	for c in 4:
-		var side_a := opaque[padded[front + deltas[c * 3]]] == 1
-		var side_b := opaque[padded[front + deltas[c * 3 + 1]]] == 1
+		var a := front + deltas[c * 3]
+		var b := front + deltas[c * 3 + 1]
+		var side_a := opaque[padded[a]] == 1
+		var side_b := opaque[padded[b]] == 1
+		var total := front_light
+		var count := 1
+		if not side_a:
+			total += light[a]
+			count += 1
+		if not side_b:
+			total += light[b]
+			count += 1
 		if side_a and side_b:
 			ao[c] = 0 # both sides block it: corner fully occluded
 		else:
-			var diagonal := opaque[padded[front + deltas[c * 3 + 2]]] == 1
+			var d := front + deltas[c * 3 + 2]
+			var diagonal := opaque[padded[d]] == 1
+			if not diagonal:
+				total += light[d]
+				count += 1
 			ao[c] = 3 - int(side_a) - int(side_b) - int(diagonal)
+		corner_light[c] = float(total) / count

@@ -3,10 +3,15 @@ extends Node3D
 ## An endless world of 16^3 chunks, 128 blocks high (columns of 8 chunks),
 ## loaded around the player; its clock and everything that happens in ticks.
 ##
-## Streaming: columns within render_distance (+1 for neighbors) of the
-## player are generated on worker threads, nearest first; a chunk is meshed
-## once its column and the 8 columns around it exist (its border faces and
-## AO depend on them); columns far away are unloaded.
+## Streaming, all on worker threads, nearest first:
+## 1. columns within render_distance + 1 of the player are generated;
+## 2. a column is lit (sky light, see SkyLight) once its 8 neighbors exist
+##    (columns on the outer ring treat neighbors beyond the loaded area as
+##    solid: they are not drawn, only their border light is used);
+## 3. a chunk is meshed once its column and the 8 around it are lit (border
+##    faces, AO and smooth lighting depend on them).
+## Columns far away are unloaded. Changing a block re-lights its area right
+## away (light removal and re-spreading, like the classic game).
 ##
 ## Every game tick (TickLoop, Phase.WORLD), in this order:
 ## 1. the clock advances (game_time, day_time);
@@ -64,6 +69,9 @@ var world_generator: WorldGenerator
 
 var _chunks := {}          # Vector3i -> ChunkData
 var _columns := {}         # Vector2i -> true: generated columns
+var _heightmaps := {}      # Vector2i -> PackedInt32Array (see WorldGenerator.heightmap)
+var _lit := {}             # Vector2i -> true: columns with sky light
+var _light_jobs := {}      # Vector2i -> LightJob on a worker thread
 var _chunk_nodes := {}     # Vector3i -> MeshInstance3D
 var _chunk_faces := {}     # Vector3i -> visible faces
 var _dirty := {}           # Vector3i -> true: chunks waiting for a new mesh
@@ -80,6 +88,8 @@ var _last_generation_ms := 0.0
 ## Set when something may have made a chunk meshable; avoids rescanning
 ## the waiting chunks every frame.
 var _mesh_scan_needed := true
+var _light_scan_needed := true
+var _opacity := Blocks.light_opacity_table
 
 
 ## A chunk mesh built on a worker thread from the chunk's blocks and its 26
@@ -89,14 +99,30 @@ class MeshJob:
 	var coord: Vector3i
 	var center: PackedByteArray
 	var neighbors := {}
+	var center_light: PackedByteArray
+	var neighbor_light := {}
 	var surfaces := {}
 	var mesh_ms := 0.0
 	var task_id := -1
 
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
-		surfaces = ChunkMesher.build(ChunkMesher.pad(center, neighbors))
+		surfaces = ChunkMesher.build(ChunkMesher.pad(center, neighbors),
+			ChunkMesher.pad(center_light, neighbor_light, SkyLight.MAX))
 		mesh_ms = (Time.get_ticks_usec() - start_us) / 1000.0
+
+
+## Sky light of a column, computed on a worker thread from the 3x3 columns
+## around it.
+class LightJob:
+	var column: Vector2i
+	var chunks := []   # 9 arrays of 8 block arrays
+	var heights := []  # 9 heightmaps
+	var light: Array[PackedByteArray] = []
+	var task_id := -1
+
+	func run() -> void:
+		light = SkyLight.compute_column(chunks, heights)
 
 
 ## A column generated on a worker thread.
@@ -104,12 +130,17 @@ class GenerationJob:
 	var column: Vector2i
 	var generator: WorldGenerator
 	var chunks: Array[ChunkData] = []
+	var heights := PackedInt32Array()
 	var generation_ms := 0.0
 	var task_id := -1
 
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
 		chunks = generator.generate_column(column.x, column.y)
+		var blocks := PackedByteArray()
+		for chunk in chunks:
+			blocks.append_array(chunk.blocks)
+		heights = WorldGenerator.heightmap(blocks)
 		generation_ms = (Time.get_ticks_usec() - start_us) / 1000.0
 
 
@@ -138,6 +169,8 @@ func _process(_delta: float) -> void:
 	_update_streaming()
 	_finish_generation_jobs()
 	_start_generation_jobs()
+	_finish_light_jobs()
+	_start_light_jobs()
 	_finish_mesh_jobs()
 	_start_mesh_jobs()
 	_update_stats()
@@ -153,6 +186,8 @@ func generate() -> void:
 		node.queue_free()
 	_chunks.clear()
 	_columns.clear()
+	_heightmaps.clear()
+	_lit.clear()
 	_chunk_nodes.clear()
 	_chunk_faces.clear()
 	_dirty.clear()
@@ -242,6 +277,9 @@ func _wait_for_jobs() -> void:
 	for job: GenerationJob in _gen_jobs.values():
 		WorkerThreadPool.wait_for_task_completion(job.task_id)
 	_gen_jobs.clear()
+	for job: LightJob in _light_jobs.values():
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+	_light_jobs.clear()
 
 
 # --- Streaming -----------------------------------------------------------------------
@@ -259,6 +297,7 @@ func _update_streaming() -> void:
 		return
 	_player_column = center
 	_mesh_scan_needed = true
+	_light_scan_needed = true
 	var radius := render_distance + 1
 	_wanted_columns.clear()
 	for dx in range(-radius, radius + 1):
@@ -269,7 +308,7 @@ func _update_streaming() -> void:
 	_wanted_columns.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		return (a - center).length_squared() > (b - center).length_squared()) # nearest at the end
 
-	var unload_radius := render_distance + 3
+	var unload_radius := render_distance + 4
 	for column: Vector2i in _columns.keys():
 		if absi(column.x - center.x) > unload_radius or absi(column.y - center.y) > unload_radius:
 			_unload_column(column)
@@ -301,6 +340,8 @@ func _finish_generation_jobs() -> void:
 
 func _add_column(job: GenerationJob) -> void:
 	_columns[job.column] = true
+	_heightmaps[job.column] = job.heights
+	_light_scan_needed = true
 	_last_generation_ms = job.generation_ms
 	for k in job.chunks.size():
 		var coord := Vector3i(job.column.x, k, job.column.y)
@@ -311,6 +352,8 @@ func _add_column(job: GenerationJob) -> void:
 
 func _unload_column(column: Vector2i) -> void:
 	_columns.erase(column)
+	_heightmaps.erase(column)
+	_lit.erase(column)
 	for k in WorldGenerator.HEIGHT_CHUNKS:
 		var coord := Vector3i(column.x, k, column.y)
 		_chunks.erase(coord)
@@ -323,15 +366,212 @@ func _unload_column(column: Vector2i) -> void:
 			_chunk_nodes.erase(coord)
 
 
-## A chunk can be meshed once all columns around it exist.
+## A chunk can be meshed once its column and all columns around it are lit.
 func _can_mesh(coord: Vector3i) -> bool:
 	var column := Vector2i(coord.x, coord.z)
 	if absi(column.x - _player_column.x) > render_distance or absi(column.y - _player_column.y) > render_distance:
 		return false
+	if not _lit.has(column):
+		return false
 	for offset in COLUMN_NEIGHBORS:
-		if not _columns.has(column + offset):
+		if not _lit.has(column + offset):
 			return false
 	return true
+
+
+# --- Lighting ------------------------------------------------------------------------
+
+func _start_light_jobs() -> void:
+	var max_jobs := maxi(OS.get_processor_count() - 2, 1)
+	if not _light_scan_needed or _light_jobs.size() >= max_jobs:
+		return
+	var candidates: Array[Vector2i] = []
+	for column: Vector2i in _columns:
+		if _lit.has(column) or _light_jobs.has(column):
+			continue
+		if absi(column.x - _player_column.x) > render_distance + 1 or absi(column.y - _player_column.y) > render_distance + 1:
+			continue
+		var ready := true
+		for offset in COLUMN_NEIGHBORS:
+			var neighbor: Vector2i = column + offset
+			if not _columns.has(neighbor) and _in_load_radius(neighbor):
+				ready = false
+				break
+		if ready:
+			candidates.append(column)
+	if candidates.is_empty():
+		_light_scan_needed = false
+		return
+	candidates.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		return (a - _player_column).length_squared() < (b - _player_column).length_squared())
+	for column in candidates:
+		if _light_jobs.size() >= max_jobs:
+			break
+		var job := LightJob.new()
+		job.column = column
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				var neighbor := column + Vector2i(dx, dz)
+				var blocks := []
+				if _columns.has(neighbor):
+					for k in WorldGenerator.HEIGHT_CHUNKS:
+						blocks.append((_chunks[Vector3i(neighbor.x, k, neighbor.y)] as ChunkData).blocks)
+					job.heights.append(_heightmaps[neighbor])
+				else: # beyond the loaded area: solid, lets no light through
+					for k in WorldGenerator.HEIGHT_CHUNKS:
+						blocks.append(_solid_chunk())
+					job.heights.append(_solid_heights())
+				job.chunks.append(blocks)
+		job.task_id = WorkerThreadPool.add_task(job.run, false, "Column light")
+		_light_jobs[column] = job
+
+
+func _finish_light_jobs() -> void:
+	for column: Vector2i in _light_jobs.keys():
+		var job: LightJob = _light_jobs[column]
+		if not WorkerThreadPool.is_task_completed(job.task_id):
+			continue
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+		_light_jobs.erase(column)
+		_light_scan_needed = true
+		if not _columns.has(column):
+			continue
+		for k in WorldGenerator.HEIGHT_CHUNKS:
+			var data: ChunkData = _chunks.get(Vector3i(column.x, k, column.y))
+			if data:
+				data.light = job.light[k]
+		_lit[column] = true
+		_mesh_scan_needed = true
+
+
+func _in_load_radius(column: Vector2i) -> bool:
+	var radius := render_distance + 1
+	return absi(column.x - _player_column.x) <= radius and absi(column.y - _player_column.y) <= radius
+
+
+static var _solid_chunk_cache := PackedByteArray()
+static var _solid_heights_cache := PackedInt32Array()
+
+
+static func _solid_chunk() -> PackedByteArray:
+	if _solid_chunk_cache.is_empty():
+		_solid_chunk_cache.resize(ChunkData.VOLUME)
+		_solid_chunk_cache.fill(Blocks.id_of("stone"))
+	return _solid_chunk_cache
+
+
+static func _solid_heights() -> PackedInt32Array:
+	if _solid_heights_cache.is_empty():
+		_solid_heights_cache.resize(256)
+		_solid_heights_cache.fill(WorldGenerator.HEIGHT - 1)
+	return _solid_heights_cache
+
+
+func light_jobs_count() -> int:
+	return _light_jobs.size()
+
+
+## Sky light at a block (0..15): 15 above the world, 0 below it or where
+## nothing is loaded.
+func get_light(pos: Vector3i) -> int:
+	if pos.y >= WorldGenerator.HEIGHT:
+		return SkyLight.MAX
+	var coord := chunk_coord_of(pos)
+	var data: ChunkData = _chunks.get(coord)
+	if data == null:
+		return 0
+	var local := pos - coord * ChunkData.SIZE
+	return data.light[ChunkData.index(local.x, local.y, local.z)]
+
+
+func _set_light(pos: Vector3i, level: int) -> void:
+	var coord := chunk_coord_of(pos)
+	var data: ChunkData = _chunks.get(coord)
+	if data == null:
+		return
+	var local := pos - coord * ChunkData.SIZE
+	var i := ChunkData.index(local.x, local.y, local.z)
+	if data.light[i] != level:
+		data.light[i] = level
+		_mark_dirty_around(coord, local)
+
+
+## Re-lights around a changed block, like the classic game: first remove the
+## light that depended on the old block (flood out from it, re-queueing
+## brighter cells found at the edge), then spread light again from those
+## cells and from the changed cell itself. Straight-down sky light (15)
+## keeps its full value through clear blocks.
+func _relight(pos: Vector3i) -> void:
+	var removal: Array = [[pos, get_light(pos)]]
+	var spread: Array[Vector3i] = []
+	_set_light(pos, 0)
+	var head := 0
+	while head < removal.size():
+		var entry: Array = removal[head]
+		head += 1
+		var cell: Vector3i = entry[0]
+		var level: int = entry[1]
+		for offset in NEIGHBORS:
+			var neighbor := cell + offset
+			var neighbor_level := get_light(neighbor)
+			if neighbor_level == 0 or neighbor.y >= WorldGenerator.HEIGHT:
+				continue
+			if neighbor_level < level or (offset == Vector3i.DOWN and level == SkyLight.MAX and neighbor_level == SkyLight.MAX):
+				_set_light(neighbor, 0)
+				removal.append([neighbor, neighbor_level])
+			else:
+				spread.append(neighbor)
+
+	# The changed cell takes light from its neighbors.
+	var opacity: int = _opacity[get_block(pos)]
+	if opacity < SkyLight.MAX:
+		var best := 0
+		for offset in NEIGHBORS:
+			var neighbor_level := get_light(pos + offset)
+			var candidate := neighbor_level - opacity if offset == Vector3i.UP and neighbor_level == SkyLight.MAX \
+				else neighbor_level - maxi(opacity, 1)
+			best = maxi(best, candidate)
+		if best > 0:
+			_set_light(pos, best)
+			spread.append(pos)
+
+	head = 0
+	while head < spread.size():
+		var cell := spread[head]
+		head += 1
+		var level := get_light(cell)
+		if level <= 1:
+			continue
+		for offset in NEIGHBORS:
+			var neighbor := cell + offset
+			if neighbor.y < 0 or neighbor.y >= WorldGenerator.HEIGHT or not is_inside(neighbor):
+				continue
+			var neighbor_opacity: int = _opacity[get_block(neighbor)]
+			if neighbor_opacity >= SkyLight.MAX:
+				continue
+			var candidate := level - neighbor_opacity if offset == Vector3i.DOWN and level == SkyLight.MAX \
+				else level - maxi(neighbor_opacity, 1)
+			if candidate > get_light(neighbor):
+				_set_light(neighbor, candidate)
+				spread.append(neighbor)
+
+
+## Keeps the heightmap in step with block changes (used when lighting
+## columns that load later).
+func _update_heightmap(pos: Vector3i, id: int) -> void:
+	var column := Vector2i(floori(pos.x / 16.0), floori(pos.z / 16.0))
+	var heights: PackedInt32Array = _heightmaps.get(column, PackedInt32Array())
+	if heights.is_empty():
+		return
+	var i := posmod(pos.x, 16) + 16 * posmod(pos.z, 16)
+	if _opacity[id] > 0:
+		heights[i] = maxi(heights[i], pos.y)
+	elif pos.y == heights[i]:
+		var y := pos.y - 1
+		while y >= 0 and _opacity[get_block(Vector3i(pos.x, y, pos.z))] == 0:
+			y -= 1
+		heights[i] = y
+	_heightmaps[column] = heights
 
 
 # --- Blocks --------------------------------------------------------------------------
@@ -414,6 +654,9 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 		return
 	data.set_block(local.x, local.y, local.z, id)
 	_mark_dirty_around(coord, local)
+	_update_heightmap(pos, id)
+	if _lit.has(Vector2i(coord.x, coord.z)):
+		_relight(pos)
 	if notify:
 		_update_block(pos)
 		for offset in NEIGHBORS:
@@ -550,7 +793,9 @@ func _start_mesh_jobs() -> void:
 		_dirty.erase(coord)
 		var job := MeshJob.new()
 		job.coord = coord
-		job.center = (_chunks[coord] as ChunkData).blocks # copy-on-write snapshot
+		var data: ChunkData = _chunks[coord]
+		job.center = data.blocks # copy-on-write snapshots
+		job.center_light = data.light
 		for dx in range(-1, 2):
 			for dy in range(-1, 2):
 				for dz in range(-1, 2):
@@ -558,6 +803,7 @@ func _start_mesh_jobs() -> void:
 					if offset != Vector3i.ZERO:
 						var neighbor: ChunkData = _chunks.get(coord + offset)
 						job.neighbors[offset] = neighbor.blocks if neighbor else PackedByteArray()
+						job.neighbor_light[offset] = neighbor.light if neighbor else PackedByteArray()
 		job.task_id = WorkerThreadPool.add_task(job.run, false, "Chunk mesh")
 		_mesh_jobs[coord] = job
 

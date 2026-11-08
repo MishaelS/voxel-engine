@@ -68,7 +68,8 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/voxel/block_type.gd` - block type description (faces, overlay, tint, render layer)
 * `scripts/voxel/block_materials.gd` - atlas → Texture2DArray, one material per render layer
 * `scripts/voxel/chunk_data.gd` - block storage of a 16×16×16 chunk
-* `scripts/voxel/chunk_mesher.gd` - chunk meshing on a padded volume (neighbor borders): face culling and voxel AO across chunks
+* `scripts/voxel/chunk_mesher.gd` - chunk meshing on a padded volume (neighbor borders): face culling, voxel AO and smooth sky light across chunks
+* `scripts/voxel/sky_light.gd` - sky light (0..15) for a column, computed from the 3x3 columns around it
 * `scripts/worldgen/world_generator.gd` - base of column generators (16 x 128 x 16)
 * `scripts/worldgen/beta_generator.gd` - Beta 1.7.3 style terrain, biomes, caves, ores, trees
 * `scripts/core/tick_loop.gd` - autoload: fixed-rate game tick loop (20 TPS), phases, freeze/step

@@ -21,6 +21,10 @@ var tint := Color.WHITE
 var layer: int = 0 # Blocks.Layer.OPAQUE
 ## Hide faces between two blocks of this same type (glass, water).
 var cull_self := false
+## How much light the block takes away when light passes through it:
+## 0 = clear (air, glass), 1 = leaves, 2 = water / ice, 15 = blocks light.
+## -1 = derived from the render layer (opaque blocks 15, others 0).
+var light_opacity := -1
 
 ## Tick behavior (all optional), each called as f(world: VoxelWorld, pos: Vector3i):
 ## - random_tick: picked at random a few times per chunk per tick
@@ -76,6 +80,11 @@ func set_side_overlay(tile: int) -> BlockType:
 
 func set_cull_self(value: bool = true) -> BlockType:
 	cull_self = value
+	return self
+
+
+func set_light_opacity(value: int) -> BlockType:
+	light_opacity = value
 	return self
 
 

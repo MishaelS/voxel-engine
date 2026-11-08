@@ -14,6 +14,10 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Sky light like the classic game (`scripts/voxel/sky_light.gd`): every block has a light level 0..15; full light comes straight down from the sky (leaves take 1, water and ice 2, solid blocks stop it), then spreads sideways and down into overhangs and caves, losing at least 1 per block. A column is lit on a worker thread from the 3x3 columns around it, so there are no seams at column borders; cells above the heightmap are never stored or visited, so it stays cheap.
+- Re-lighting on block changes: light removal and re-spreading from the changed block (the classic algorithm); only chunks whose light changed are re-meshed.
+- Smooth lighting in the mesher: each vertex gets the average light of the up to 4 clear cells around the corner, mapped with the classic light curve (level 0 keeps 5%) and combined with voxel AO. With Smooth Lighting off, faces get flat light.
+- `BlockType.light_opacity`, per-chunk light arrays and per-column heightmaps. Debug screen: sky light at the player and at the targeted face, lighting jobs.
 - Endless world (`VoxelWorld`): columns of 8 chunks (128 blocks high) are generated around the player on worker threads, nearest first, meshed once their neighbor columns exist and unloaded when far away; `Render Distance` setting (2-16 chunks, default 6) with fog starting at 60% of it like the classic game. Spawn is searched on land.
 - Beta 1.7.3 style world generator (`scripts/worldgen/beta_generator.gd`, own implementation of the same approach): 3D density terrain from limit / main / depth / scale noises with overhangs, sea level 64; biomes from temperature and humidity with the classic table (tundra, taiga, swampland, forest, seasonal forest, rainforest, savanna, shrubland, plains, desert); grass / dirt surface, sand and gravel beaches, sandstone, uneven bedrock; worm caves and rooms crossing columns; ore veins and dirt / gravel pockets at the classic heights; oak, birch, spruce and pine trees by biome; ice on cold water. Deterministic per seed.
 - `WorldGenerator` base class for column generators; the random-blocks debug world is one of them.
@@ -63,6 +67,8 @@ Sections:
 - Seasons and the analemma: the sun position is computed for an observer at `latitude_deg` with the sun's declination (axial tilt 23.44°) and the equation of time (orbit eccentricity 0.0167) over a 365.24-day year, so at the same clock time the sun traces a figure 8 over the year; summer days are longer and the noon sun higher. The game starts at the March equinox; HUD shows the calendar date. `analemma_enabled` turns it off.
 
 ### Changed
+- Streaming pipeline: generate (render distance + 1) -> light (when the 8 neighbor columns exist; the outer ring treats unloaded neighbors as solid) -> mesh (when the 8 neighbor columns are lit). Caves are dark now instead of lit by the sky everywhere.
+- `threading/worker_pool/low_priority_thread_ratio` raised to 0.75 so world jobs may use more worker threads.
 - `ChunkMesher` works on a padded 18³ volume (the chunk plus a border from its 26 neighbors): faces and AO are correct across chunk borders and neighbor lookups are plain index offsets; fully buried chunks are skipped. Editing a block on a chunk border re-meshes the neighbor chunks too.
 - Random ticks skip chunks without random-ticking blocks (tracked per chunk).
 - Shadow presets: Low = 2 cascades up to 48 blocks, High = 4 cascades up to 64 blocks (far shadows are under fog and cost draw calls).

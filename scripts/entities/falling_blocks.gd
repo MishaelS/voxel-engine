@@ -177,7 +177,7 @@ func _renderer(block_id: int) -> MultiMeshInstance3D:
 static func block_mesh(block_id: int) -> Mesh:
 	if not _meshes.has(block_id):
 		var mesh := ArrayMesh.new()
-		var surfaces := ChunkMesher.build(ChunkMesher.single_block(block_id))
+		var surfaces := ChunkMesher.build(ChunkMesher.single_block(block_id), ChunkMesher.full_light())
 		for layer: int in surfaces:
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, surfaces[layer])
 			mesh.surface_set_material(mesh.get_surface_count() - 1, BlockMaterials.get_material(layer))
