@@ -35,12 +35,13 @@ fog_sky_affect = 0.0
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("env")
 
-[node name="Sun" type="DirectionalLight3D" parent="." node_paths=PackedStringArray("world_environment")]
+[node name="Sun" type="DirectionalLight3D" parent="." node_paths=PackedStringArray("world_environment", "world")]
 transform = Transform3D(0.819152, 0.469846, -0.32899, 0, 0.573576, 0.819152, 0.573576, -0.67101, 0.469846, 0, 10, 0)
 light_energy = 1.2
 shadow_enabled = true
 script = ExtResource("4_sun")
 world_environment = NodePath("../WorldEnvironment")
+world = NodePath("../VoxelWorld")
 
 [node name="VoxelWorld" type="Node3D" parent="."]
 script = ExtResource("1_world")
@@ -57,7 +58,7 @@ script = ExtResource("2_camera")
 offset_left = 12.0
 offset_top = 12.0
 offset_right = 512.0
-offset_bottom = 400.0
+offset_bottom = 480.0
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 4
 script = ExtResource("3_hud")

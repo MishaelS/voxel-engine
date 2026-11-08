@@ -22,6 +22,17 @@ var layer: int = 0 # Blocks.Layer.OPAQUE
 ## Hide faces between two blocks of this same type (glass, water).
 var cull_self := false
 
+## Tick behavior (all optional), each called as f(world: VoxelWorld, pos: Vector3i):
+## - random_tick: picked at random a few times per chunk per tick
+##   (grass spreading, crops growing, leaves decaying).
+## - scheduled_tick: when a tick requested with VoxelWorld.schedule_tick()
+##   comes due (falling sand, flowing water, redstone delays).
+## - on_update: this block or one of its 6 neighbors changed
+##   ("block update"); usually schedules a tick.
+var random_tick := Callable()
+var scheduled_tick := Callable()
+var on_update := Callable()
+
 
 ## Same texture on every face.
 static func cube(block_name: String, tile: int) -> BlockType:
@@ -65,4 +76,19 @@ func set_side_overlay(tile: int) -> BlockType:
 
 func set_cull_self(value: bool = true) -> BlockType:
 	cull_self = value
+	return self
+
+
+func set_random_tick(handler: Callable) -> BlockType:
+	random_tick = handler
+	return self
+
+
+func set_scheduled_tick(handler: Callable) -> BlockType:
+	scheduled_tick = handler
+	return self
+
+
+func set_on_update(handler: Callable) -> BlockType:
+	on_update = handler
 	return self

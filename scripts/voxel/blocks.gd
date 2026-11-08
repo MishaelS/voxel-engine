@@ -43,6 +43,8 @@ static var cull_self_table := PackedByteArray()
 static var face_tiles := PackedInt32Array()    # [id * 6 + face]
 static var face_overlays := PackedInt32Array() # [id * 6 + face], -1 = none
 static var tints_linear := PackedColorArray()  # [id]
+# 1 if the block has a random tick handler: lets the world skip others fast.
+static var ticks_randomly := PackedByteArray()
 
 static var _registered := _register_all()
 
@@ -60,8 +62,8 @@ static func _register_all() -> bool:
 	register(_grass("grass_savanna", GRASS_SAVANNA))
 	register(BlockType.cube("cobblestone", 16))
 	register(BlockType.cube("bedrock", 17))
-	register(BlockType.cube("sand", 18))
-	register(BlockType.cube("gravel", 19))
+	register(_falling(BlockType.cube("sand", 18)))
+	register(_falling(BlockType.cube("gravel", 19)))
 	register(BlockType.column("sandstone", 176, 192, 208))
 	register(BlockType.cube("obsidian", 37))
 	register(BlockType.cube("water", 205).set_layer(Layer.TRANSLUCENT).set_cull_self())
@@ -107,7 +109,14 @@ static func _register_all() -> bool:
 
 static func _grass(block_name: String, tint: Color) -> BlockType:
 	# Top: grayscale grass tinted. Sides: dirt-based tile + tinted grass fringe.
-	return BlockType.column(block_name, 0, 3, 2).set_side_overlay(38).set_tint(tint)
+	return BlockType.column(block_name, 0, 3, 2).set_side_overlay(38).set_tint(tint) \
+		.set_random_tick(Callable(GrassBehavior, "random_tick"))
+
+
+## Sand, gravel: fall when the block below is air or water.
+static func _falling(block: BlockType) -> BlockType:
+	return block.set_on_update(Callable(FallingBlockBehavior, "on_update")) \
+		.set_scheduled_tick(Callable(FallingBlockBehavior, "scheduled_tick"))
 
 
 static func register(block: BlockType) -> int:
@@ -124,6 +133,7 @@ static func register(block: BlockType) -> int:
 	face_tiles.append_array(block.tiles)
 	face_overlays.append_array(block.overlays)
 	tints_linear.append(block.tint.srgb_to_linear())
+	ticks_randomly.append(1 if block.random_tick.is_valid() else 0)
 	return id
 
 
@@ -139,3 +149,7 @@ static func count() -> int:
 ## True if the block fully hides the faces of its neighbors (and casts AO).
 static func is_opaque(id: int) -> bool:
 	return is_opaque_table[id] == 1
+
+
+static func get_type(id: int) -> BlockType:
+	return types[id]

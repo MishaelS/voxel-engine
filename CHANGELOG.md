@@ -14,6 +14,11 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Game tick system (`scripts/core/tick_loop.gd`, autoload `TickLoop`): all game logic runs at a fixed 20 ticks per second independent of FPS, in ordered phases (world, entities, late); catch-up capped at 10 ticks per frame; `alpha` for interpolating visuals between ticks; measured TPS and ms per tick in the HUD; **P** freezes ticks, **.** steps one tick while frozen.
+- World clock in ticks (`scripts/voxel/world_clock.gd`): `game_time` (only grows) and `day_time` (24000 ticks per day, can be moved), `daylight_cycle` switch.
+- World ticks in `VoxelWorld`: scheduled block ticks (merged per position, capped per tick), random ticks (`random_tick_speed` = 3 per chunk per tick) and block updates sent to a changed block and its 6 neighbors; `get_block` / `set_block` in world coordinates.
+- Block tick handlers in `BlockType` (`random_tick`, `scheduled_tick`, `on_update`) and the first behaviors (`scripts/voxel/behaviors/`): grass spreads onto uncovered dirt and turns into dirt under opaque blocks; sand and gravel fall one block every 2 ticks.
+- Changed chunks are re-meshed on worker threads (`WorkerThreadPool`) from a snapshot and swapped in when ready, so block changes do not stall frames.
 - Cubic chunks of 16×16×16 blocks: `ChunkData` (`scripts/voxel/chunk_data.gd`), a flat one-byte-per-block array.
 - Block registry `Blocks` (`scripts/voxel/blocks.gd`) and `BlockType` (`scripts/voxel/block_type.gd`): per-face textures, optional per-face overlay, sRGB biome tint, render layer (opaque / cutout / translucent) and same-type face culling. New blocks are one `register()` call.
 - 52 block types: stone, dirt, 5 biome grasses (plains, forest, taiga, swamp, savanna), cobblestone, bedrock, sand, gravel, sandstone, obsidian, water; oak/birch/spruce logs, leaves and planks; coal/iron/gold/lapis/diamond/redstone ores; iron/gold/lapis/diamond blocks; glass; 16 wool colors; crafting table and furnace (front faces +Z for now).
@@ -32,8 +37,9 @@ Sections:
 - `VoxelWorld.generator` (`TERRAIN` / `RANDOM_BLOCKS`) and `random_density`; **R** regenerates the world with a new seed.
 - Retro sky shader (`shaders/sky.gdshader`): day/night color gradient, sunrise/sunset glow, textured sun and moon with halos (`assets/textures/sky/`, hidden below the horizon; the disc covers the sky and stars, the halo is added), pixel stars after dusk, flat layer of blocky drifting clouds. Details are skipped in the radiance cubemap; the sky updates incrementally at 64 px radiance.
 - Moon phases like the real Moon: the terminator is computed per texture pixel (crescent, quarter, gibbous, full), waxing lit on the right and waning on the left, the dark part keeps a faint earthshine, the halo and the moonlight follow the lit fraction. A full cycle takes `lunar_cycle_days` (8 by default; 29.5 is the real value).
-- Day/night cycle `DayNightCycle` (`scripts/day_night_cycle.gd`): sun path with tilt, warm low sun, dim bluish moonlight at night, drives the sky shader. Up/Down arrows change the time of day, Left/Right rotate the sun path, **T** toggles the automatic cycle (20 min per day), **M** skips to the next day. Days are counted at sunrise. HUD shows world generator, seed, day, clock time and moon phase.
+- Day/night cycle `DayNightCycle` (`scripts/day_night_cycle.gd`), driven by the world clock and interpolated between ticks: sun path, warm low sun, dim bluish moonlight at night, drives the sky shader. Up/Down arrows change the time of day, Left/Right rotate the sun path, **T** stops/starts time (daylight cycle, 24000 ticks = 20 min per day, on by default), **M** skips to the next day. Days are counted at sunrise. HUD shows world generator, seed, day, clock time and moon phase.
 - Distance fog colored by the sky (aerial perspective).
+- Seasons and the analemma: the sun position is computed for an observer at `latitude_deg` with the sun's declination (axial tilt 23.44°) and the equation of time (orbit eccentricity 0.0167) over a 365.24-day year, so at the same clock time the sun traces a figure 8 over the year; summer days are longer and the noon sun higher. The game starts at the March equinox; HUD shows the calendar date. `analemma_enabled` turns it off.
 
 ### Changed
 - Main scene renders a terrain chunk instead of a single voxel; camera moved to frame the chunk.

@@ -1,5 +1,5 @@
 extends Label
-## Simple HUD: FPS, camera position, render stats and a controls hint.
+## Simple HUD: FPS, ticks, camera position, render stats and a controls hint.
 
 @export var camera: Camera3D
 @export var world: VoxelWorld
@@ -19,6 +19,10 @@ func _process(_delta: float) -> void:
 		],
 		"Position: (%.1f, %.1f, %.1f)" % [pos.x, pos.y, pos.z],
 		"Window: %dx%d" % [get_window().size.x, get_window().size.y],
+		"Ticks: %.1f TPS (target %d), %.2f ms/tick, tick %d%s" % [
+			TickLoop.measured_tps, int(TickLoop.tick_rate), TickLoop.mspt, TickLoop.tick_count,
+			" [FROZEN]" if TickLoop.frozen else "",
+		],
 	])
 
 	if world and not world.stats.is_empty():
@@ -29,6 +33,7 @@ func _process(_delta: float) -> void:
 		lines.append("Faces: %d of %d (%.0f%% culled)" % [s.faces, s.faces_naive, culled])
 		lines.append("Triangles: %d, vertices: %d" % [s.triangles, s.vertices])
 		lines.append("Meshing: %.2f ms" % s.mesh_ms)
+		lines.append("Game time: %d ticks, scheduled ticks: %d" % [world.clock.game_time, world.scheduled_tick_count()])
 	if sun and sun.has_method("describe"):
 		lines.append("Time: %s" % sun.describe())
 
@@ -38,5 +43,6 @@ func _process(_delta: float) -> void:
 	lines.append("Shift - speed boost, wheel - speed")
 	lines.append("R - regenerate world, T - toggle day cycle, M - next day")
 	lines.append("Up/Down - time of day, Left/Right - rotate sun path")
+	lines.append("P - freeze ticks, . - step one tick (frozen)")
 	lines.append("F11 / Alt+Enter - toggle fullscreen, F3 - toggle VSync")
 	text = "\n".join(lines)

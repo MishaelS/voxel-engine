@@ -41,3 +41,11 @@ func get_block_or_air(x: int, y: int, z: int) -> int:
 ## Number of non-air blocks.
 func count_solid() -> int:
 	return VOLUME - blocks.count(Blocks.AIR)
+
+
+## Independent copy (e.g. a snapshot for meshing on a worker thread while
+## the original keeps changing on the main thread).
+func copy() -> ChunkData:
+	var result := ChunkData.new()
+	result.blocks = blocks.duplicate()
+	return result
