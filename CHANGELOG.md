@@ -22,10 +22,14 @@ Sections:
 - HUD shows chunk count, visible vs. naive face count, triangles, vertices and meshing time.
 - `WindowControls` autoload (`scripts/window_controls.gd`): F11 / Alt+Enter toggles fullscreen, minimum window size 640×360, UI scaled by the screen DPI factor (readable HUD on Retina).
 - HUD shows the current window size.
+- Baked per-vertex voxel ambient occlusion in `ChunkMesher`: corners and creases are darkened (0fps method: two side neighbors + diagonal), quads are split along the darker diagonal to avoid AO anisotropy.
+- F3 toggles VSync; HUD shows VSync state and frame time (total and render CPU).
 
 ### Changed
 - Main scene renders a terrain chunk instead of a single voxel; camera moved to frame the chunk.
 - The window starts maximized and is explicitly resizable.
+- VSync is off by default, so FPS is no longer capped at the monitor refresh rate.
+- Rendering optimized for high-DPI screens (measured on Apple M4, 3420×2090: 50 → ~155 FPS): SSAO removed (replaced by voxel AO), MSAA 2x replaced by FXAA, hard directional shadows.
 
 ### Removed
 - `VoxelBlock` (`scripts/voxel_block.gd`), replaced by chunk meshing.

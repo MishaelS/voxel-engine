@@ -17,7 +17,6 @@ sky = SubResource("sky")
 ambient_light_source = 3
 reflected_light_source = 2
 tonemap_mode = 2
-ssao_enabled = true
 
 [node name="Main" type="Node3D"]
 
