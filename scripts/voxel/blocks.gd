@@ -49,6 +49,8 @@ static var ticks_randomly := PackedByteArray()
 static var light_opacity_table := PackedByteArray()
 ## 1 if entities collide with the block (see BlockType.collides).
 static var collides_table := PackedByteArray()
+## 1 for liquids (see BlockType.liquid).
+static var liquid_table := PackedByteArray()
 
 static var _registered := _register_all()
 
@@ -70,19 +72,20 @@ static func _register_all() -> bool:
 	register(_falling(BlockType.cube("gravel", 19).set_hardness(0.6)))
 	register(BlockType.column("sandstone", 176, 192, 208).set_hardness(0.8))
 	register(BlockType.cube("obsidian", 37).set_hardness(10.0))
-	register(BlockType.cube("water", 205).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2) \
-		.set_collides(false).set_hardness(-1))
+	# Still water on top and bottom, flowing water on the sides (both animated, WaterAnimation).
+	register(BlockType.column("water", 205, 206).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2) \
+		.set_collides(false).set_hardness(-1).set_liquid())
 
 	# Trees
 	register(BlockType.column("oak_log", 21, 20).set_hardness(2.0))
 	register(BlockType.column("birch_log", 21, 117).set_hardness(2.0))
 	register(BlockType.column("spruce_log", 21, 116).set_hardness(2.0))
 	register(BlockType.cube("oak_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_OAK).set_light_opacity(1) \
-		.set_hardness(0.2).set_drop("none"))
+		.set_hardness(0.2).set_drop("none").set_fast_tile(53))
 	register(BlockType.cube("birch_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_BIRCH).set_light_opacity(1) \
-		.set_hardness(0.2).set_drop("none"))
+		.set_hardness(0.2).set_drop("none").set_fast_tile(53))
 	register(BlockType.cube("spruce_leaves", 132).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_SPRUCE).set_light_opacity(1) \
-		.set_hardness(0.2).set_drop("none"))
+		.set_hardness(0.2).set_drop("none").set_fast_tile(133))
 	register(BlockType.cube("oak_planks", 4).set_hardness(2.0))
 	register(BlockType.cube("birch_planks", 214).set_hardness(2.0))
 	register(BlockType.cube("spruce_planks", 198).set_hardness(2.0))
@@ -152,6 +155,7 @@ static func register(block: BlockType) -> int:
 		block.light_opacity = 15 if is_opaque_table[id] == 1 else 0
 	light_opacity_table.append(block.light_opacity)
 	collides_table.append(1 if block.collides else 0)
+	liquid_table.append(1 if block.liquid else 0)
 	return id
 
 
@@ -185,4 +189,25 @@ static func drop_of(id: int) -> int:
 
 ## Display name ("oak_planks" -> "Oak Planks").
 static func display_name(id: int) -> String:
-	return types[id].name.capitalize()
+	return Lang.t(types[id].name.capitalize())
+
+
+static var _fast_graphics := false
+
+
+## Fast graphics: blocks with a fast tile (leaves) become opaque with that
+## tile, Fancy: back to cutout. Returns true if anything changed (re-mesh).
+static func set_fast_graphics(fast: bool) -> bool:
+	if fast == _fast_graphics:
+		return false
+	_fast_graphics = fast
+	for block in types:
+		if block.fast_tile < 0:
+			continue
+		var id := block.id
+		var opaque := fast
+		is_opaque_table[id] = 1 if opaque else 0
+		layer_table[id] = Layer.OPAQUE if opaque else block.layer
+		for face in BlockType.FACE_COUNT:
+			face_tiles[id * BlockType.FACE_COUNT + face] = block.fast_tile if fast else block.tiles[face]
+	return true

@@ -29,13 +29,12 @@ const WW := W * W
 ## arrays of the center column, bottom to top.
 static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArray]:
 	var opacity_of := Blocks.light_opacity_table
-	# Light opacity of every cell of the area, index x + W * (z + W * y).
-	var opacity := PackedByteArray()
-	opacity.resize(WW * H)
 	var stored := PackedByteArray()
 	stored.resize(WW * H)
 	var area_heights := PackedInt32Array()
 	area_heights.resize(WW)
+	# Each column as one array (index x + 16 * (z + 16 * y)): 8 appends each.
+	var columns: Array[PackedByteArray] = []
 	for c in 9:
 		var ox := (c / 3) * 16
 		var oz := (c % 3) * 16
@@ -43,17 +42,24 @@ static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArr
 		for z in 16:
 			for x in 16:
 				area_heights[(ox + x) + W * (oz + z)] = column_heights[x + 16 * z]
-		var column: Array = chunks[c]
-		for k in WorldGenerator.HEIGHT_CHUNKS:
-			var blocks: PackedByteArray = column[k]
-			var i := 0
-			for ly in 16:
-				var row := ox + W * (oz + W * (k * 16 + ly))
-				for lz in 16:
-					var base := row + W * lz
-					for lx in 16:
-						opacity[base + lx] = opacity_of[blocks[i]]
-						i += 1
+		var whole := PackedByteArray()
+		for chunk: PackedByteArray in chunks[c]:
+			whole.append_array(chunk)
+		columns.append(whole)
+	# Block ids of the whole area, index x + W * (z + W * y), built in index
+	# order from 16-block rows (native copies; a per-block loop here was most
+	# of the time). Opacity is looked up from the id where needed.
+	var area := PackedByteArray()
+	for y in H:
+		for cz in 3:
+			var west := columns[cz]
+			var middle := columns[3 + cz]
+			var east := columns[6 + cz]
+			for lz in 16:
+				var row := 16 * (lz + 16 * y)
+				area.append_array(west.slice(row, row + 16))
+				area.append_array(middle.slice(row, row + 16))
+				area.append_array(east.slice(row, row + 16))
 
 	# 1. Straight down from the sky through leaves / water.
 	for column_index in WW:
@@ -61,7 +67,7 @@ static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArr
 		var level := MAX
 		var cell := column_index + WW * y
 		while y >= 0:
-			var op := opacity[cell]
+			var op := opacity_of[area[cell]]
 			if op >= MAX:
 				break
 			level -= op
@@ -99,7 +105,7 @@ static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArr
 					if level <= 1:
 						break
 					var target := neighbor_index + WW * y
-					if stored[target] < level - 1 and opacity[target] < MAX:
+					if stored[target] < level - 1 and opacity_of[area[target]] < MAX:
 						queue.append(cell)
 
 	# 3. Flood fill.
@@ -144,7 +150,7 @@ static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArr
 				ny -= 1
 			if ny > area_heights[target_column]:
 				continue # open sky: already full
-			var op := opacity[target]
+			var op := opacity_of[area[target]]
 			if op >= MAX:
 				continue
 			var candidate := level - (op if op > 1 else 1)
@@ -152,22 +158,22 @@ static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArr
 				stored[target] = candidate
 				queue.append(target)
 
-	# 4. Light of the center column.
+	# 4. Light of the center column: open sky above the heightmap is 15
+	# (written now, the passes are done), then 16-block rows are copied.
+	for lz in 16:
+		for lx in 16:
+			var column_index := (16 + lx) + W * (16 + lz)
+			var cell := column_index + WW * (area_heights[column_index] + 1)
+			while cell < WW * H:
+				stored[cell] = MAX
+				cell += WW
 	var result: Array[PackedByteArray] = []
 	for k in WorldGenerator.HEIGHT_CHUNKS:
 		var light := PackedByteArray()
-		light.resize(ChunkData.VOLUME)
-		var i := 0
 		for ly in 16:
 			var y := k * 16 + ly
 			for lz in 16:
 				var base := 16 + W * (16 + lz + W * y)
-				var height_base := 16 + W * (16 + lz)
-				for lx in 16:
-					if y > area_heights[height_base + lx]:
-						light[i] = MAX
-					else:
-						light[i] = stored[base + lx]
-					i += 1
+				light.append_array(stored.slice(base, base + 16))
 		result.append(light)
 	return result

@@ -88,10 +88,5 @@ static func _block_mesh(id: int) -> ArrayMesh:
 		_material = ShaderMaterial.new()
 		_material.shader = preload("res://shaders/block_icon.gdshader")
 		_material.set_shader_parameter("tiles",
-			BlockMaterials.get_material(Blocks.Layer.OPAQUE).get_shader_parameter("tiles"))
-	var mesh := ArrayMesh.new()
-	var surfaces := ChunkMesher.build(ChunkMesher.single_block(id), ChunkMesher.full_light())
-	for layer: int in surfaces:
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, surfaces[layer])
-		mesh.surface_set_material(mesh.get_surface_count() - 1, _material)
-	return mesh
+			BlockMaterials.tiles())
+	return ChunkMesher.block_mesh(id, _material)

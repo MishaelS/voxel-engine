@@ -35,6 +35,12 @@ var slipperiness := 0.6
 ## What breaking it gives in survival: "" = the block itself, "none" =
 ## nothing, otherwise a block name (stone -> cobblestone).
 var drop := ""
+## Liquids (water) hide their faces toward other translucent blocks (ice
+## on water), like the classic game.
+var liquid := false
+## Tile used with Fast graphics (-1 = none): the block is then drawn opaque
+## with this tile, like the classic game's fast leaves.
+var fast_tile := -1
 
 ## Tick behavior (all optional), each called as f(world: VoxelWorld, pos: Vector3i):
 ## - random_tick: picked at random a few times per chunk per tick
@@ -115,6 +121,16 @@ func set_slipperiness(value: float) -> BlockType:
 
 func set_drop(block_name: String) -> BlockType:
 	drop = block_name
+	return self
+
+
+func set_fast_tile(tile: int) -> BlockType:
+	fast_tile = tile
+	return self
+
+
+func set_liquid(value: bool = true) -> BlockType:
+	liquid = value
 	return self
 
 

@@ -88,9 +88,10 @@ func sanitize(value: Variant) -> Variant:
 			return clampf(snappedf(float(value), step), min_value, max_value)
 
 
-## "VSync: ON", "Shadows: High", "FOV: 75".
+## "VSync: ON", "Shadows: High", "FOV: 75", in the current language
+## (formatters translate their own texts with Lang.t).
 func display_text() -> String:
-	return "%s: %s" % [label, display_value()]
+	return "%s: %s" % [Lang.t(label), display_value()]
 
 
 func display_value() -> String:
@@ -99,8 +100,8 @@ func display_value() -> String:
 		return formatter.call(value)
 	match kind:
 		Kind.BOOL:
-			return "ON" if value else "OFF"
+			return Lang.t("ON") if value else Lang.t("OFF")
 		Kind.CHOICE:
-			return choices[int(value)]
+			return Lang.t(choices[int(value)])
 		_:
 			return str(int(value)) if step >= 1.0 else str(snappedf(value, step))

@@ -166,20 +166,22 @@ func generate_blocks(cx: int, cz: int) -> PackedByteArray:
 			var wx := cx * 16 + x
 			var wz := cz * 16 + z
 			biomes[x + 16 * z] = biome_index(temperature(wx, wz), humidity(wx, wz))
-	_shape_terrain(blocks, cx, cz)
-	_replace_surface(blocks, cx, cz, biomes)
+	var top := _shape_terrain(blocks, cx, cz)
+	_replace_surface(blocks, cx, cz, biomes, top)
 	_carve_caves(blocks, cx, cz)
 	var rng := column_rng(cx, cz, 100)
-	_place_ores(blocks, rng)
+	_place_ores(blocks, rng, top)
 	_place_trees(blocks, cx, cz, biomes, rng)
 	_freeze(blocks, biomes)
 	return blocks
 
 
 ## Step 1: density field on a coarse grid, interpolated to blocks.
-func _shape_terrain(blocks: PackedByteArray, cx: int, cz: int) -> void:
+## Returns the highest stone block (used to skip ore veins in the air).
+func _shape_terrain(blocks: PackedByteArray, cx: int, cz: int) -> int:
 	var stone: int = _id["stone"]
 	var water: int = _id["water"]
+	var top := -1
 	var stride_y := CELLS_Y + 1
 	var stride_z := (CELLS_X + 1) * stride_y
 	var density := PackedFloat32Array()
@@ -248,31 +250,34 @@ func _shape_terrain(blocks: PackedByteArray, cx: int, cz: int) -> void:
 				var d011 := density[base + stride_y + 1]
 				var d110 := density[base + stride_z + 1]
 				var d111 := density[base + stride_z + stride_y + 1]
+				# Lerps written out (the same math as lerpf, without the calls).
 				for sy in GRID_Y:
 					var ty := sy / float(GRID_Y)
 					var y := gy * GRID_Y + sy
-					var a00 := lerpf(d000, d010, ty)
-					var a01 := lerpf(d001, d011, ty)
-					var a10 := lerpf(d100, d110, ty)
-					var a11 := lerpf(d101, d111, ty)
+					var a00 := d000 + (d010 - d000) * ty
+					var a01 := d001 + (d011 - d001) * ty
+					var a10 := d100 + (d110 - d100) * ty
+					var a11 := d101 + (d111 - d101) * ty
 					for sx in GRID_X:
 						var tx := sx / float(GRID_X)
-						var b0 := lerpf(a00, a10, tx)
-						var b1 := lerpf(a01, a11, tx)
-						var x := gx * GRID_X + sx
+						var b0 := a00 + (a10 - a00) * tx
+						var b1 := a01 + (a11 - a01) * tx
+						var row := gx * GRID_X + sx + 16 * (gz * GRID_X + 16 * y)
 						for sz in GRID_X:
-							var value := lerpf(b0, b1, sz / float(GRID_X))
-							var id := Blocks.AIR
+							var value := b0 + (b1 - b0) * (sz / float(GRID_X))
 							if value > 0.0:
-								id = stone
+								blocks[row + 16 * sz] = stone
+								if y > top:
+									top = y
 							elif y < SEA_LEVEL:
-								id = water
-							if id != Blocks.AIR:
-								blocks[x + 16 * (gz * GRID_X + sz + 16 * y)] = id
+								blocks[row + 16 * sz] = water
+	return top
 
 
 ## Step 3: biome surface, beaches and bedrock, top-down per block column.
-func _replace_surface(blocks: PackedByteArray, cx: int, cz: int, biomes: PackedByteArray) -> void:
+## `stone_top`: the highest stone; above it (and above the sea) is only air.
+func _replace_surface(blocks: PackedByteArray, cx: int, cz: int, biomes: PackedByteArray, stone_top: int) -> void:
+	var start_y := mini(maxi(stone_top, SEA_LEVEL - 1), HEIGHT - 1)
 	var rng := column_rng(cx, cz, 1)
 	var stone: int = _id["stone"]
 	var water: int = _id["water"]
@@ -298,7 +303,7 @@ func _replace_surface(blocks: PackedByteArray, cx: int, cz: int, biomes: PackedB
 			for y in range(1, 5):
 				if rng.randi_range(0, 4) >= y:
 					bedrock_mask |= 1 << y
-			for y in range(HEIGHT - 1, -1, -1):
+			for y in range(start_y, -1, -1):
 				var i := x + 16 * (z + 16 * y)
 				if y <= 4 and (bedrock_mask >> y) & 1 == 1:
 					blocks[i] = bedrock
@@ -458,17 +463,20 @@ func _carve_ellipsoid(blocks: PackedByteArray, cx: int, cz: int, center: Vector3
 
 
 ## Step 5: ore veins and dirt / gravel pockets, only inside stone.
-func _place_ores(blocks: PackedByteArray, rng: RandomNumberGenerator) -> void:
+## `top`: the highest stone in the column; spheres above it only meet air
+## and are skipped (their random numbers are still drawn, so the result is
+## the same).
+func _place_ores(blocks: PackedByteArray, rng: RandomNumberGenerator, top: int) -> void:
 	var stone: int = _id["stone"]
 	for ore: Array in ORES:
 		var id: int = _id[ore[0]]
 		for vein in ore[1]:
 			var start := Vector3(rng.randf() * 16.0, rng.randi_range(0, ore[3] - 1), rng.randf() * 16.0)
-			_place_vein(blocks, rng, id, stone, ore[2], start)
+			_place_vein(blocks, rng, id, stone, ore[2], start, top)
 
 
 ## A vein: spheres along a short random line, like the classic ore veins.
-func _place_vein(blocks: PackedByteArray, rng: RandomNumberGenerator, id: int, stone: int, size: int, start: Vector3) -> void:
+func _place_vein(blocks: PackedByteArray, rng: RandomNumberGenerator, id: int, stone: int, size: int, start: Vector3, top: int) -> void:
 	var angle := rng.randf() * PI
 	var half := Vector3(sin(angle), 0.0, cos(angle)) * size / 8.0
 	var a := start + half + Vector3(0, rng.randi_range(0, 2) - 1, 0)
@@ -483,10 +491,14 @@ func _place_vein(blocks: PackedByteArray, rng: RandomNumberGenerator, id: int, s
 		var y1 := mini(floori(center.y + radius), HEIGHT - 1)
 		var z0 := maxi(floori(center.z - radius), 0)
 		var z1 := mini(floori(center.z + radius), 15)
-		for y in range(y0, y1 + 1):
+		if y0 > top:
+			continue
+		for y in range(y0, mini(y1, top) + 1):
 			var dy := y + 0.5 - center.y
 			for z in range(z0, z1 + 1):
 				var dz := z + 0.5 - center.z
+				if dy * dy + dz * dz >= radius_squared:
+					continue # this row is outside the sphere
 				var row := 16 * (z + 16 * y)
 				for x in range(x0, x1 + 1):
 					var dx := x + 0.5 - center.x

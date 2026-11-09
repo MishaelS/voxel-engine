@@ -73,7 +73,7 @@ func _ready() -> void:
 	source.origin = player
 	source.output = add_message
 	_build_ui()
-	add_message("Press T to chat, / to enter a command (Tab completes, /help lists commands)", CommandSource.MessageKind.INFO)
+	add_message(Lang.t("Press T to chat, / to enter a command (Tab completes, /help lists commands)"), CommandSource.MessageKind.INFO)
 
 
 func is_open() -> bool:

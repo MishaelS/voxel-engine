@@ -14,6 +14,12 @@
 [ext_resource type="Script" path="res://scripts/ui/hotbar.gd" id="12_hotbar"]
 [ext_resource type="Script" path="res://scripts/player/block_interaction.gd" id="13_interaction"]
 [ext_resource type="Script" path="res://scripts/ui/inventory/inventory_screen.gd" id="14_inventory"]
+[ext_resource type="Script" path="res://scripts/render/atmosphere.gd" id="15_atmosphere"]
+[ext_resource type="Script" path="res://scripts/game.gd" id="16_game"]
+[ext_resource type="Script" path="res://scripts/ui/status_bars.gd" id="17_health"]
+[ext_resource type="Script" path="res://scripts/ui/death_screen.gd" id="18_death"]
+[ext_resource type="Script" path="res://scripts/render/shader_pack_applier.gd" id="19_shaders"]
+[ext_resource type="Script" path="res://scripts/render/screenshots.gd" id="20_screenshots"]
 
 [sub_resource type="ShaderMaterial" id="sky_mat"]
 shader = ExtResource("5_sky")
@@ -38,7 +44,10 @@ fog_density = 0.004
 fog_aerial_perspective = 1.0
 fog_sky_affect = 0.0
 
-[node name="Main" type="Node3D"]
+[node name="Main" type="Node3D" node_paths=PackedStringArray("world", "player")]
+script = ExtResource("16_game")
+world = NodePath("VoxelWorld")
+player = NodePath("Player")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("env")
@@ -88,6 +97,22 @@ layout_mode = 3
 script = ExtResource("12_hotbar")
 player = NodePath("../../Player")
 
+[node name="StatusBars" type="Control" parent="UI" node_paths=PackedStringArray("player")]
+layout_mode = 3
+script = ExtResource("17_health")
+player = NodePath("../../Player")
+
+[node name="DeathScreen" type="Control" parent="UI" node_paths=PackedStringArray("player", "world")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("18_death")
+player = NodePath("../../Player")
+world = NodePath("../../VoxelWorld")
+
 [node name="Chat" type="Control" parent="UI" node_paths=PackedStringArray("world", "player")]
 layout_mode = 3
 anchors_preset = 15
@@ -123,10 +148,8 @@ script = ExtResource("9_menu")
 world = NodePath("../../VoxelWorld")
 chat = NodePath("../Chat")
 
-[node name="SettingsApplier" type="Node" parent="." node_paths=PackedStringArray("camera", "sun", "world_environment", "world", "hud")]
+[node name="SettingsApplier" type="Node" parent="." node_paths=PackedStringArray("world_environment", "world", "hud")]
 script = ExtResource("10_settings")
-camera = NodePath("../Player/Camera")
-sun = NodePath("../Sun")
 world_environment = NodePath("../WorldEnvironment")
 world = NodePath("../VoxelWorld")
 hud = NodePath("../UI/DebugScreen")
@@ -136,3 +159,22 @@ script = ExtResource("13_interaction")
 player = NodePath("../Player")
 world = NodePath("../VoxelWorld")
 hotbar = NodePath("../UI/Hotbar")
+
+[node name="Atmosphere" type="Node" parent="." node_paths=PackedStringArray("world_environment", "sun", "player", "world")]
+script = ExtResource("15_atmosphere")
+world_environment = NodePath("../WorldEnvironment")
+sun = NodePath("../Sun")
+player = NodePath("../Player")
+world = NodePath("../VoxelWorld")
+
+[node name="ShaderPackApplier" type="Node" parent="." node_paths=PackedStringArray("sun", "world_environment")]
+script = ExtResource("19_shaders")
+sun = NodePath("../Sun")
+world_environment = NodePath("../WorldEnvironment")
+
+[node name="Screenshots" type="Node" parent="." node_paths=PackedStringArray("player", "world", "ui", "chat")]
+script = ExtResource("20_screenshots")
+player = NodePath("../Player")
+world = NodePath("../VoxelWorld")
+ui = NodePath("../UI")
+chat = NodePath("../UI/Chat")

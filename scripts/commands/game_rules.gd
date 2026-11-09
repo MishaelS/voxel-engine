@@ -14,6 +14,12 @@ static func _register_all() -> bool:
 	register("doDaylightCycle", BoolArgument.new(),
 		func(world: VoxelWorld) -> Variant: return world.clock.daylight_cycle,
 		func(world: VoxelWorld, value: Variant) -> void: world.clock.daylight_cycle = value)
+	register("keepInventory", BoolArgument.new(),
+		func(world: VoxelWorld) -> Variant: return world.keep_inventory,
+		func(world: VoxelWorld, value: Variant) -> void: world.keep_inventory = value)
+	register("naturalRegeneration", BoolArgument.new(),
+		func(world: VoxelWorld) -> Variant: return world.natural_regeneration,
+		func(world: VoxelWorld, value: Variant) -> void: world.natural_regeneration = value)
 	register("randomTickSpeed", IntegerArgument.new(0, 4096),
 		func(world: VoxelWorld) -> Variant: return world.random_tick_speed,
 		func(world: VoxelWorld, value: Variant) -> void: world.random_tick_speed = value)

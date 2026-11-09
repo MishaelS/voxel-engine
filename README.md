@@ -1,18 +1,23 @@
-# voxel-engine
+# Voxel Engine Bedrock Edition
 
-A voxel engine for Godot 4.5.
+A voxel engine for Godot 4.5 by MishaelS.
 
 ## Running
-Open the project folder in Godot 4.5+ (Import → `project.godot`) and press F5.
+Open the project folder in Godot 4.5+ (Import → `project.godot`) and press F5: the title screen
+opens (Singleplayer → select or create a world). Worlds are saved in `user://saves/<world>/`.
+Running `scenes/main.tscn` directly (F6) also goes to the title screen first.
 Controls
 * LMB: capture the mouse, then break blocks (survival: hold); RMB: place the selected block; MMB: pick the targeted block
 * 1-9 / mouse wheel: hotbar slot; E: inventory (survival: 2x2 crafting; creative: all blocks)
 * F3: debug screen; F4: toggle VSync
+* F1: hide GUI; F2: screenshot; F6: isometric camera (Z / X turn, wheel zooms); F7: isometric screenshot of the whole area
 * Esc: menu (pauses the game): Options - video, controls (key rebinding), world
 * WASD: walk; Space: jump (creative: double-tap to fly, then Space / Shift up and down)
 * Ctrl or double-tap W: sprint; Shift: sneak (slower, doesn't fall off edges)
-* `/gamemode survival|creative`: game mode (the game starts in creative)
-* R: regenerate the world with a new seed
+* `/gamemode survival|creative`: game mode (chosen when creating a world)
+* Survival: health and hunger like the classic game (fall damage, starvation, natural healing at full food)
+* R: regenerate the world with a new seed (unsaved test world only)
+* Esc → Save and Quit to Title; the world also autosaves every 45 s and when the window closes
 * Up/Down arrows: time of day, Left/Right: rotate the sun path
 * T: open the chat, /: open it with a command (Tab completes, Up/Down choose, Esc closes)
 * P: freeze game ticks, . (period): run one tick while frozen
@@ -31,6 +36,27 @@ define("video", Setting.range_of("render_scale", "Render Scale", 50, 100, 100, 5
 
 A new setting in an existing category appears in its menu automatically; apply it in
 `Settings._apply_global` (window-level) or `SettingsApplier._apply` (scene nodes).
+
+## Video settings and performance
+Options → Video Settings is laid out like the classic game, with Details, Quality, Performance and
+Shaders sections and presets: **Low** for weak computers (fast graphics, short render distance, 75%
+render scale, Classic shaders), **Medium**, **High** for powerful ones (far render distance, Dynamic
+Lighting). Modern optimizations: cave culling (chunks you can't see are not drawn), chunks in front
+of the camera built first, lower FPS in the background, compressed vertex data, worker-thread
+generation / lighting / meshing.
+
+## Languages
+Options → Language... switches between English and Russian. Texts are written in English;
+`assets/lang/<code>.lang` maps each one to its translation (`English text=Перевод`). Labels and
+buttons translate themselves; texts built in code go through `Lang.t()`. Add a language with a new
+.lang file and a line in `Lang.LANGUAGES` (`scripts/core/lang.gd`).
+
+## Shader packs
+Options → Shaders... chooses the lighting: **Classic** (like the original game, the default) or
+**Dynamic Lighting** (real-time sun, moon and shadows). New Pack copies the selected pack into your
+own (`user://shaderpacks/<name>.cfg`), whose options (sliders, toggles) you can change. A new option
+is one `Setting` in `ShaderPack._definitions()` plus applying it in `BlockMaterials.apply_pack()` (block
+shaders) or `ShaderPackApplier` (light, environment).
 
 ## Commands
 Type `/help` in the chat. Commands are trees of literals and typed arguments; parsing, suggestions,
@@ -61,10 +87,14 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 ```
 
 ## Structure
-* `scenes/main.tscn` - main scene (sky, sun, voxel world, camera, HUD)
+* `scenes/title.tscn` - title screen (panorama, logo, world selection and creation)
+* `scenes/main.tscn` - game scene (sky, sun, voxel world, player, HUD); `scripts/game.gd` saves and shows the loading screen
+* `scripts/save/world_save.gd` - saved worlds: level.cfg (world, time, rules, player) and changed columns
+* `scripts/ui/title/` - title screen and its live world panorama
+* `scripts/ui/loading_screen.gd` - loading screen with the island that builds itself as the world loads
 * `assets/textures/terrain.png` - block texture atlas (16×16 tiles)
 * `assets/textures/sky/` - sun and moon textures (32×32, 8×8 disc with a halo)
-* `shaders/` - block shaders (opaque, cutout, translucent) and the sky shader
+* `shaders/` - block shaders (opaque, cutout, translucent with animated water, icon, held block, cracks), sky, clouds, screen overlay
 * `scripts/voxel/blocks.gd` - block registry: all block types and their atlas tiles
 * `scripts/voxel/block_type.gd` - block type description (faces, overlay, tint, render layer)
 * `scripts/voxel/block_materials.gd` - atlas → Texture2DArray, one material per render layer
@@ -78,10 +108,17 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/commands/` - command system: dispatcher, nodes, argument types, game rules, built-in commands
 * `scripts/player/player.gd` - the player: classic movement physics (20 steps/s, box collision), camera, game mode
 * `scripts/player/inventory.gd` - 36-slot inventory (hotbar + main), stacks of 64
+* `scripts/player/food_stats.gd` - hunger: food, saturation, exhaustion, healing and starvation
+* `scripts/ui/status_bars.gd`, `scripts/ui/death_screen.gd` - hearts and food, the death screen
 * `scripts/player/crafting.gd` - shaped crafting recipes
 * `scripts/player/block_interaction.gd` - breaking (survival progress and cracks), placing, picking blocks
 * `scripts/ui/inventory/` - inventory windows (survival / creative) and the item slot widget
 * `scripts/ui/block_icons.gd` - block icons rendered by the GPU (orthographic view of the block mesh)
+* `scripts/player/held_item.gd` - the block in hand (swing and equip animations)
+* `scripts/render/atmosphere.gd` - fog colored like the sky, underwater fog and tint, vignette, cloud color
+* `scripts/render/clouds.gd` - 3D clouds driven by the shader (no per-frame CPU work)
+* `scripts/render/shader_packs.gd`, `shader_pack.gd`, `shader_pack_applier.gd` - shader packs (Classic, Dynamic Lighting, your own)
+* `scripts/render/water_animation.gd` - animated still / flowing water textures like the classic Beta game
 * `scripts/ui/chat.gd` - chat with command suggestions and history
 * `scripts/ui/ui_theme.gd` - shared UI look (pixel font, GUI widget textures)
 * `scripts/ui/menu/` - in-game menu: menu stack, screen base, screens

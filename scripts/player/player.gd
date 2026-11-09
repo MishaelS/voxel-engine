@@ -21,6 +21,8 @@ extends Node3D
 ## the feet; setting it from outside (spawn, /tp) teleports.
 
 signal game_mode_changed(mode: GameMode)
+## Health went to 0 (survival); the death screen offers to respawn.
+signal died
 
 enum GameMode { SURVIVAL, CREATIVE }
 
@@ -45,6 +47,22 @@ const DOUBLE_TAP_TICKS := 7
 const REACH_SURVIVAL := 4.5
 const REACH_CREATIVE := 5.0
 const MOUSE_SENSITIVITY := 0.002
+const MAX_HEALTH := 20
+const HURT_TICKS := 10
+## After a hit no damage is taken for 20 ticks, except a stronger hit in
+## the first half (only the difference counts), like the classic game.
+const INVULNERABLE_TICKS := 20
+## Ticks of the death animation (the view falls over).
+const DEATH_TICKS := 20
+## Falls longer than this many blocks hurt: 1 half heart per extra block.
+const SAFE_FALL := 3.0
+## Below this height the void hurts (4 per half second), even in creative.
+const VOID_Y := -64.0
+## Blocks in a new player's hotbar (registry names).
+const STARTING_BLOCKS := [
+	"grass_plains", "dirt", "stone", "cobblestone", "oak_planks",
+	"oak_log", "glass", "oak_leaves", "sand",
+]
 
 @export var world: VoxelWorld
 @export var game_mode: GameMode = GameMode.CREATIVE:
@@ -55,12 +73,29 @@ const MOUSE_SENSITIVITY := 0.002
 		game_mode_changed.emit(value)
 
 var inventory := Inventory.new()
+## Hotbar slot in hand (0..8).
+var selected_slot := 0
 var camera: Camera3D
+## The block drawn in the hand (child of the camera).
+var held_item: HeldItem
 
 ## Velocity in blocks per tick.
 var velocity := Vector3.ZERO
 var on_ground := false
 var flying := false
+## Health in half hearts (20 = 10 hearts), like the classic game. Only
+## survival takes damage (falling, the void).
+var health := MAX_HEALTH
+var dead := false
+## Ticks left of the hurt effect (camera tilt, blinking hearts); no new
+## damage while it lasts.
+var hurt_ticks := 0
+## Hunger (food, saturation, exhaustion); heals and starves (survival).
+var food := FoodStats.new()
+## Ticks since death (the death animation).
+var death_ticks := 0
+var _invulnerable := 0
+var _last_damage := 0
 var sprinting := false
 var sneaking := false
 var in_water := false
@@ -72,6 +107,7 @@ var _x := 0.0
 var _y := 0.0
 var _z := 0.0
 var _prev := Vector3.ZERO
+var _fall_distance := 0.0
 var _accumulator := 0.0
 var _last_rendered := Vector3.INF
 var _yaw := 0.0
@@ -95,15 +131,61 @@ func _ready() -> void:
 		camera.name = "Camera"
 		add_child(camera)
 	camera.current = true
+	held_item = HeldItem.new()
+	held_item.player = self
+	camera.add_child(held_item)
 	_yaw = rotation.y
 	rotation = Vector3(0, _yaw, 0)
 	_teleported()
-	for block_name: String in Hotbar.DEFAULT_BLOCKS:
-		inventory.add(Blocks.id_of(block_name), 1)
+	var save := WorldSave.current
+	if save:
+		game_mode = save.game_mode as GameMode
+	var saved: Dictionary = save.state.get("player", {}) if save else {}
+	if not saved.is_empty():
+		load_state(saved)
+	elif is_creative():
+		# A new creative world starts with some blocks; survival with nothing.
+		for block_name: String in STARTING_BLOCKS:
+			inventory.add(Blocks.id_of(block_name), 1)
+
+
+## Player state for the world save (the position is restored by VoxelWorld).
+func save_state() -> Dictionary:
+	return {
+		"position": Vector3(_x, _y, _z), "yaw": _yaw, "pitch": _pitch,
+		"flying": flying, "selected_slot": selected_slot,
+		"inventory_ids": inventory.ids, "inventory_counts": inventory.counts,
+		"health": health if not dead else MAX_HEALTH,
+		"food": food.save_state() if not dead else FoodStats.new().save_state(),
+	}
+
+
+func load_state(saved: Dictionary) -> void:
+	_yaw = saved.get("yaw", _yaw)
+	_pitch = saved.get("pitch", 0.0)
+	flying = saved.get("flying", false) and is_creative()
+	selected_slot = saved.get("selected_slot", 0)
+	health = clampi(saved.get("health", MAX_HEALTH), 1, MAX_HEALTH)
+	food.load_state(saved.get("food", {}))
+	var ids: PackedInt32Array = saved.get("inventory_ids", PackedInt32Array())
+	var counts: PackedInt32Array = saved.get("inventory_counts", PackedInt32Array())
+	for slot in mini(ids.size(), Inventory.SIZE):
+		# Ids of blocks that no longer exist are dropped.
+		var id := ids[slot] if ids[slot] < Blocks.count() else Blocks.AIR
+		inventory.set_slot(slot, id, counts[slot] if slot < counts.size() else 0)
 
 
 func is_creative() -> bool:
 	return game_mode == GameMode.CREATIVE
+
+
+func held_block() -> int:
+	return inventory.id_at(selected_slot)
+
+
+## Arm swing (breaking, placing), shown by the block in hand.
+func swing() -> void:
+	held_item.swing()
 
 
 func reach() -> float:
@@ -182,12 +264,21 @@ func _teleported() -> void:
 	_last_rendered = global_position
 	velocity = Vector3.ZERO
 	_accumulator = 0.0
+	_fall_distance = 0.0
 
 
 func _update_camera(alpha: float, delta: float) -> void:
 	var target_eye := EYE_HEIGHT - (SNEAK_EYE_DROP if sneaking else 0.0)
 	_eye = move_toward(_eye, target_eye, delta * 1.0)
-	var transform_3d := Transform3D(Basis(Vector3.RIGHT, _pitch), Vector3(0, _eye, 0))
+	var eye := _eye
+	var death_roll := 0.0
+	if dead:
+		# The classic death: the body falls over sideways, the view with it.
+		var t := minf((death_ticks + alpha) / DEATH_TICKS, 1.0)
+		t = sqrt(t)
+		eye = lerpf(_eye, 0.2, t)
+		death_roll = deg_to_rad(40.0) * t
+	var transform_3d := Transform3D(Basis(Vector3.BACK, death_roll) * Basis(Vector3.RIGHT, _pitch), Vector3(0, eye, 0))
 	if Settings.get_value("view_bobbing"):
 		# The classic view bobbing: a figure-eight sway that follows steps.
 		var walked := -lerpf(_prev_walked, _walked, alpha)
@@ -197,6 +288,11 @@ func _update_camera(alpha: float, delta: float) -> void:
 		sway = sway * Transform3D(Basis(Vector3.BACK, deg_to_rad(sin(phase) * bob * 3.0)), Vector3.ZERO)
 		sway = sway * Transform3D(Basis(Vector3.RIGHT, deg_to_rad(absf(cos(phase - 0.2) * bob) * 5.0)), Vector3.ZERO)
 		transform_3d = Transform3D(Basis(), transform_3d.origin) * sway * Transform3D(transform_3d.basis, Vector3.ZERO)
+	if hurt_ticks > 0:
+		# The classic hurt tilt: a quick roll that settles back.
+		var f := clampf((hurt_ticks - alpha) / HURT_TICKS, 0.0, 1.0)
+		var roll := sin(f * f * f * f * PI) * deg_to_rad(14.0)
+		transform_3d = Transform3D(Basis(Vector3.BACK, -roll), Vector3.ZERO) * transform_3d
 	camera.transform = transform_3d
 	var base_fov: float = Settings.get_value("fov")
 	camera.fov = clampf(base_fov * lerpf(_prev_fov_factor, _fov_factor, alpha), 1.0, 170.0)
@@ -211,7 +307,13 @@ func _tick() -> void:
 	_prev_fov_factor = _fov_factor
 	_jump_tap = maxi(_jump_tap - 1, 0)
 	_forward_tap = maxi(_forward_tap - 1, 0)
-	if world and not world.is_inside(Vector3i(floori(_x), 0, floori(_z))):
+	hurt_ticks = maxi(hurt_ticks - 1, 0)
+	_invulnerable = maxi(_invulnerable - 1, 0)
+	if dead:
+		death_ticks += 1
+		return
+	_update_health()
+	if world and not world.is_inside(Vector3i(floori(_x), 0, floori(_z))) and _y > 0.0:
 		return # the ground is not loaded yet: wait in place
 
 	var playing := not GameInput.is_blocked()
@@ -224,13 +326,13 @@ func _tick() -> void:
 		strafe = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
 		jumping = Input.is_action_pressed("jump")
 		sneak_key = Input.is_action_pressed("sneak")
-		if Input.is_action_pressed("sprint") and forward > 0.0:
+		if Input.is_action_pressed("sprint") and forward > 0.0 and _can_sprint():
 			sprinting = true
 	sneaking = sneak_key and not flying
 	if sneaking:
 		forward *= SNEAK_FACTOR
 		strafe *= SNEAK_FACTOR
-	if forward <= 0.0 or sneaking or horizontal_collision:
+	if forward <= 0.0 or sneaking or horizontal_collision or not _can_sprint():
 		sprinting = false
 	forward *= 0.98
 	strafe *= 0.98
@@ -256,6 +358,7 @@ func _tick() -> void:
 	else:
 		if jumping and on_ground and not flying:
 			velocity.y = JUMP_VELOCITY
+			_exhaust(FoodStats.SPRINT_JUMP if sprinting else FoodStats.JUMP)
 			if sprinting:
 				velocity.x -= sin(_yaw) * SPRINT_JUMP_BOOST
 				velocity.z -= cos(_yaw) * SPRINT_JUMP_BOOST
@@ -280,9 +383,14 @@ func _tick() -> void:
 
 	if flying and on_ground:
 		flying = false # landed
+	_track_fall()
 
 	# View bobbing and FOV follow the movement of this tick.
 	var moved := sqrt((_x - start_x) * (_x - start_x) + (_z - start_z) * (_z - start_z))
+	if in_water:
+		_exhaust(moved * FoodStats.SWIM_PER_BLOCK)
+	elif on_ground:
+		_exhaust(moved * (FoodStats.SPRINT_PER_BLOCK if sprinting else FoodStats.WALK_PER_BLOCK))
 	_walked += moved * 0.6
 	var bob_target := minf(0.1, sqrt(velocity.x * velocity.x + velocity.z * velocity.z))
 	if not on_ground or flying:
@@ -449,3 +557,93 @@ func _ground_slipperiness() -> float:
 		return 0.6
 	var below := world.get_block(Vector3i(floori(_x), floori(_y - 0.5), floori(_z)))
 	return Blocks.get_type(below).slipperiness if below != Blocks.AIR else 0.6
+
+
+# --- Health ---------------------------------------------------------------------------
+
+## Takes `amount` half hearts of damage, like the classic game: survival
+## only (unless `always`, as for the void); for 20 ticks after a hit only a
+## stronger hit counts (just the difference), and the hurt effect (camera
+## tilt, blinking hearts) plays for full hits only.
+func damage(amount: int, always: bool = false) -> void:
+	if dead or amount <= 0 or (is_creative() and not always):
+		return
+	if _invulnerable > INVULNERABLE_TICKS / 2:
+		if amount <= _last_damage:
+			return
+		health = maxi(health - (amount - _last_damage), 0)
+		_last_damage = amount
+	else:
+		health = maxi(health - amount, 0)
+		_last_damage = amount
+		_invulnerable = INVULNERABLE_TICKS
+		hurt_ticks = HURT_TICKS
+	_exhaust(FoodStats.DAMAGE)
+	if health == 0:
+		_die()
+
+
+func heal(amount: int) -> void:
+	if not dead:
+		health = mini(health + amount, MAX_HEALTH)
+
+
+## Back to life at `position` with full health and food (death screen).
+func respawn(position: Vector3) -> void:
+	dead = false
+	death_ticks = 0
+	health = MAX_HEALTH
+	food.reset()
+	hurt_ticks = 0
+	_invulnerable = 0
+	flying = false
+	global_position = position # picked up as a teleport
+
+
+func _die() -> void:
+	dead = true
+	death_ticks = 0
+	velocity = Vector3.ZERO
+	sprinting = false
+	# The classic game drops everything; there are no item entities yet, so
+	# the items are lost (unless the keepInventory game rule is on).
+	if world == null or not world.keep_inventory:
+		inventory.clear()
+	died.emit()
+
+
+func _update_health() -> void:
+	if _y < VOID_Y:
+		damage(4, true)
+	if not is_creative():
+		food.tick(self, world == null or world.natural_regeneration)
+
+
+func _can_sprint() -> bool:
+	return is_creative() or flying or food.can_sprint()
+
+
+## Hunger only in survival.
+func _exhaust(amount: float) -> void:
+	if not is_creative():
+		food.add_exhaustion(amount)
+
+
+## Exhaustion from breaking a block (BlockInteraction).
+func block_broken() -> void:
+	_exhaust(FoodStats.BREAK_BLOCK)
+
+
+## Fall damage like the classic game: distance fallen since last standing,
+## minus 3 blocks, when landing. Water and flying reset it.
+func _track_fall() -> void:
+	if flying or in_water:
+		_fall_distance = 0.0
+		return
+	var dropped := _prev.y - _y
+	if dropped > 0.0:
+		_fall_distance += dropped
+	if on_ground:
+		if _fall_distance > SAFE_FALL:
+			damage(ceili(_fall_distance - SAFE_FALL))
+		_fall_distance = 0.0

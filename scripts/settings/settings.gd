@@ -14,6 +14,21 @@ const PATH := "user://settings.cfg"
 const SECTION := "settings"
 
 const MAX_FPS_CHOICES: Array[int] = [30, 60, 120, 144, 240, 0] # 0 = unlimited
+## Chunk meshes uploaded to the GPU per frame (Chunk Updates).
+const CHUNK_UPDATE_CHOICES: Array[int] = [1, 2, 4, 8, 16, 32]
+const ANISOTROPY_LEVELS := [
+	Viewport.ANISOTROPY_DISABLED, Viewport.ANISOTROPY_2X, Viewport.ANISOTROPY_4X,
+	Viewport.ANISOTROPY_8X, Viewport.ANISOTROPY_16X,
+]
+## Quick presets for weak and powerful computers (Video Settings).
+const PRESETS := {
+	"Low": {"graphics": 0, "smooth_lighting": 1, "clouds": 1, "render_distance": 5, "render_scale": 75,
+		"antialiasing": 0, "anisotropic": 0, "vignette": false, "chunk_updates": 3, "shader_pack": "Classic"},
+	"Medium": {"graphics": 1, "smooth_lighting": 2, "clouds": 2, "render_distance": 8, "render_scale": 100,
+		"antialiasing": 1, "anisotropic": 2, "vignette": true, "chunk_updates": 4, "shader_pack": "Classic"},
+	"High": {"graphics": 1, "smooth_lighting": 2, "clouds": 2, "render_distance": 12, "render_scale": 100,
+		"antialiasing": 1, "anisotropic": 4, "vignette": true, "chunk_updates": 5, "shader_pack": "Dynamic Lighting"},
+}
 const GUI_SCALES: Array[float] = [0.0, 1.0, 1.5, 2.0, 3.0, 4.0] # 0 = auto (screen DPI)
 
 var _settings := {}       # key -> Setting
@@ -36,30 +51,73 @@ func _exit_tree() -> void:
 
 
 func _register_all() -> void:
+	# Language (Language screen)
+	define("language", Setting.choice("language", "Language",
+		PackedStringArray(Lang.LANGUAGES.map(func(entry: Array) -> String: return entry[1])), 0))
 	# General (shown on the main options screen)
 	define("general", Setting.range_of("fov", "FOV", 30, 110, 75))
-	# Video
+	# Video Settings: the main list, laid out like the classic game (two
+	# columns: Graphics | Render Distance, Smooth Lighting | Max Framerate...).
+	define("video", Setting.choice("graphics", "Graphics", PackedStringArray(["Fast", "Fancy"]), 1))
 	define("video", Setting.range_of("render_distance", "Render Distance", 2, 16, 6) \
-		.format_with(func(v: float) -> String: return "%d chunks" % int(v)))
-	define("video", Setting.range_of("render_scale", "Render Scale", 50, 100, 100, 5) \
-		.format_with(func(v: float) -> String: return "%d%%" % int(v)))
+		.format_with(func(v: float) -> String: return Lang.t("%d chunks") % int(v)))
+	define("video", Setting.choice("smooth_lighting", "Smooth Lighting",
+		PackedStringArray(["OFF", "Minimum", "Maximum"]), 2))
 	define("video", Setting.choice("max_fps", "Max Framerate",
 		PackedStringArray(["30", "60", "120", "144", "240", "Unlimited"]), 5))
-	define("video", Setting.toggle("vsync", "VSync", false))
-	define("video", Setting.toggle("fullscreen", "Fullscreen", false))
+	define("video", Setting.toggle("vsync", "Use VSync", false))
+	define("video", Setting.toggle("view_bobbing", "View Bobbing", true))
 	define("video", Setting.choice("gui_scale", "GUI Scale",
 		PackedStringArray(["Auto", "1", "1.5", "2", "3", "4"]), 0))
-	define("video", Setting.choice("antialiasing", "Anti-aliasing",
-		PackedStringArray(["Off", "FXAA", "MSAA 2x", "MSAA 4x"]), 1))
-	define("video", Setting.choice("shadows", "Shadows", PackedStringArray(["Off", "Low", "High"]), 2))
-	define("video", Setting.toggle("smooth_lighting", "Smooth Lighting", true))
-	define("video", Setting.toggle("view_bobbing", "View Bobbing", true))
-	define("video", Setting.toggle("clouds", "Clouds", true))
-	define("video", Setting.toggle("fog", "Fog", true))
 	define("video", Setting.range_of("brightness", "Brightness", 0, 100, 50) \
 		.format_with(func(v: float) -> String:
-			return "Moody" if v <= 0.0 else ("Bright" if v >= 100.0 else "%d%%" % int(v))))
-	define("video", Setting.toggle("debug_screen", "Debug Screen (F3)", false))
+			return Lang.t("Moody") if v <= 0.0 else (Lang.t("Bright") if v >= 100.0 else "%d%%" % int(v))))
+	define("video", Setting.choice("clouds", "Clouds", PackedStringArray(["OFF", "Fast", "Fancy"]), 2))
+	define("video", Setting.toggle("fullscreen", "Fullscreen", false))
+	define("video", Setting.toggle("fog", "Fog", true))
+	define("video", Setting.range_of("fog_distance", "Fog Distance", 20, 100, 60, 10) \
+		.format_with(func(v: float) -> String: return "%d%%" % int(v)))
+	# Details: what is drawn.
+	define("details", Setting.toggle("stars", "Stars", true))
+	define("details", Setting.toggle("sun_moon", "Sun & Moon", true))
+	define("details", Setting.toggle("vignette", "Vignette", true))
+
+	# Quality: how sharp it looks.
+	define("quality", Setting.choice("antialiasing", "Anti-aliasing",
+		PackedStringArray(["OFF", "FXAA", "MSAA 2x", "MSAA 4x"]), 1))
+	define("quality", Setting.choice("anisotropic", "Anisotropic Filtering",
+		PackedStringArray(["OFF", "2x", "4x", "8x", "16x"]), 2))
+	define("quality", Setting.range_of("ambient_occlusion", "Ambient Occlusion", 0, 100, 100, 10) \
+		.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0.0 else "%d%%" % int(v)))
+
+	# Performance: how much work per frame.
+	define("performance", Setting.range_of("render_scale", "Render Scale", 50, 100, 100, 5) \
+		.format_with(func(v: float) -> String: return "%d%%" % int(v)))
+	define("performance", Setting.toggle("cave_culling", "Cave Culling", true))
+	define("performance", Setting.choice("chunk_updates", "Chunk Updates",
+		PackedStringArray(["1", "2", "4", "8", "16", "32"]), 4).format_with(
+			func(v: int) -> String: return Lang.t("%s per frame") % CHUNK_UPDATE_CHOICES[v]))
+	# Animations: what moves.
+	define("animations", Setting.toggle("animated_water", "Animated Water", true))
+	define("animations", Setting.toggle("star_twinkle", "Star Twinkle", true))
+	define("animations", Setting.toggle("cloud_motion", "Cloud Movement", true))
+	define("animations", Setting.toggle("hand_animation", "Hand Animation", true))
+	# Other.
+	define("other", Setting.toggle("debug_screen", "Debug Screen (F3)", false))
+	define("other", Setting.toggle("background_fps", "Reduce FPS in Background", true))
+	# Isometric camera (F6) and isometric screenshots (F7).
+	define("isometric", Setting.choice("iso_angle", "View Angle",
+		PackedStringArray(["Classic (30°)", "True Isometric (35°)", "Steep (45°)"]), 0))
+	define("isometric", Setting.choice("iso_facing", "Facing",
+		PackedStringArray(["North-East", "South-East", "South-West", "North-West"]), 0))
+	define("isometric", Setting.range_of("iso_zoom", "Zoom", 16, 256, 64, 8) \
+		.format_with(func(v: float) -> String: return Lang.t("%d blocks") % int(v)))
+	define("isometric", Setting.toggle("iso_clouds", "Clouds", false))
+	define("isometric", Setting.toggle("iso_fog", "Fog", false))
+	define("isometric", Setting.choice("iso_render_size", "Screenshot Size",
+		PackedStringArray(["2048 px", "4096 px", "8192 px"]), 1))
+	define("isometric", Setting.choice("iso_background", "Screenshot Background",
+		PackedStringArray(["Sky", "Transparent"]), 0))
 	# Controls (mouse; keys are KeyBindings)
 	define("controls", Setting.range_of("mouse_sensitivity", "Sensitivity", 10, 200, 100, 5) \
 		.format_with(func(v: float) -> String: return "%d%%" % int(v)))
@@ -105,6 +163,18 @@ func set_value(key: String, value: Variant) -> void:
 		save_settings()
 
 
+## Applies a quick preset (PRESETS): settings and the shader pack.
+func apply_preset(preset_name: String) -> void:
+	var preset: Dictionary = PRESETS[preset_name]
+	for key: String in preset:
+		if key == "shader_pack":
+			var pack: ShaderPack = ShaderPacks.find(preset[key])
+			if pack:
+				ShaderPacks.select(pack)
+		else:
+			set_value(key, preset[key])
+
+
 func reset_category(category: String) -> void:
 	for setting: Setting in in_category(category):
 		set_value(setting.key, setting.default_value)
@@ -119,7 +189,11 @@ func load_settings() -> void:
 	_loading = true
 	for key: String in _settings:
 		if config.has_section_key(SECTION, key):
-			set_value(key, config.get_value(SECTION, key))
+			var value: Variant = config.get_value(SECTION, key)
+			var setting: Setting = _settings[key]
+			if value is bool and setting.kind == Setting.Kind.CHOICE:
+				value = setting.choices.size() - 1 if value else 0 # was a toggle
+			set_value(key, value)
 	KeyBindings.load_from(config)
 	_loading = false
 
@@ -142,13 +216,20 @@ func _apply_global(key: String, value: Variant) -> void:
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if value else DisplayServer.VSYNC_DISABLED)
 		"fullscreen":
 			window.mode = Window.MODE_FULLSCREEN if value else Window.MODE_MAXIMIZED
-		"max_fps":
-			Engine.max_fps = MAX_FPS_CHOICES[value]
+		"max_fps", "background_fps":
+			if has_node("/root/WindowControls"):
+				get_node("/root/WindowControls").apply_frame_cap()
+			elif key == "max_fps":
+				Engine.max_fps = MAX_FPS_CHOICES[value]
 		"render_scale":
 			viewport.scaling_3d_scale = value / 100.0
 		"antialiasing":
 			viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if value == 1 else Viewport.SCREEN_SPACE_AA_DISABLED
 			viewport.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X][value]
+		"language":
+			Lang.apply(value)
+		"anisotropic":
+			viewport.anisotropic_filtering_level = ANISOTROPY_LEVELS[value]
 		"gui_scale":
 			var scale := GUI_SCALES[value]
 			if scale == 0.0:

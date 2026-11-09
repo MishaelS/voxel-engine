@@ -49,7 +49,11 @@ static func heightmap(blocks: PackedByteArray) -> PackedInt32Array:
 
 ## The column split into its chunks, bottom to top.
 func generate_column(cx: int, cz: int) -> Array[ChunkData]:
-	var blocks := generate_blocks(cx, cz)
+	return split_column(generate_blocks(cx, cz))
+
+
+## Chunks of a generated column, bottom to top.
+static func split_column(blocks: PackedByteArray) -> Array[ChunkData]:
 	var chunks: Array[ChunkData] = []
 	for k in HEIGHT_CHUNKS:
 		var chunk := ChunkData.new()

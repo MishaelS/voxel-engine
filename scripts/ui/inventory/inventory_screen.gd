@@ -129,6 +129,7 @@ func _build() -> void:
 	_slots.clear()
 	_hover = -1
 
+	add_child(UiTheme.blur_rect()) # the world behind is slightly blurred
 	_dim = ColorRect.new()
 	_dim.color = Color(0.06, 0.06, 0.08, 0.6)
 	_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

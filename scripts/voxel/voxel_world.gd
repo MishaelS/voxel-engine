@@ -39,8 +39,6 @@ const COLUMN_NEIGHBORS: Array[Vector2i] = [
 ]
 ## Like the classic game: scheduled ticks beyond this per game tick wait.
 const MAX_SCHEDULED_TICKS_PER_TICK := 65536
-## Finished meshes uploaded per frame (uploading is main-thread work).
-const MAX_MESH_UPLOADS_PER_FRAME := 12
 
 @export var generator: Generator = Generator.BETA
 @export var world_seed: int = 1337
@@ -57,8 +55,6 @@ const MAX_MESH_UPLOADS_PER_FRAME := 12
 ## Time of day of a new world in ticks (0 = 06:00, 3333 ~ 09:20).
 @export var start_day_time: float = 3333.0
 
-## Read by the debug screen.
-var stats := {}
 var clock := WorldClock.new()
 ## Random source for world logic (random ticks, block behaviors).
 var rng := RandomNumberGenerator.new()
@@ -66,6 +62,13 @@ var rng := RandomNumberGenerator.new()
 var falling_blocks: FallingBlocks
 ## The active world generator.
 var world_generator: WorldGenerator
+## keepInventory game rule: the player keeps the items on death.
+var keep_inventory := false
+## naturalRegeneration game rule: full food heals the player.
+var natural_regeneration := true
+## Where this world is saved (WorldSave.current when started from the
+## title screen); null = not saved.
+var save: WorldSave
 
 var _chunks := {}          # Vector3i -> ChunkData
 var _columns := {}         # Vector2i -> true: generated columns
@@ -79,7 +82,28 @@ var _mesh_jobs := {}       # Vector3i -> MeshJob on a worker thread
 var _gen_jobs := {}        # Vector2i -> GenerationJob on a worker thread
 var _scheduled := {}       # game_time -> {Vector3i: true}
 var _scheduled_count := 0
-var _water := -1
+var _modified := {}        # Vector2i -> true: columns changed since they were saved
+var _connectivity := {}    # Vector3i -> face connectivity (ChunkMesher.connectivity)
+var _cull_dirty := true
+var _cull_timer := 0.0
+var _camera_chunk := Vector3i(0, -1000, 0)
+## Chunks hidden by cave culling in the last pass (debug screen).
+var culled_chunks := 0
+## Off while something looks at the world from elsewhere (isometric
+## screenshots see the cut sides of the loaded area).
+## While on, chunks at the edge of the drawn area are meshed as if nothing
+## were beyond it, so the area's sides are solid walls (isometric
+## screenshots); see set_open_edges().
+var open_edges := false
+var culling_enabled := true:
+	set(value):
+		culling_enabled = value
+		_cull_dirty = true
+		_cull_timer = 0.0
+var _water := Blocks.id_of("water")
+## Worker jobs of each kind (generation, light, meshing) at a time; leaves
+## two cores for the main and render threads.
+var _max_jobs := maxi(OS.get_processor_count() - 2, 1)
 var _player_column := Vector2i(2147483647, 0)
 var _wanted_columns: Array[Vector2i] = []
 var _total_faces := 0
@@ -104,13 +128,16 @@ class MeshJob:
 	var center_light: PackedByteArray
 	var neighbor_light := {}
 	var surfaces := {}
+	## Face connectivity for cave culling (ChunkMesher.connectivity).
+	var connectivity := ChunkMesher.ALL_CONNECTED
 	var mesh_ms := 0.0
 	var task_id := -1
 
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
-		surfaces = ChunkMesher.build(ChunkMesher.pad(center, neighbors),
-			ChunkMesher.pad(center_light, neighbor_light, SkyLight.MAX))
+		var padded := ChunkMesher.pad(center, neighbors)
+		surfaces = ChunkMesher.build(padded, ChunkMesher.pad(center_light, neighbor_light, SkyLight.MAX))
+		connectivity = ChunkMesher.connectivity(padded)
 		mesh_ms = (Time.get_ticks_usec() - start_us) / 1000.0
 
 
@@ -131,6 +158,7 @@ class LightJob:
 class GenerationJob:
 	var column: Vector2i
 	var generator: WorldGenerator
+	var save: WorldSave
 	var chunks: Array[ChunkData] = []
 	var heights := PackedInt32Array()
 	var generation_ms := 0.0
@@ -138,15 +166,21 @@ class GenerationJob:
 
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
-		chunks = generator.generate_column(column.x, column.y)
 		var blocks := PackedByteArray()
-		for chunk in chunks:
-			blocks.append_array(chunk.blocks)
+		if save and save.has_column(column):
+			blocks = save.load_column(column) # changed by the player: saved
+		if blocks.is_empty():
+			blocks = generator.generate_blocks(column.x, column.y)
 		heights = WorldGenerator.heightmap(blocks)
+		chunks = WorldGenerator.split_column(blocks)
 		generation_ms = (Time.get_ticks_usec() - start_us) / 1000.0
 
 
 func _ready() -> void:
+	save = WorldSave.current
+	if save:
+		world_seed = save.world_seed
+		generator = save.generator as Generator
 	falling_blocks = FallingBlocks.new()
 	falling_blocks.name = "FallingBlocks"
 	falling_blocks.world = self
@@ -161,13 +195,13 @@ func _exit_tree() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("regenerate_world"):
+	if event.is_action_pressed("regenerate_world") and save == null:
 		world_seed = randi()
 		generate()
 		get_viewport().set_input_as_handled()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_update_streaming()
 	_finish_generation_jobs()
 	_start_generation_jobs()
@@ -175,7 +209,7 @@ func _process(_delta: float) -> void:
 	_start_light_jobs()
 	_finish_mesh_jobs()
 	_start_mesh_jobs()
-	_update_stats()
+	_update_culling(delta)
 
 
 # --- World lifecycle ---------------------------------------------------------------
@@ -200,6 +234,10 @@ func generate() -> void:
 	falling_blocks.clear()
 	_scheduled.clear()
 	_scheduled_count = 0
+	_modified.clear()
+	_connectivity.clear()
+	_cull_dirty = true
+	_restore_state()
 	match generator:
 		Generator.BETA:
 			world_generator = BetaGenerator.new(world_seed)
@@ -207,7 +245,14 @@ func generate() -> void:
 			world_generator = RandomBlocksGenerator.new(world_seed, random_density)
 
 	if player:
-		player.global_position = find_spawn()
+		var player_state: Dictionary = save.state.get("player", {}) if save else {}
+		if player_state.has("position"):
+			# Back where the player left: that column is needed right away.
+			var position: Vector3 = player_state.position
+			_generate_now(Vector2i(floori(position.x / ChunkData.SIZE), floori(position.z / ChunkData.SIZE)))
+			player.global_position = position
+		else:
+			player.global_position = find_spawn()
 
 
 ## Like the classic game, spawn on land: search columns in a spiral from the
@@ -230,9 +275,9 @@ func find_spawn() -> Vector3:
 					var x: int = column.x * 16 + local.x
 					var z: int = column.y * 16 + local.y
 					var top := _top_block_y(x, z)
-					if top >= WorldGenerator.SEA_LEVEL - 1 and get_block(Vector3i(x, top, z)) != _water_id():
-						return Vector3(x + 0.5, top + 2.6, z + 0.5)
-	return Vector3(8.5, WorldGenerator.SEA_LEVEL + 2.6, 8.5)
+					if top >= WorldGenerator.SEA_LEVEL - 1 and get_block(Vector3i(x, top, z)) != _water:
+						return Vector3(x + 0.5, top + 1.0, z + 0.5) # feet on the block
+	return Vector3(8.5, WorldGenerator.SEA_LEVEL + 1.0, 8.5)
 
 
 func _generate_now(column: Vector2i) -> void:
@@ -241,6 +286,7 @@ func _generate_now(column: Vector2i) -> void:
 	var job := GenerationJob.new()
 	job.column = column
 	job.generator = world_generator
+	job.save = save
 	job.run()
 	_add_column(job)
 
@@ -250,12 +296,6 @@ func _top_block_y(x: int, z: int) -> int:
 		if get_block(Vector3i(x, y, z)) != Blocks.AIR:
 			return y
 	return -1
-
-
-func _water_id() -> int:
-	if _water < 0:
-		_water = Blocks.id_of("water")
-	return _water
 
 
 ## Rebuilds the meshes of all chunks in the background.
@@ -317,14 +357,14 @@ func _update_streaming() -> void:
 
 
 func _start_generation_jobs() -> void:
-	var max_jobs := maxi(OS.get_processor_count() - 2, 1)
-	while _gen_jobs.size() < max_jobs and not _wanted_columns.is_empty():
+	while _gen_jobs.size() < _max_jobs and not _wanted_columns.is_empty():
 		var column: Vector2i = _wanted_columns.pop_back()
 		if _columns.has(column) or _gen_jobs.has(column):
 			continue
 		var job := GenerationJob.new()
 		job.column = column
 		job.generator = world_generator
+		job.save = save
 		job.task_id = WorkerThreadPool.add_task(job.run, false, "Column generation")
 		_gen_jobs[column] = job
 
@@ -353,6 +393,8 @@ func _add_column(job: GenerationJob) -> void:
 
 
 func _unload_column(column: Vector2i) -> void:
+	if _modified.has(column):
+		_save_column(column)
 	_columns.erase(column)
 	_heightmaps.erase(column)
 	_lit.erase(column)
@@ -362,6 +404,7 @@ func _unload_column(column: Vector2i) -> void:
 		_dirty.erase(coord)
 		_total_faces -= _chunk_faces.get(coord, 0)
 		_chunk_faces.erase(coord)
+		_connectivity.erase(coord)
 		var node: Node = _chunk_nodes.get(coord)
 		if node:
 			node.queue_free()
@@ -384,8 +427,7 @@ func _can_mesh(coord: Vector3i) -> bool:
 # --- Lighting ------------------------------------------------------------------------
 
 func _start_light_jobs() -> void:
-	var max_jobs := maxi(OS.get_processor_count() - 2, 1)
-	if not _light_scan_needed or _light_jobs.size() >= max_jobs:
+	if not _light_scan_needed or _light_jobs.size() >= _max_jobs:
 		return
 	var candidates: Array[Vector2i] = []
 	for column: Vector2i in _columns:
@@ -407,7 +449,7 @@ func _start_light_jobs() -> void:
 	candidates.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		return (a - _player_column).length_squared() < (b - _player_column).length_squared())
 	for column in candidates:
-		if _light_jobs.size() >= max_jobs:
+		if _light_jobs.size() >= _max_jobs:
 			break
 		var job := LightJob.new()
 		job.column = column
@@ -609,8 +651,6 @@ func biome_at(x: int, z: int) -> String:
 ## normal: Vector3i (face that was hit, ZERO if the ray starts inside),
 ## block: int, distance: float}.
 func raycast(origin: Vector3, direction: Vector3, max_distance: float) -> Dictionary:
-	if _water < 0:
-		_water = Blocks.id_of("water")
 	var dir := direction.normalized()
 	var pos := Vector3i(origin.floor())
 	var step := Vector3i(int(signf(dir.x)), int(signf(dir.y)), int(signf(dir.z)))
@@ -655,6 +695,7 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 	if data.get_block(local.x, local.y, local.z) == id:
 		return
 	data.set_block(local.x, local.y, local.z, id)
+	_modified[Vector2i(coord.x, coord.z)] = true
 	_mark_dirty_around(coord, local)
 	_update_heightmap(pos, id)
 	if _lit.has(Vector2i(coord.x, coord.z)):
@@ -768,8 +809,7 @@ func _run_random_ticks() -> void:
 # --- Meshing -----------------------------------------------------------------------------
 
 func _start_mesh_jobs() -> void:
-	var max_jobs := maxi(OS.get_processor_count() - 2, 1)
-	var free_slots := max_jobs - _mesh_jobs.size()
+	var free_slots := _max_jobs - _mesh_jobs.size()
 	if free_slots <= 0:
 		return
 	if _mesh_scan_needed:
@@ -793,6 +833,8 @@ func _start_mesh_jobs() -> void:
 					var offset := Vector3i(dx, dy, dz)
 					if offset != Vector3i.ZERO:
 						var neighbor: ChunkData = _chunks.get(coord + offset)
+						if open_edges and not _in_render_radius(Vector2i(coord.x + dx, coord.z + dz)):
+							neighbor = null # beyond the edge counts as air: solid side walls
 						job.neighbors[offset] = neighbor.blocks if neighbor else PackedByteArray()
 						job.neighbor_light[offset] = neighbor.light if neighbor else PackedByteArray()
 		job.task_id = WorkerThreadPool.add_task(job.run, false, "Chunk mesh")
@@ -807,6 +849,7 @@ func _rebuild_mesh_queue() -> void:
 	_mesh_queue.clear()
 	var center := Vector3(_player_column.x, (player.global_position.y if player else 64.0) / ChunkData.SIZE, _player_column.y)
 	var meshable_columns := {} # Vector2i -> bool, checked once per column
+	var view: Vector3 = player.look_direction() if player and player.has_method("look_direction") else Vector3.ZERO
 	var keys := PackedInt64Array()
 	var coords: Array[Vector3i] = []
 	for coord: Vector3i in _dirty:
@@ -820,7 +863,11 @@ func _rebuild_mesh_queue() -> void:
 		if not meshable:
 			continue
 		# Farthest first after sorting: key = -distance (fixed point), index.
-		var distance := int(Vector3(coord).distance_squared_to(center) * 16.0)
+		# Like the modern game, chunks in front of the camera come first:
+		# the ones behind count as three times farther.
+		var offset := Vector3(coord) - center
+		var weight := 3.0 if offset.length_squared() > 2.0 and offset.normalized().dot(view) < -0.2 else 1.0
+		var distance := int(offset.length_squared() * weight * 16.0)
 		keys.append((-distance << 20) | coords.size())
 		coords.append(coord)
 	keys.sort()
@@ -829,9 +876,11 @@ func _rebuild_mesh_queue() -> void:
 
 
 func _finish_mesh_jobs() -> void:
+	# Finished meshes uploaded per frame (main-thread work): Chunk Updates.
+	var max_uploads: int = Settings.CHUNK_UPDATE_CHOICES[Settings.get_value("chunk_updates")]
 	var uploads := 0
 	for coord: Vector3i in _mesh_jobs.keys():
-		if uploads >= MAX_MESH_UPLOADS_PER_FRAME:
+		if uploads >= max_uploads:
 			break
 		var job: MeshJob = _mesh_jobs[coord]
 		if not WorkerThreadPool.is_task_completed(job.task_id):
@@ -849,15 +898,14 @@ func _apply_mesh(job: MeshJob) -> void:
 	var faces := 0
 	var mesh: ArrayMesh = null
 	if not job.surfaces.is_empty():
-		mesh = ArrayMesh.new()
-		for layer: int in job.surfaces:
-			var arrays: Array = job.surfaces[layer]
-			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-			mesh.surface_set_material(mesh.get_surface_count() - 1, BlockMaterials.get_material(layer))
+		mesh = ChunkMesher.to_mesh(job.surfaces)
+		for arrays: Array in job.surfaces.values():
 			faces += arrays[Mesh.ARRAY_VERTEX].size() / 4
 	_total_faces += faces - _chunk_faces.get(job.coord, 0)
 	_chunk_faces[job.coord] = faces
 	_last_mesh_ms = job.mesh_ms
+	_connectivity[job.coord] = job.connectivity
+	_cull_dirty = true
 
 	var instance: MeshInstance3D = _chunk_nodes.get(job.coord)
 	if mesh == null:
@@ -873,8 +921,213 @@ func _apply_mesh(job: MeshJob) -> void:
 	instance.mesh = mesh
 
 
-func _update_stats() -> void:
-	stats = {
+# --- Edges (isometric screenshots) -----------------------------------------------
+
+func _in_render_radius(column: Vector2i) -> bool:
+	return absi(column.x - _player_column.x) <= render_distance and absi(column.y - _player_column.y) <= render_distance
+
+
+## Columns on the edge of the drawn area.
+func _edge_columns() -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for dx in range(-render_distance, render_distance + 1):
+		for dz in range(-render_distance, render_distance + 1):
+			if maxi(absi(dx), absi(dz)) == render_distance:
+				result.append(_player_column + Vector2i(dx, dz))
+	return result
+
+
+## Re-meshes the edge columns with (or without) solid side walls.
+func set_open_edges(open: bool) -> void:
+	open_edges = open
+	for column in _edge_columns():
+		for k in WorldGenerator.HEIGHT_CHUNKS:
+			var coord := Vector3i(column.x, k, column.y)
+			if _chunks.has(coord):
+				_dirty[coord] = true
+	_mesh_scan_needed = true
+
+
+## Edge chunks still waiting for their new mesh.
+func edges_pending() -> int:
+	var count := 0
+	for column in _edge_columns():
+		for k in WorldGenerator.HEIGHT_CHUNKS:
+			var coord := Vector3i(column.x, k, column.y)
+			if _dirty.has(coord) or _mesh_jobs.has(coord):
+				count += 1
+	return count
+
+
+# --- Cave culling -----------------------------------------------------------------------
+
+const FACE_DIRECTIONS: Array[Vector3i] = [
+	Vector3i.UP, Vector3i.DOWN, Vector3i.RIGHT, Vector3i.LEFT, Vector3i.BACK, Vector3i.FORWARD,
+]
+## Seconds between culling passes at most (they run when something changed).
+const CULL_INTERVAL := 0.1
+
+
+## Advanced cave culling, like the modern game: a breadth-first walk from
+## the camera's chunk through the chunk faces that are connected inside
+## each chunk (ChunkMesher.connectivity), never turning back toward the
+## camera. Chunks it can't reach (caves behind solid rock, the ground under
+## the player) are hidden. Runs when the camera enters another chunk or a
+## chunk's mesh changes; frustum culling is still done by the renderer.
+func _update_culling(delta: float) -> void:
+	_cull_timer -= delta
+	var eye: Vector3 = player.eye_position() if player and player.has_method("eye_position") \
+		else (player.global_position if player else Vector3.ZERO)
+	var camera_chunk := chunk_coord_of(Vector3i(eye.floor()))
+	if camera_chunk != _camera_chunk:
+		_camera_chunk = camera_chunk
+		_cull_dirty = true
+	if not _cull_dirty or _cull_timer > 0.0:
+		return
+	_cull_dirty = false
+	_cull_timer = CULL_INTERVAL
+	if not culling_enabled or not Settings.get_value("cave_culling") or camera_chunk.y < 0 \
+			or camera_chunk.y >= WorldGenerator.HEIGHT_CHUNKS or not _chunks.has(camera_chunk):
+		for node: Node3D in _chunk_nodes.values():
+			node.visible = true
+		culled_chunks = 0
+		return
+
+	var reached := {camera_chunk: true}
+	var queue := []
+	for face in 6:
+		queue.append([camera_chunk + FACE_DIRECTIONS[face], face ^ 1, 1 << face])
+	var head := 0
+	while head < queue.size():
+		var entry: Array = queue[head]
+		head += 1
+		var coord: Vector3i = entry[0]
+		if reached.has(coord) or coord.y < 0 or coord.y >= WorldGenerator.HEIGHT_CHUNKS \
+				or absi(coord.x - _player_column.x) > render_distance or absi(coord.z - _player_column.y) > render_distance:
+			continue
+		reached[coord] = true
+		var entered: int = entry[1]
+		var directions: int = entry[2]
+		var connections: int = _connectivity.get(coord, ChunkMesher.ALL_CONNECTED)
+		for face in 6:
+			if directions & (1 << (face ^ 1)):
+				continue # never back toward the camera
+			if (connections >> (entered * 6 + face)) & 1 == 0:
+				continue # no way through this chunk to that face
+			queue.append([coord + FACE_DIRECTIONS[face], face ^ 1, directions | (1 << face)])
+
+	culled_chunks = 0
+	for coord: Vector3i in _chunk_nodes:
+		var visible := reached.has(coord)
+		(_chunk_nodes[coord] as Node3D).visible = visible
+		if not visible:
+			culled_chunks += 1
+
+
+# --- Saving --------------------------------------------------------------------------
+
+## Writes every changed loaded column to the save (columns unloaded earlier
+## were written when they unloaded).
+func save_columns() -> void:
+	if save == null:
+		return
+	for column: Vector2i in _modified.keys():
+		if _columns.has(column):
+			_save_column(column)
+	_modified.clear()
+
+
+func _save_column(column: Vector2i) -> void:
+	_modified.erase(column)
+	if save == null:
+		return
+	var blocks := PackedByteArray()
+	for k in WorldGenerator.HEIGHT_CHUNKS:
+		blocks.append_array((_chunks[Vector3i(column.x, k, column.y)] as ChunkData).blocks)
+	save.save_column(column, blocks)
+
+
+## World state for the save: time and game rules.
+func save_state() -> Dictionary:
+	var rules := {}
+	for rule_name in GameRules.names():
+		rules[rule_name] = GameRules.rules[rule_name].get.call(self)
+	return {"game_time": clock.game_time, "day_time": clock.day_time, "rules": rules}
+
+
+func _restore_state() -> void:
+	var world_state: Dictionary = save.state.get("world", {}) if save else {}
+	if world_state.is_empty():
+		return
+	clock.game_time = world_state.get("game_time", 0)
+	clock.day_time = world_state.get("day_time", start_day_time)
+	var rules: Dictionary = world_state.get("rules", {})
+	for rule_name: String in rules:
+		if GameRules.rules.has(rule_name):
+			GameRules.rules[rule_name].set.call(self, rules[rule_name])
+
+
+## Loading state of each column within `radius` of the player, row by row
+## (dz outer, dx inner): [state, surface height] with state 0 = not
+## generated, 1 = generated, 2 = lit, 3 = meshed; height = the surface in
+## the column's middle (-1 if not generated). Used by the loading screen.
+func column_states(radius: int) -> Array:
+	var center := _player_column_now()
+	var result := []
+	for dz in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var column := center + Vector2i(dx, dz)
+			var state := 0
+			var height := -1
+			if _columns.has(column):
+				state = 1
+				height = (_heightmaps[column] as PackedInt32Array)[8 + 16 * 8]
+				if _lit.has(column):
+					state = 2
+					var done := true
+					for k in WorldGenerator.HEIGHT_CHUNKS:
+						var coord := Vector3i(column.x, k, column.y)
+						if _dirty.has(coord) or _mesh_jobs.has(coord):
+							done = false
+							break
+					if done:
+						state = 3
+			result.append([state, height])
+	return result
+
+
+## How far the area around the player is: columns generated, lit and fully
+## meshed within `radius` columns (for the loading screen).
+func loading_progress(radius: int) -> Dictionary:
+	var center := _player_column_now()
+	var generated := 0
+	var lit := 0
+	var meshed := 0
+	var total := 0
+	for dx in range(-radius, radius + 1):
+		for dz in range(-radius, radius + 1):
+			var column := center + Vector2i(dx, dz)
+			total += 1
+			if not _columns.has(column):
+				continue
+			generated += 1
+			if not _lit.has(column):
+				continue
+			lit += 1
+			var done := true
+			for k in WorldGenerator.HEIGHT_CHUNKS:
+				var coord := Vector3i(column.x, k, column.y)
+				if _dirty.has(coord) or _mesh_jobs.has(coord):
+					done = false
+					break
+			if done:
+				meshed += 1
+	return {"generated": generated, "lit": lit, "meshed": meshed, "total": total}
+
+
+## Numbers for the debug screen (built on request, not every frame).
+func get_stats() -> Dictionary:
+	return {
 		"generator": Generator.keys()[generator],
 		"seed": world_seed,
 		"chunks": _chunks.size(),

@@ -20,23 +20,26 @@ func build() -> void:
 	for rule_name in GameRules.names():
 		add_option(_rule_setting(world, rule_name))
 
-	add_option(Setting.choice("generator", "Generator", PackedStringArray(GENERATORS), 0).bind(
-		func() -> Variant: return int(world.generator),
-		func(value: Variant) -> void: world.generator = value))
+	if world.save == null:
+		# A saved world keeps the generator and seed it was created with.
+		add_option(Setting.choice("generator", "Generator", PackedStringArray(GENERATORS), 0).bind(
+			func() -> Variant: return int(world.generator),
+			func(value: Variant) -> void: world.generator = value))
 	var seed_label := Label.new()
-	seed_label.text = "Seed: %d" % world.world_seed
+	seed_label.text = Lang.t("Seed: %d") % world.world_seed
 	seed_label.custom_minimum_size = Vector2(UiTheme.HALF_BUTTON, UiTheme.BUTTON_HEIGHT)
 	seed_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	seed_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	add_list_item(seed_label)
 
-	add_bottom_button("Regenerate World (same seed)", func() -> void:
-		world.generate()
-		menu.close())
-	add_bottom_button("New World (random seed)", func() -> void:
-		world.world_seed = randi()
-		world.generate()
-		menu.close())
+	if world.save == null:
+		add_bottom_button("Regenerate World (same seed)", func() -> void:
+			world.generate()
+			menu.close())
+		add_bottom_button("New World (random seed)", func() -> void:
+			world.world_seed = randi()
+			world.generate()
+			menu.close())
 	add_done_button()
 
 

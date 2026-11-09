@@ -31,6 +31,8 @@ const REFRESH_MS := 50
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Like the classic game, the debug screen stays in English.
+	auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	theme = UiTheme.theme()
 	_box = StyleBoxFlat.new()
 	_box.bg_color = LINE_BACKGROUND
@@ -64,7 +66,8 @@ func _process(_delta: float) -> void:
 func _left_lines() -> PackedStringArray:
 	var lines := PackedStringArray()
 	var version := str(ProjectSettings.get_setting("application/config/version", "dev"))
-	lines.append("Voxel Engine %s (Godot %s)" % [version, Engine.get_version_info().string])
+	lines.append("%s %s (Godot %s)" % [ProjectSettings.get_setting("application/config/name"), version,
+		Engine.get_version_info().string])
 	var fps := Engine.get_frames_per_second()
 	var vsync := DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED
 	lines.append("%d fps (%.2f ms) T: %s%s" % [fps, 1000.0 / maxf(fps, 1.0),
@@ -78,12 +81,13 @@ func _left_lines() -> PackedStringArray:
 		TickLoop.measured_tps, int(TickLoop.tick_rate), TickLoop.mspt, " FROZEN" if TickLoop.frozen else ""])
 
 	if world:
-		var s := world.stats
+		var s := world.get_stats()
 		if not s.is_empty():
 			lines.append("C: %d/%d visible, %d columns, D: %d, pending %d" % [s.visible_chunks, s.chunks, s.columns, world.render_distance, s.pending])
 			lines.append("Jobs: %d generating (last %.1f ms), %d lighting, %d meshing (last %.1f ms)" % [
 				world.generation_jobs_count(), s.generation_ms, world.light_jobs_count(), world.mesh_jobs_count(), s.mesh_ms])
 			lines.append("Faces: %d, vertices: %d" % [s.faces, s.vertices])
+			lines.append("Cave culling: %d chunks hidden" % world.culled_chunks)
 	lines.append("")
 
 	if camera:
@@ -106,6 +110,8 @@ func _left_lines() -> PackedStringArray:
 			var v := player.velocity * 20.0
 			lines.append("Player: %s mode, %.2f m/s%s" % [Player.GameMode.keys()[player.game_mode].capitalize(),
 				Vector2(v.x, v.z).length(), (", " + ", ".join(states)) if not states.is_empty() else ""])
+			lines.append("Health: %d/%d, food: %d (saturation %.1f, exhaustion %.2f)" % [player.health,
+				Player.MAX_HEALTH, player.food.food, player.food.saturation, player.food.exhaustion])
 		if world:
 			lines.append("Biome: %s" % world.biome_at(block.x, block.z))
 			lines.append("Sky light: %d" % world.get_light(block))
@@ -113,7 +119,7 @@ func _left_lines() -> PackedStringArray:
 
 	if world:
 		var clock := world.clock
-		lines.append("World: %s, seed %d" % [world.stats.get("generator", "?"), world.world_seed])
+		lines.append("World: %s, seed %d" % [VoxelWorld.Generator.keys()[world.generator], world.world_seed])
 		lines.append("Game time: %d, day time: %d%s" % [clock.game_time, int(clock.day_time),
 			"" if clock.daylight_cycle else " (stopped)"])
 		lines.append("Random tick speed: %d, scheduled ticks: %d" % [world.random_tick_speed, world.scheduled_tick_count()])
@@ -139,10 +145,11 @@ func _right_lines() -> PackedStringArray:
 	var window := get_window()
 	lines.append("Display: %dx%d, GUI scale %.1f" % [window.size.x, window.size.y, window.content_scale_factor])
 	lines.append(RenderingServer.get_video_adapter_name())
-	lines.append("Render scale: %s, AA: %s, shadows: %s" % [
+	lines.append("Render scale: %s, AA: %s" % [
 		Settings.get_setting("render_scale").display_value(),
-		Settings.get_setting("antialiasing").display_value(),
-		Settings.get_setting("shadows").display_value()])
+		Settings.get_setting("antialiasing").display_value()])
+	var pack := ShaderPacks.current
+	lines.append("Shaders: %s (%s)" % [pack.name, pack.base_label()] if pack else "Shaders: none")
 
 	if interaction and interaction.target.get("hit", false):
 		var target: Dictionary = interaction.target

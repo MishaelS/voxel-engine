@@ -46,7 +46,12 @@ const CORNER_UVS: Array[Vector2] = [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1),
 
 ## Brightness for AO level 0 (fully enclosed corner) .. 3 (open corner).
 ## Linear light multipliers (the shader works in linear space).
-const AO_BRIGHTNESS: Array[float] = [0.5, 0.68, 0.84, 1.0]
+## At full Ambient Occlusion strength: deep, clearly visible corners.
+const AO_BRIGHTNESS: Array[float] = [0.22, 0.45, 0.68, 1.0]
+## Block shadows: light levels below full fall off faster than the classic
+## curve (raised to this power), so the shade under trees, overhangs and in
+## nooks reads clearly.
+const SHADOW_CONTRAST := 1.35
 
 ## Brightness of light levels 0..15, the classic curve: each level is a
 ## clear step down, level 0 keeps 5% so caves are dark but not black.
@@ -54,7 +59,10 @@ static var LIGHT_BRIGHTNESS := _build_light_curve()
 
 ## Smooth lighting (voxel AO + light averaged per corner) on/off ("Smooth
 ## Lighting" setting; off = flat light per face). Re-mesh after changing.
-static var ao_enabled := true
+## Smooth Lighting setting: 0 = off (flat light per face), 1 = minimum
+## (light averaged per corner, no ambient occlusion), 2 = maximum (with
+## voxel AO). Re-mesh after changing.
+static var smooth_lighting := 2
 
 ## Index offset in the padded volume for each face direction.
 static var _face_deltas := _build_face_deltas()
@@ -66,18 +74,25 @@ static var _ao_deltas := _build_ao_deltas()
 static var _corner_offsets := _build_corner_offsets()
 static var _normals := PackedVector3Array(FACE_NORMALS)
 static var _ao_brightness := PackedFloat32Array(AO_BRIGHTNESS)
+## Ambient Occlusion setting: 0 = none .. 1 = full AO_BRIGHTNESS. Re-mesh
+## after changing.
+static var ao_strength := 1.0:
+	set(value):
+		ao_strength = clampf(value, 0.0, 1.0)
+		for level in 4:
+			_ao_brightness[level] = lerpf(1.0, AO_BRIGHTNESS[level], ao_strength)
+## Water: its surface sits LIQUID_DROP below the block top unless more
+## water is above (like the classic game).
+const LIQUID_DROP := 0.125
 
 
 static func _build_light_curve() -> PackedFloat32Array:
 	var curve := PackedFloat32Array()
 	for level in SkyLight.MAX + 1:
 		var darkness := 1.0 - level / float(SkyLight.MAX)
-		curve.append((1.0 - darkness) / (darkness * 3.0 + 1.0) * 0.95 + 0.05)
+		var classic := (1.0 - darkness) / (darkness * 3.0 + 1.0)
+		curve.append(pow(classic, SHADOW_CONTRAST) * 0.95 + 0.05)
 	return curve
-
-
-static func padded_index(x: int, y: int, z: int) -> int:
-	return (x + 1) + P * ((z + 1) + P * (y + 1))
 
 
 static func _delta(offset: Vector3i) -> int:
@@ -158,7 +173,7 @@ static func pad(center: PackedByteArray, neighbors: Dictionary, fill: int = 0) -
 static func single_block(block_id: int) -> PackedByteArray:
 	var padded := PackedByteArray()
 	padded.resize(PADDED_VOLUME)
-	padded[padded_index(0, 0, 0)] = block_id
+	padded[1 + P + P2] = block_id # local (0, 0, 0)
 	return padded
 
 
@@ -168,6 +183,132 @@ static func full_light() -> PackedByteArray:
 	padded.resize(PADDED_VOLUME)
 	padded.fill(SkyLight.MAX)
 	return padded
+
+
+## Connectivity of a chunk with every face connected to every other.
+const ALL_CONNECTED := (1 << 36) - 1
+
+
+## Which faces of the chunk are connected to each other through
+## non-opaque cells (the visibility graph of "advanced cave culling", as in
+## the modern game): bit (a * 6 + b) is set when you can get from face a to
+## face b through the chunk. Faces in BlockType order (+Y, -Y, +X, -X, +Z,
+## -Z). Empty chunks connect everything, solid ones nothing. Inline flood
+## fill on packed arrays (runs on worker threads).
+static func connectivity(padded: PackedByteArray) -> int:
+	var opaque := Blocks.is_opaque_table
+	var open := PackedByteArray()
+	open.resize(4096)
+	var count := 0
+	var i := 0
+	for y in SIZE:
+		for z in SIZE:
+			var row := 1 + P * ((z + 1) + P * (y + 1))
+			for x in SIZE:
+				if opaque[padded[row + x]] == 0:
+					open[i] = 1
+					count += 1
+				i += 1
+	if count == 0:
+		return 0
+	if count == 4096:
+		return ALL_CONNECTED
+	var visited := PackedByteArray()
+	visited.resize(4096)
+	var queue := PackedInt32Array()
+	queue.resize(4096)
+	var result := 0
+	for start in 4096:
+		if open[start] == 0 or visited[start] == 1:
+			continue
+		visited[start] = 1
+		queue[0] = start
+		var head := 0
+		var tail := 1
+		var faces := 0
+		while head < tail:
+			var c := queue[head]
+			head += 1
+			var x := c & 15
+			var z := (c >> 4) & 15
+			var y := c >> 8
+			var n := 0
+			if y == 15:
+				faces |= 1
+			else:
+				n = c + 256
+				if open[n] == 1 and visited[n] == 0:
+					visited[n] = 1
+					queue[tail] = n
+					tail += 1
+			if y == 0:
+				faces |= 2
+			else:
+				n = c - 256
+				if open[n] == 1 and visited[n] == 0:
+					visited[n] = 1
+					queue[tail] = n
+					tail += 1
+			if x == 15:
+				faces |= 4
+			else:
+				n = c + 1
+				if open[n] == 1 and visited[n] == 0:
+					visited[n] = 1
+					queue[tail] = n
+					tail += 1
+			if x == 0:
+				faces |= 8
+			else:
+				n = c - 1
+				if open[n] == 1 and visited[n] == 0:
+					visited[n] = 1
+					queue[tail] = n
+					tail += 1
+			if z == 15:
+				faces |= 16
+			else:
+				n = c + 16
+				if open[n] == 1 and visited[n] == 0:
+					visited[n] = 1
+					queue[tail] = n
+					tail += 1
+			if z == 0:
+				faces |= 32
+			else:
+				n = c - 16
+				if open[n] == 1 and visited[n] == 0:
+					visited[n] = 1
+					queue[tail] = n
+					tail += 1
+		for a in 6:
+			if faces & (1 << a):
+				for b in 6:
+					if faces & (1 << b):
+						result |= 1 << (a * 6 + b)
+	return result
+
+
+## Vertex data is stored compressed on the GPU (16-bit positions and UVs,
+## octahedral normals): half the memory and vertex bandwidth.
+const MESH_FLAGS := Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES
+
+
+## ArrayMesh from build() output: one surface per layer with that layer's
+## block material, or `material` for every surface.
+static func to_mesh(surfaces: Dictionary, material: Material = null) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	for layer: int in surfaces:
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, surfaces[layer], [], {}, MESH_FLAGS)
+		mesh.surface_set_material(mesh.get_surface_count() - 1,
+			material if material else BlockMaterials.get_material(layer))
+	return mesh
+
+
+## Mesh of one block at full light, exactly as it looks in the world
+## (falling blocks, icons, the block in hand).
+static func block_mesh(block_id: int, material: Material = null) -> ArrayMesh:
+	return to_mesh(build(single_block(block_id), full_light()), material)
 
 
 ## Returns {Blocks.Layer: surface arrays} for every non-empty layer.
@@ -206,14 +347,15 @@ static func build(padded: PackedByteArray, light: PackedByteArray) -> Dictionary
 					translucent_cells.append(i)
 
 	var result := {}
-	var smooth := ao_enabled
-	var arrays := _build_layer(padded, light, opaque_cells, smooth)
+	var smooth := smooth_lighting > 0
+	var use_ao := smooth_lighting >= 2
+	var arrays := _build_layer(padded, light, opaque_cells, smooth, use_ao)
 	if not arrays.is_empty():
 		result[Blocks.Layer.OPAQUE] = arrays
-	arrays = _build_layer(padded, light, cutout_cells, smooth)
+	arrays = _build_layer(padded, light, cutout_cells, smooth, use_ao)
 	if not arrays.is_empty():
 		result[Blocks.Layer.CUTOUT] = arrays
-	arrays = _build_layer(padded, light, translucent_cells, false)
+	arrays = _build_layer(padded, light, translucent_cells, false, false)
 	if not arrays.is_empty():
 		result[Blocks.Layer.TRANSLUCENT] = arrays
 	return result
@@ -228,11 +370,14 @@ static func build(padded: PackedByteArray, light: PackedByteArray) -> Dictionary
 ## two side neighbors and the diagonal one):
 ## - voxel AO (0fps method): how many of the side / diagonal cells are opaque;
 ## - smooth light: the average light of those of the 4 cells that are clear.
-static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells: PackedInt32Array, smooth: bool) -> Array:
+static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells: PackedInt32Array,
+		smooth: bool, use_ao: bool) -> Array:
 	if cells.is_empty():
 		return []
 	var opaque := Blocks.is_opaque_table
 	var cull_self := Blocks.cull_self_table
+	var liquid := Blocks.liquid_table
+	var layer_of := Blocks.layer_table
 	var face_tiles := Blocks.face_tiles
 	var face_overlays := Blocks.face_overlays
 	var tints := Blocks.tints_linear
@@ -242,6 +387,7 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 	var normals_table := _normals
 	var ao_brightness := _ao_brightness
 	var curve := LIGHT_BRIGHTNESS
+	var water := Blocks.id_of("water") # not a static var: Blocks may still be registering
 
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
@@ -259,6 +405,8 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 		var tint := tints[id]
 		var origin := Vector3(i % P - 1, i / P2 - 1, (i / P) % P - 1)
 		var self_culls := cull_self[id] == 1
+		# Lowered top corners: water without water above.
+		var drop := LIQUID_DROP if id == water and padded[i + P2] != water else 0.0
 
 		for face in 6:
 			var front := i + face_deltas[face]
@@ -267,6 +415,16 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 				continue # hidden by an opaque block: never sent to the GPU
 			if neighbor == id and self_culls:
 				continue # glass next to glass, water next to water
+			if liquid[id] == 1 and neighbor != Blocks.AIR and layer_of[neighbor] == Blocks.Layer.TRANSLUCENT:
+				continue # water under ice: only the ice face is drawn
+			# Ice next to water: only the strip above the water's surface is
+			# drawn; the part under it would show through the water as a ghost
+			# wall. With more water above, the water reaches the top: nothing.
+			var raise := 0.0
+			if face >= 2 and liquid[neighbor] == 1 and layer_of[id] == Blocks.Layer.TRANSLUCENT:
+				if liquid[padded[front + P2]] == 1:
+					continue
+				raise = 1.0 - LIQUID_DROP
 
 			var index := id * 6 + face
 			var tile_layers := Vector2(face_tiles[index], face_overlays[index])
@@ -302,6 +460,8 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 							count += 1
 						ao = 3 - int(side_a) - int(side_b) - int(diagonal)
 					level = float(total) / count
+					if not use_ao:
+						ao = 3
 				var low := int(level)
 				var brightness := 1.0
 				if low < SkyLight.MAX:
@@ -311,14 +471,23 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 					ao_sum_02 += ao
 				else:
 					ao_sum_13 += ao
-				vertices.append(origin + corner_offsets[face * 4 + c])
+				var corner := corner_offsets[face * 4 + c]
+				if corner.y > 0.5:
+					corner.y -= drop
+				elif raise > 0.0:
+					corner.y = raise
+				vertices.append(origin + corner)
 				normals.append(normal)
 				layers.append(tile_layers)
 				colors.append(Color(tint.r, tint.g, tint.b, ao_brightness[ao] * brightness))
 			uvs.append(uv0)
 			uvs.append(uv1)
-			uvs.append(uv2)
-			uvs.append(uv3)
+			if raise > 0.0:
+				uvs.append(Vector2(1, 1.0 - raise))
+				uvs.append(Vector2(0, 1.0 - raise))
+			else:
+				uvs.append(uv2)
+				uvs.append(uv3)
 
 			# Split the quad along the diagonal through the darker corners,
 			# otherwise AO interpolates unevenly (anisotropy artifact).
@@ -334,6 +503,18 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 				indices.append(start)
 				indices.append(start + 2)
 				indices.append(start + 3)
+
+			# Water surface: also a copy facing down, so it is seen from under
+			# water (translucent faces are drawn from the front only).
+			if face == 0 and liquid[id] == 1:
+				var below := vertices.size()
+				for c in 4:
+					vertices.append(vertices[start + c])
+					normals.append(Vector3.DOWN)
+					layers.append(layers[start + c])
+					colors.append(colors[start + c])
+					uvs.append(uvs[start + c])
+				indices.append_array(PackedInt32Array([below, below + 2, below + 1, below, below + 3, below + 2]))
 
 	if vertices.is_empty():
 		return []

@@ -19,7 +19,7 @@ const TITLE_COLOR := Color("ffffff")
 ## Button sizes in UI units (texture pixels * PIXEL), like the classic game.
 const BUTTON_HEIGHT := 20 * PIXEL
 const WIDE_BUTTON := 200 * PIXEL
-const HALF_BUTTON := 150 * PIXEL
+const HALF_BUTTON := 160 * PIXEL
 
 static var _font: FontFile
 static var _theme: Theme
@@ -75,8 +75,46 @@ static func theme() -> Theme:
 	t.set_icon("grabber_highlight", "HSlider", _scaled_texture("widgets/widget4.png"))
 
 	t.set_stylebox("panel", "ScrollContainer", StyleBoxEmpty.new())
+
+	# Text fields: black box with a gray border (white when focused).
+	var field := StyleBoxFlat.new()
+	field.bg_color = Color.BLACK
+	field.border_color = Color("a0a0a0")
+	field.set_border_width_all(PIXEL)
+	field.set_content_margin_all(4 * PIXEL)
+	var focused_field := field.duplicate() as StyleBoxFlat
+	focused_field.border_color = Color.WHITE
+	t.set_stylebox("normal", "LineEdit", field)
+	t.set_stylebox("focus", "LineEdit", focused_field)
+	t.set_stylebox("read_only", "LineEdit", field)
+	t.set_color("font_color", "LineEdit", TEXT_COLOR)
+	t.set_color("font_placeholder_color", "LineEdit", Color("707070"))
+	t.set_color("caret_color", "LineEdit", TEXT_COLOR)
+	t.set_color("selection_color", "LineEdit", Color(0.2, 0.3, 0.8, 0.6))
+	t.set_constant("caret_width", "LineEdit", PIXEL)
 	_theme = t
 	return t
+
+
+## A full-screen layer that slightly blurs whatever is drawn behind it
+## (the world behind menus and inventories, the title panorama).
+## It copies the whole screen first: the crosshair copies only its own small
+## rectangle, and without a full copy the blur would read an old frame.
+static func blur_rect() -> Control:
+	var root := Control.new()
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var copy := BackBufferCopy.new()
+	copy.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	root.add_child(copy)
+	var rect := ColorRect.new()
+	rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/background_blur.gdshader")
+	rect.material = material
+	root.add_child(rect)
+	return root
 
 
 ## Drops the cached theme and font (at exit).

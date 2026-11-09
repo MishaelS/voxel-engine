@@ -20,6 +20,8 @@ const PLACE_DELAY_TICKS := 4
 const HAND_BREAK_FACTOR := 30.0
 ## Atlas tiles of the 10 crack stages.
 const CRACK_TILE := 240
+## Cracks are drawn on a slightly bigger cube to stay above the block.
+const CRACK_GROW := 0.004
 
 @export var player: Player
 @export var world: VoxelWorld
@@ -47,6 +49,7 @@ func _ready() -> void:
 	_cracks.mesh = _make_crack_mesh()
 	_cracks.visible = false
 	_cracks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_cracks.scale = Vector3.ONE * (1.0 + CRACK_GROW)
 	add_child(_cracks)
 
 
@@ -107,6 +110,7 @@ func _captured() -> bool:
 func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 	if _break_delay > 0.0:
 		return
+	player.swing()
 	if player.is_creative():
 		world.set_block(pos, Blocks.AIR)
 		_break_delay = BREAK_DELAY_TICKS
@@ -123,11 +127,12 @@ func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 		var id := world.get_block(pos)
 		world.set_block(pos, Blocks.AIR)
 		player.inventory.add(Blocks.drop_of(id), 1)
+		player.block_broken()
 		_stop_breaking()
 		_break_delay = BREAK_DELAY_TICKS
 		return
 	_cracks.visible = true
-	_cracks.global_position = Vector3(pos)
+	_cracks.global_position = Vector3(pos) - Vector3.ONE * CRACK_GROW * 0.5
 	_crack_material.set_shader_parameter("stage", CRACK_TILE + mini(int(break_progress * 10.0), 9))
 
 
@@ -152,8 +157,9 @@ func _place() -> void:
 	if Blocks.collides_table[id] == 1 and player.intersects_block(pos):
 		return # not inside the player
 	world.set_block(pos, id)
+	player.swing()
 	if not player.is_creative():
-		player.inventory.take(hotbar.selected)
+		player.inventory.take(player.selected_slot)
 
 
 # --- Meshes --------------------------------------------------------------------------
@@ -179,20 +185,11 @@ static func _make_outline_mesh() -> ImmediateMesh:
 	return mesh
 
 
-## A block cube (the mesher's, so UVs are 0..1 per face) slightly enlarged,
-## drawn with the crack texture multiplied over the block.
+## A block cube (the mesher's, so UVs are 0..1 per face) drawn with the
+## crack texture multiplied over the block; the node is slightly enlarged.
 func _make_crack_mesh() -> ArrayMesh:
 	_crack_material = ShaderMaterial.new()
 	_crack_material.shader = preload("res://shaders/block_cracks.gdshader")
 	_crack_material.set_shader_parameter("tiles",
-		BlockMaterials.get_material(Blocks.Layer.OPAQUE).get_shader_parameter("tiles"))
-	var surfaces := ChunkMesher.build(ChunkMesher.single_block(Blocks.id_of("stone")), ChunkMesher.full_light())
-	var arrays: Array = surfaces[Blocks.Layer.OPAQUE]
-	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	for i in vertices.size():
-		vertices[i] = (vertices[i] - Vector3(0.5, 0.5, 0.5)) * 1.004 + Vector3(0.5, 0.5, 0.5)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	mesh.surface_set_material(0, _crack_material)
-	return mesh
+		BlockMaterials.tiles())
+	return ChunkMesher.block_mesh(Blocks.id_of("stone"), _crack_material)

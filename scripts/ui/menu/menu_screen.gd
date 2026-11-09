@@ -18,6 +18,8 @@ var columns := 2
 var center_vertically := false
 
 var _list: GridContainer
+## The scrolling list area (Menu darkens it on the title screen's background).
+var list_area: ScrollContainer
 var _bottom: VBoxContainer
 ## [Setting, Control] pairs, refreshed when the screen is shown again.
 var _option_widgets: Array = []
@@ -50,6 +52,7 @@ func _ready() -> void:
 	layout.add_child(title_label)
 
 	var scroll := ScrollContainer.new()
+	list_area = scroll
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.follow_focus = true
@@ -87,6 +90,13 @@ func refresh() -> void:
 ## A widget for a Setting in the two-column list: a cycling button for
 ## toggles and choices, a slider for ranges.
 func add_option(setting: Setting) -> Control:
+	var widget := make_option(setting)
+	_list.add_child(widget)
+	return widget
+
+
+## The widget for a Setting (registered for refresh), not yet placed.
+func make_option(setting: Setting) -> Control:
 	var widget: Control
 	if setting.kind == Setting.Kind.RANGE:
 		widget = _make_slider(setting)
@@ -102,7 +112,6 @@ func add_option(setting: Setting) -> Control:
 	if setting.tooltip:
 		widget.tooltip_text = setting.tooltip
 	_option_widgets.append([setting, widget])
-	_list.add_child(widget)
 	return widget
 
 
@@ -133,6 +142,21 @@ func add_bottom_button(text: String, on_pressed: Callable) -> Button:
 	button.custom_minimum_size = Vector2(UiTheme.WIDE_BUTTON, UiTheme.BUTTON_HEIGHT)
 	_bottom.add_child(button)
 	return button
+
+
+## A row of buttons at the bottom: [[text, callable], ...], each `width` wide.
+func add_bottom_row(buttons: Array, width: float = UiTheme.HALF_BUTTON) -> Array[Button]:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", COLUMN_GAP)
+	var result: Array[Button] = []
+	for entry: Array in buttons:
+		var button := _make_button(entry[0], entry[1])
+		button.custom_minimum_size = Vector2(width, UiTheme.BUTTON_HEIGHT)
+		row.add_child(button)
+		result.append(button)
+	_bottom.add_child(row)
+	return result
 
 
 func add_done_button() -> Button:

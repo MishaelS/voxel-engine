@@ -13,14 +13,15 @@ const NAME_SECONDS := 2.0
 const NAME_FADE := 0.5
 const P := UiTheme.PIXEL
 
-## Starting blocks of a new player's hotbar (registry names).
-const DEFAULT_BLOCKS := [
-	"grass_plains", "dirt", "stone", "cobblestone", "oak_planks",
-	"oak_log", "glass", "oak_leaves", "sand",
-]
 
 @export var player: Player
-var selected := 0
+## Selected slot; stored on the player (it decides what is in hand).
+var selected: int:
+	get:
+		return player.selected_slot if player else 0
+	set(value):
+		if player:
+			player.selected_slot = value
 
 var _icons: Array[ItemSlotView] = []
 var _selector: TextureRect
@@ -79,7 +80,7 @@ func _process(_delta: float) -> void:
 
 
 func selected_block() -> int:
-	return player.inventory.id_at(selected) if player else Blocks.AIR
+	return player.held_block() if player else Blocks.AIR
 
 
 func select(slot: int) -> void:

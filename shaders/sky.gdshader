@@ -1,10 +1,17 @@
 // Blocky retro sky: color gradient, textured sun and moon (with moon
-// phases), pixel stars and a flat layer of blocky clouds drifting overhead.
+// phases) and pixel stars. Clouds are 3D (Clouds); fog takes its color
+// from this gradient (Atmosphere).
 // sun_direction is driven by DayNightCycle; everything else reacts to it.
 shader_type sky;
 
+#include "res://shaders/stars.gdshaderinc"
+
 // Direction TOWARD the sun. The moon is always opposite.
 uniform vec3 sun_direction = vec3(0.4, 0.8, 0.4);
+// Details video settings.
+uniform bool show_stars = true;
+uniform bool show_sun_moon = true;
+uniform bool star_twinkle = true;
 
 group_uniforms colors;
 uniform vec3 day_zenith : source_color = vec3(0.47, 0.65, 1.0);
@@ -33,39 +40,6 @@ uniform float earthshine : hint_range(0.0, 1.0) = 0.07;
 uniform float moon_disc_pixels = 8.0;
 uniform float moon_texture_pixels = 32.0;
 
-group_uniforms clouds;
-uniform float cloud_height = 110.0;  // world Y of the cloud layer
-uniform float cloud_cell = 12.0;     // world size of one cloud "pixel"
-uniform float cloud_speed = 1.0;     // blocks per second, along +X
-uniform float cloud_coverage : hint_range(0.0, 1.0) = 0.42;
-uniform float cloud_opacity : hint_range(0.0, 1.0) = 0.85;
-uniform float cloud_fade_distance = 1200.0;
-
-group_uniforms stars;
-uniform float star_density : hint_range(0.0, 0.05) = 0.006;
-uniform float star_grid = 150.0;
-
-float hash12(vec2 p) {
-	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-	p3 += dot(p3, p3.yzx + 33.33);
-	return fract((p3.x + p3.y) * p3.z);
-}
-
-float hash13(vec3 p) {
-	p = fract(p * 0.1031);
-	p += dot(p, p.zyx + 31.32);
-	return fract((p.x + p.y) * p.z);
-}
-
-float value_noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(
-		mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x),
-		mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x),
-		f.y);
-}
 
 // Projects dir onto the plane tangent to the sky sphere at center:
 // a square in these coordinates is a flat square billboard in the sky.
@@ -132,19 +106,15 @@ void sky() {
 	// Details are skipped in the radiance cubemap (ambient light and
 	// reflections only need the gradient) to keep sky updates cheap.
 	if (!AT_CUBEMAP_PASS) {
-		// Stars: random cells of a grid on the sky sphere, only after dusk.
+		// Stars (stars.gdshaderinc), only after dusk.
 		float night = 1.0 - smoothstep(-0.25, 0.02, sun.y);
-		if (dir.y > 0.0 && night > 0.0) {
-			vec3 cell = floor(dir * star_grid);
-			if (hash13(cell) < star_density) {
-				float brightness = 0.4 + 0.6 * hash13(cell + 17.0);
-				color += vec3(brightness) * night * smoothstep(0.0, 0.15, dir.y);
-			}
+		if (show_stars && dir.y > 0.0 && night > 0.0) {
+			color += vec3(stars(dir, star_twinkle ? TIME : 0.0)) * night * smoothstep(0.0, 0.15, dir.y);
 		}
 
 		// Sun: textured billboard with its halo, added on top of the sky
 		// (hidden below the horizon), redder and dimmer when low.
-		if (dot(dir, sun) > 0.0 && dir.y > -0.02) {
+		if (show_sun_moon && dot(dir, sun) > 0.0 && dir.y > -0.02) {
 			vec2 uv = billboard_uv(dir, sun, sun_size);
 			if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
 				vec4 texel = texture(sun_texture, uv);
@@ -160,7 +130,7 @@ void sky() {
 
 		// Moon: textured billboard with phases (hidden below the horizon).
 		vec3 moon = -sun;
-		if (dot(dir, moon) > 0.0 && dir.y > -0.02) {
+		if (show_sun_moon && dot(dir, moon) > 0.0 && dir.y > -0.02) {
 			vec2 uv = billboard_uv(dir, moon, moon_size);
 			if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
 				vec4 texel = texture(moon_texture, uv);
@@ -173,21 +143,6 @@ void sky() {
 					? texel.rgb * mix(earthshine, 1.0, lit) * moon_intensity
 					: color + texel.rgb * texel.a * moon_illumination() * moon_halo_intensity;
 			}
-		}
-
-		// Flat layer of blocky clouds.
-		if (dir.y > 0.01 && POSITION.y < cloud_height) {
-			float dist = (cloud_height - POSITION.y) / dir.y;
-			vec2 hit = POSITION.xz + dir.xz * dist;
-			hit.x += TIME * cloud_speed;
-			vec2 cell = floor(hit / cloud_cell);
-			float n = value_noise(cell * 0.12) * 0.65 + value_noise(cell * 0.31) * 0.35;
-			float cover = step(1.0 - cloud_coverage, n);
-			float fade = 1.0 - smoothstep(cloud_fade_distance * 0.3, cloud_fade_distance, dist);
-			// Night clouds are dark silhouettes, just above the night sky color.
-			vec3 cloud_color = mix(night_horizon * 1.4, vec3(1.0), day);
-			cloud_color = mix(cloud_color, cloud_color * vec3(1.0, 0.7, 0.55), low_sun * 0.6);
-			color = mix(color, cloud_color, cover * fade * cloud_opacity);
 		}
 	}
 

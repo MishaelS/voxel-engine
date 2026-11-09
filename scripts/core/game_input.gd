@@ -18,3 +18,8 @@ static func lock() -> void:
 
 static func unlock() -> void:
 	_locks = maxi(_locks - 1, 0)
+
+
+## Clears all locks (when leaving the game scene: its UI is gone).
+static func reset() -> void:
+	_locks = 0
