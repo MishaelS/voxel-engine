@@ -18,7 +18,7 @@ Controls
 * Survival: health and hunger like the classic game (fall damage, starvation, natural healing at full food)
 * R: regenerate the world with a new seed (unsaved test world only)
 * Esc → Save and Quit to Title; the world also autosaves every 45 s and when the window closes
-* Up/Down arrows: time of day, Left/Right: rotate the sun path
+* Up/Down arrows: time of day
 * T: open the chat, /: open it with a command (Tab completes, Up/Down choose, Esc closes)
 * P: freeze game ticks, . (period): run one tick while frozen
 * M: skip to the next day (moon phases)
@@ -128,7 +128,7 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/voxel/behaviors/` - block tick behaviors (grass, falling blocks)
 * `scripts/entities/falling_blocks.gd` - falling sand/gravel entities: tick physics on packed arrays, MultiMesh rendering
 * `scripts/voxel/random_blocks_generator.gd` - debug generator: every block type scattered randomly
-* `scripts/day_night_cycle.gd` - sun/moon movement (latitude, seasons, analemma), day counter, moon phases, light; drives the sky
+* `scripts/day_night_cycle.gd` - the classic sun and moon (celestial angle, 8 moon phases), sky brightness and night darkness of sky light; drives the sky
 * `scripts/free_camera.gd` - free camera
 * `scripts/ui/debug_screen.gd` - F3 debug screen
 * `scripts/ui/hotbar.gd`, `scripts/ui/block_icons.gd` - hotbar and isometric block icons

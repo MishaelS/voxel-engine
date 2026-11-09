@@ -13,7 +13,7 @@ uniform float brightness = 1.0;
 varying flat float shade;
 
 void vertex() {
-	tile_layers = UV2;
+	BLOCK_VERTEX
 	shade = NORMAL.y > 0.5 ? 1.0 : (NORMAL.y < -0.5 ? 0.5 : (abs(NORMAL.x) > 0.5 ? 0.6 : 0.8));
 }
 

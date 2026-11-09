@@ -7,7 +7,7 @@ render_mode unshaded, cull_back;
 #include "res://shaders/block_classic.gdshaderinc"
 
 void vertex() {
-	tile_layers = UV2;
+	BLOCK_VERTEX
 	face_shade = classic_face_shade(NORMAL);
 }
 

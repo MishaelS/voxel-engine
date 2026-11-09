@@ -1,68 +1,38 @@
 class_name DayNightCycle
 extends DirectionalLight3D
-## Moves the sun along its daily path, counts days and drives the sky shader.
+## The sun and the moon like the classic game: a day is 24000 ticks; the
+## sun rises in the east, passes overhead at noon and sets in the west,
+## the moon opposite it, along the classic "celestial angle" (a little
+## faster around noon and midnight than at dawn and dusk). The moon has 8
+## phases, one per day (day 0 is a full moon). Sky brightness and the night
+## darkness of sky light (up to 11 light levels, like the classic game's
+## skylightSubtracted) come from the same angle.
+##
 ## During the day this light is the sunlight; at night it becomes the
-## moonlight (opposite the sun, dim and bluish, brighter near full moon).
+## moonlight (Dynamic Lighting shader pack; Classic uses the light levels).
+## Time comes from the world clock, interpolated between ticks.
 ##
-## Time comes from the world clock (game ticks, 24000 per day; see
-## WorldClock), interpolated between ticks so the sun moves smoothly.
-## Here it is used as an angle (mean solar time):
-## 0° = 06:00, 90° = 12:00, 180° = 18:00, 270° = 00:00.
-## A new day starts at 06:00. The moon goes through its phases over
-## lunar_cycle_days days.
-##
-## The sun position is computed astronomically for an observer at
-## latitude_deg. With the analemma enabled the sun also follows the year:
-## - declination (axial tilt): higher and longer days in summer, lower and
-##   shorter in winter;
-## - equation of time (orbit eccentricity + tilt): the sun runs up to
-##   ~16 minutes ahead of / behind the clock.
-## Photographed at the same clock time every day, the sun traces a figure 8
-## (the analemma) over year_length_days.
-##
-## Up/Down arrows - change time of day, Left/Right - rotate the sun path,
-## M - skip to the next day. Time stops with /gamerule doDaylightCycle false.
+## Up/Down arrows - change the time of day, M - skip to the next day.
+## Time stops with /gamerule doDaylightCycle false.
 
 const PHASE_NAMES: Array[String] = [
-	"new moon", "waxing crescent", "first quarter", "waxing gibbous",
 	"full moon", "waning gibbous", "last quarter", "waning crescent",
+	"new moon", "waxing crescent", "first quarter", "waxing gibbous",
 ]
+## Light levels sky light loses at midnight (the classic value).
+const MAX_SKY_DARKNESS := 11.0
 
 @export var world_environment: WorldEnvironment
-## World whose clock sets the time. Without it the time is only changed
-## through time_of_day_deg / day (useful for tests).
+## World whose clock sets the time.
 @export var world: VoxelWorld
 
-## Time of day as an angle (0° = 06:00) and day number; taken from the
-## world clock every frame.
-var time_of_day_deg: float = 50.0
-var day: int = 0
-
-@export_group("Path")
-## Direction of the sun path around the vertical axis.
-@export_range(-180.0, 180.0) var path_yaw_deg: float = 35.0
-## Observer latitude. 0 = equator (sun passes overhead at equinox noon),
-## positive = northern hemisphere (sun stays in the south, readable shadows).
-@export_range(-80.0, 80.0) var latitude_deg: float = 25.0
-
-@export_group("Year")
-## Seasons and the equation of time (the analemma). Off = every day is an equinox.
-@export var analemma_enabled: bool = true
-@export var year_length_days: float = 365.2422
-## Day of the year on game day 0 (0 = January 1, 79 = March 20 equinox).
-@export var start_day_of_year: float = 79.0
-## Earth's axial tilt: how far the sun moves north/south over the year.
-@export_range(0.0, 45.0) var axial_tilt_deg: float = 23.44
-## Earth's orbit eccentricity: the sun's uneven speed over the year.
-@export_range(0.0, 0.3) var orbit_eccentricity: float = 0.0167
-## Day of the year of the perihelion (closest to the sun, ~January 3).
-@export var perihelion_day_of_year: float = 2.0
+## Time of day in ticks (0 = sunrise, 6000 = noon) and the day number.
+var day_time := 1000.0
+var day := 0
 
 @export_group("Cycle")
-## Degrees per second when changing time / path with the arrow keys.
-@export var manual_speed_deg: float = 45.0
-## Days for a full cycle of moon phases (29.5 in reality). Day 0 is full moon.
-@export var lunar_cycle_days: float = 8.0
+## Ticks per second when changing time with the arrow keys.
+@export var manual_speed_ticks := 3000.0
 
 @export_group("Light")
 @export var sun_energy: float = 1.2
@@ -90,85 +60,57 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	var time_input := 0.0
-	var yaw_input := 0.0
-	if not GameInput.is_blocked():
-		time_input = Input.get_axis("sun_lower", "sun_raise")
-		yaw_input = Input.get_axis("sun_rotate_left", "sun_rotate_right")
-	path_yaw_deg = wrapf(path_yaw_deg - yaw_input * manual_speed_deg * delta, -180.0, 180.0)
 	if world:
-		if time_input != 0.0:
-			world.clock.add_day_time(time_input * manual_speed_deg * delta / 360.0 * WorldClock.TICKS_PER_DAY)
-		_sync_with_clock()
+		if not GameInput.is_blocked():
+			var time_input := Input.get_axis("sun_lower", "sun_raise")
+			if time_input != 0.0:
+				world.clock.add_day_time(time_input * manual_speed_ticks * delta)
+		var clock := world.clock
+		var time := clock.day_time
+		if clock.daylight_cycle and not TickLoop.frozen:
+			time += TickLoop.alpha
+		day = floori(time / WorldClock.TICKS_PER_DAY)
+		day_time = fposmod(time, WorldClock.TICKS_PER_DAY)
 	_apply()
 
 
-## Takes the time from the world clock, interpolated between game ticks.
-func _sync_with_clock() -> void:
-	var clock := world.clock
-	var day_time := clock.day_time
-	if clock.daylight_cycle and not TickLoop.frozen:
-		day_time += TickLoop.alpha
-	day = floori(day_time / WorldClock.TICKS_PER_DAY)
-	time_of_day_deg = fposmod(day_time, WorldClock.TICKS_PER_DAY) / WorldClock.TICKS_PER_DAY * 360.0
+## The classic celestial angle (0 = noon, 0.25 = sunset, 0.5 = midnight,
+## 0.75 = sunrise): the sun moves a bit faster around noon and midnight.
+func celestial_angle() -> float:
+	var f := day_time / WorldClock.TICKS_PER_DAY - 0.25
+	if f < 0.0:
+		f += 1.0
+	if f > 1.0:
+		f -= 1.0
+	var eased := 1.0 - (cos(f * PI) + 1.0) / 2.0
+	return f + (eased - f) / 3.0
 
 
-## Unit vector pointing toward the sun (+X east, +Y up, -Z north before
-## path_yaw_deg is applied).
+## Unit vector toward the sun: east (+X) at sunrise, up at noon, west at
+## sunset (the classic sun path).
 func sun_direction() -> Vector3:
-	# Hour angle: 0 at true solar noon. The clock gives mean solar time;
-	# the equation of time shifts the real sun ahead of / behind it.
-	var hour_angle := deg_to_rad(time_of_day_deg - 90.0)
-	var declination := 0.0
-	if analemma_enabled:
-		hour_angle += equation_of_time_rad()
-		declination = declination_rad()
-	var latitude := deg_to_rad(latitude_deg)
-
-	# Horizontal coordinates of the sun for an observer at this latitude.
-	var up := sin(latitude) * sin(declination) + cos(latitude) * cos(declination) * cos(hour_angle)
-	var east := -cos(declination) * sin(hour_angle)
-	var north := cos(latitude) * sin(declination) - sin(latitude) * cos(declination) * cos(hour_angle)
-	var direction := Vector3(east, up, -north)
-	return direction.rotated(Vector3.UP, deg_to_rad(path_yaw_deg)).normalized()
+	var angle := celestial_angle() * TAU
+	return Vector3(-sin(angle), cos(angle), 0.0)
 
 
-## Fractional day of the year (0 = January 1), advancing with the clock.
-func day_of_year() -> float:
-	return fposmod(start_day_of_year + day + time_of_day_deg / 360.0, year_length_days)
+## Brightness of the sky, 0 (night) .. 1 (day), the classic formula.
+func sky_brightness() -> float:
+	return clampf(cos(celestial_angle() * TAU) * 2.0 + 0.5, 0.0, 1.0)
 
 
-## Sun's mean anomaly: its position on the orbit counted from the perihelion.
-func _mean_anomaly() -> float:
-	return TAU * (day_of_year() - perihelion_day_of_year) / year_length_days
+## Light levels sky light loses now (0 by day .. 11 at night).
+func sky_darkness() -> float:
+	return (1.0 - sky_brightness()) * MAX_SKY_DARKNESS
 
 
-## Longitude of the perihelion measured from the March equinox (282.94°).
-const PERIHELION_LONGITUDE := deg_to_rad(282.94)
+## Moon phase index 0..7 (0 = full moon), one per day like the classic game.
+func moon_phase_index() -> int:
+	return posmod(day, 8)
 
 
-## Sun's declination: its angle north (+) or south (-) of the celestial
-## equator. Gives the seasons: +tilt at the June solstice, -tilt in December.
-func declination_rad() -> float:
-	var anomaly := _mean_anomaly()
-	var ecliptic_longitude := anomaly + 2.0 * orbit_eccentricity * sin(anomaly) + PERIHELION_LONGITUDE
-	return asin(sin(deg_to_rad(axial_tilt_deg)) * sin(ecliptic_longitude))
-
-
-## Equation of time as an angle of Earth's rotation (apparent - mean solar
-## time; 0.0044 rad = 1 minute). Sum of the eccentricity effect and the
-## axial tilt effect; about -14 to +16 minutes for Earth.
-func equation_of_time_rad() -> float:
-	var anomaly := _mean_anomaly()
-	var tilt_term := pow(tan(deg_to_rad(axial_tilt_deg) * 0.5), 2.0)
-	return -2.0 * orbit_eccentricity * sin(anomaly) + tilt_term * sin(2.0 * (anomaly + PERIHELION_LONGITUDE))
-
-
-## Moon phase 0..1: 0 = new moon, 0.25 = first quarter, 0.5 = full,
-## 0.75 = last quarter. Changes smoothly through the day.
+## Moon phase 0..1 for the sky shader (0 = new, 0.5 = full).
 func moon_phase() -> float:
-	var days := day + time_of_day_deg / 360.0
-	return fposmod(0.5 + days / lunar_cycle_days, 1.0)
+	return fposmod(0.5 + moon_phase_index() / 8.0, 1.0)
 
 
 ## Lit part of the moon disc: 0 = new moon, 1 = full moon.
@@ -177,15 +119,13 @@ func moon_illumination() -> float:
 
 
 func moon_phase_name() -> String:
-	return PHASE_NAMES[roundi(moon_phase() * 8.0) % 8]
+	return PHASE_NAMES[moon_phase_index()]
 
 
 func _apply() -> void:
 	var to_sun := sun_direction()
 	var is_day := to_sun.y >= 0.0
 	var to_light := to_sun if is_day else -to_sun
-	# A DirectionalLight3D shines along its -Z axis. Near the zenith "up"
-	# would be parallel to the light, so use another reference axis.
 	var reference_up := Vector3.UP if absf(to_light.y) < 0.999 else Vector3.FORWARD
 	global_basis = Basis.looking_at(-to_light, reference_up)
 
@@ -203,24 +143,11 @@ func _apply() -> void:
 		_sky_material.set_shader_parameter("moon_phase", moon_phase())
 
 
-## Calendar date for an Earth-like year, e.g. "Mar 21".
-func date_string() -> String:
-	const MONTHS := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-	const LENGTHS := [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-	# Scale to a 365-day calendar so any year length maps onto 12 months.
-	var remaining := int(day_of_year() * 365.0 / year_length_days)
-	for month in 12:
-		if remaining < LENGTHS[month]:
-			return "%s %d" % [MONTHS[month], remaining + 1]
-		remaining -= LENGTHS[month]
-	return "Dec 31"
-
-
-## Day, date, clock time and moon phase for the HUD.
+## Day, clock time and moon phase for the HUD.
 func describe() -> String:
-	var hours := wrapf(6.0 + time_of_day_deg / 15.0, 0.0, 24.0)
+	var hours := fposmod(6.0 + day_time / 1000.0, 24.0)
 	var stopped := world != null and not world.clock.daylight_cycle
-	return "day %d (%s), %02d:%02d%s, %s (%d%%)" % [
-		day, date_string(), int(hours), int(fmod(hours, 1.0) * 60.0), " (time stopped)" if stopped else "",
+	return "day %d, %02d:%02d%s, %s (%d%%)" % [
+		day, int(hours), int(fmod(hours, 1.0) * 60.0), " (time stopped)" if stopped else "",
 		moon_phase_name(), roundi(moon_illumination() * 100.0),
 	]

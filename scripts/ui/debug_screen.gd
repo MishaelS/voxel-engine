@@ -127,9 +127,8 @@ func _left_lines() -> PackedStringArray:
 	if sun:
 		lines.append("Time: %s" % sun.describe())
 		var to_sun := sun.sun_direction()
-		lines.append("Sun: elevation %.1f°, azimuth %.1f°, declination %.1f°" % [
-			rad_to_deg(asin(to_sun.y)), fposmod(rad_to_deg(atan2(to_sun.x, -to_sun.z)), 360.0),
-			rad_to_deg(sun.declination_rad()) if sun.analemma_enabled else 0.0])
+		lines.append("Sun: celestial angle %.3f, elevation %.1f°, sky light -%.1f" % [
+			sun.celestial_angle(), rad_to_deg(asin(clampf(to_sun.y, -1.0, 1.0))), sun.sky_darkness()])
 		lines.append("Light: %s, energy %.2f" % ["sun" if to_sun.y >= 0.0 else "moon", sun.light_energy])
 	return lines
 

@@ -23,11 +23,8 @@ func _apply(key: String, value: Variant) -> void:
 				if world:
 					world.remesh_all()
 		"ambient_occlusion":
-			var strength: float = value / 100.0
-			if not is_equal_approx(ChunkMesher.ao_strength, strength):
-				ChunkMesher.ao_strength = strength
-				if world:
-					world.remesh_all()
+			# Applied by the block shaders: no re-meshing needed.
+			BlockMaterials.set_parameter("ao_strength", value / 100.0)
 		"graphics":
 			# Fast: opaque leaves like the classic game (fewer faces, no cutout).
 			if Blocks.set_fast_graphics(value == 0) and world:

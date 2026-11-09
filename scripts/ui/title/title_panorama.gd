@@ -31,6 +31,7 @@ var _stage := Stage.GENERATE
 var _task := -1
 var _chunk_blocks: Array = []   # [column * 8 + k] -> PackedByteArray
 var _heights: Array = []        # [column] -> PackedInt32Array
+var _colors: Array = []         # [column] -> [grass, foliage]
 var _chunk_light: Array = []
 var _surfaces: Array = []
 var _instances: Array[MeshInstance3D] = []
@@ -44,6 +45,7 @@ func _ready() -> void:
 	_generator = BetaGenerator.new(TITLE_SEED)
 	_chunk_blocks.resize(CHUNKS)
 	_heights.resize(SIZE * SIZE)
+	_colors.resize(SIZE * SIZE)
 	_task = WorkerThreadPool.add_group_task(_generate_column, SIZE * SIZE, -1, false, "Title world")
 
 
@@ -142,6 +144,7 @@ func _generate_column(index: int) -> void:
 	var column := TITLE_COLUMN + Vector2i(index % SIZE - RADIUS, index / SIZE - RADIUS)
 	var blocks := _generator.generate_blocks(column.x, column.y)
 	_heights[index] = WorldGenerator.heightmap(blocks)
+	_colors[index] = _generator.column_colors(column.x, column.y)
 	for k in WorldGenerator.HEIGHT_CHUNKS:
 		_chunk_blocks[index * 8 + k] = blocks.slice(k * ChunkData.VOLUME, (k + 1) * ChunkData.VOLUME)
 
@@ -191,8 +194,9 @@ func _mesh_chunk(index: int) -> void:
 				var other := (nx + nz * SIZE) * 8 + nk
 				neighbors[Vector3i(dx, dy, dz)] = _chunk_blocks[other]
 				neighbor_light[Vector3i(dx, dy, dz)] = _chunk_light[other]
+	var colors: Array = _colors[column]
 	_surfaces[index] = ChunkMesher.build(ChunkMesher.pad(_chunk_blocks[index], neighbors),
-		ChunkMesher.pad(_chunk_light[index], neighbor_light, SkyLight.MAX))
+		ChunkMesher.pad(_chunk_light[index], neighbor_light, SkyLight.MAX), colors[0], colors[1])
 
 
 func _show_meshes() -> void:

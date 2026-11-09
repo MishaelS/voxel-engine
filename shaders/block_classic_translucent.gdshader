@@ -10,7 +10,7 @@ render_mode unshaded, cull_back, blend_mix, depth_draw_never;
 uniform float depth_bias = 0.00001;
 
 void vertex() {
-	tile_layers = UV2;
+	BLOCK_VERTEX
 	face_shade = classic_face_shade(NORMAL);
 	POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
 	// Relative: depth is reverse Z (near/distance), so a fixed offset

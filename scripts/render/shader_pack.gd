@@ -42,7 +42,7 @@ static func _definitions(pack_base: Base) -> Array[Setting]:
 	var options: Array[Setting] = []
 	if pack_base == Base.CLASSIC:
 		options.append(Setting.toggle("face_shading", "Face Shading", true))
-		options.append(Setting.range_of("night_brightness", "Night Brightness", 5, 60, 20, 5).format_with(percent))
+		options.append(Setting.range_of("night_brightness", "Night Brightness", 5, 60, 5, 5).format_with(percent))
 	else:
 		options.append(Setting.choice("shadows", "Shadows", PackedStringArray(["Off", "Low", "High"]), 2))
 		options.append(Setting.range_of("sun_strength", "Sun Strength", 50, 200, 100, 10).format_with(percent))

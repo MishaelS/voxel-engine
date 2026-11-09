@@ -28,6 +28,9 @@ var underwater := false
 ## The isometric camera is in use / an isometric screenshot is being
 ## rendered: fog and clouds follow the Isometric Camera settings.
 var isometric := false
+## Light levels sky light loses now (Classic pack at night), for the block
+## in hand.
+var sky_darkness := 0.0
 var snapshot := false
 
 var _clouds: Clouds
@@ -65,6 +68,14 @@ func _ready() -> void:
 	layer.add_child(_overlay)
 
 
+## Night Brightness option of the Classic pack: 5% = the classic darkness
+## (all 11 levels), brighter nights take away fewer levels.
+func _night_factor() -> float:
+	var pack := ShaderPacks.current
+	var brightness: float = pack.value("night_brightness") if pack and pack.base == ShaderPack.Base.CLASSIC else 5.0
+	return clampf(1.0 - (brightness - 5.0) / 80.0, 0.3, 1.0)
+
+
 static func find(tree: SceneTree) -> Atmosphere:
 	return tree.get_first_node_in_group("atmosphere") as Atmosphere
 
@@ -73,8 +84,12 @@ func _process(_delta: float) -> void:
 	if player and player.camera and _clouds.camera == null:
 		_clouds.camera = player.camera
 	var to_sun := sun.sun_direction() if sun else Vector3.UP
-	daylight = smoothstep(-0.2, 0.25, to_sun.y)
-	BlockMaterials.set_parameter("daylight", daylight) # Classic lighting
+	daylight = sun.sky_brightness() if sun else 1.0
+	# Classic lighting: sky light loses up to 11 levels at night (the classic
+	# game's way); Dynamic Lighting has real moonlight instead.
+	var classic := ShaderPacks.current != null and ShaderPacks.current.base == ShaderPack.Base.CLASSIC
+	sky_darkness = sun.sky_darkness() * _night_factor() if sun and classic else 0.0
+	BlockMaterials.set_parameter("sky_darkness", sky_darkness)
 	var eye := player.eye_position() if player else Vector3.ZERO
 	underwater = world != null and world.get_block(Vector3i(eye.floor())) == _water
 	_update_fog(to_sun)

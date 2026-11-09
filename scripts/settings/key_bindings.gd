@@ -30,8 +30,6 @@ const ACTIONS := [
 	["open_command", "Open Command", "Multiplayer"],
 	["sun_raise", "Time Forward", "World"],
 	["sun_lower", "Time Backward", "World"],
-	["sun_rotate_left", "Rotate Sun Path Left", "World"],
-	["sun_rotate_right", "Rotate Sun Path Right", "World"],
 	["next_day", "Next Day", "World"],
 	["regenerate_world", "Regenerate World", "World"],
 	["hide_gui", "Hide GUI", "Camera"],

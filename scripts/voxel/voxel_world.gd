@@ -83,6 +83,7 @@ var _gen_jobs := {}        # Vector2i -> GenerationJob on a worker thread
 var _scheduled := {}       # game_time -> {Vector3i: true}
 var _scheduled_count := 0
 var _modified := {}        # Vector2i -> true: columns changed since they were saved
+var _column_colors := {}   # Vector2i -> [grass, foliage] (WorldGenerator.column_colors)
 var _connectivity := {}    # Vector3i -> face connectivity (ChunkMesher.connectivity)
 var _cull_dirty := true
 var _cull_timer := 0.0
@@ -127,6 +128,8 @@ class MeshJob:
 	var neighbors := {}
 	var center_light: PackedByteArray
 	var neighbor_light := {}
+	## Grass / foliage colors of the column (WorldGenerator.column_colors).
+	var colors: Array = [PackedColorArray(), PackedColorArray()]
 	var surfaces := {}
 	## Face connectivity for cave culling (ChunkMesher.connectivity).
 	var connectivity := ChunkMesher.ALL_CONNECTED
@@ -136,7 +139,8 @@ class MeshJob:
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
 		var padded := ChunkMesher.pad(center, neighbors)
-		surfaces = ChunkMesher.build(padded, ChunkMesher.pad(center_light, neighbor_light, SkyLight.MAX))
+		surfaces = ChunkMesher.build(padded, ChunkMesher.pad(center_light, neighbor_light, SkyLight.MAX),
+			colors[0], colors[1])
 		connectivity = ChunkMesher.connectivity(padded)
 		mesh_ms = (Time.get_ticks_usec() - start_us) / 1000.0
 
@@ -161,6 +165,7 @@ class GenerationJob:
 	var save: WorldSave
 	var chunks: Array[ChunkData] = []
 	var heights := PackedInt32Array()
+	var colors: Array = []
 	var generation_ms := 0.0
 	var task_id := -1
 
@@ -173,6 +178,7 @@ class GenerationJob:
 			blocks = generator.generate_blocks(column.x, column.y)
 		heights = WorldGenerator.heightmap(blocks)
 		chunks = WorldGenerator.split_column(blocks)
+		colors = generator.column_colors(column.x, column.y)
 		generation_ms = (Time.get_ticks_usec() - start_us) / 1000.0
 
 
@@ -223,6 +229,7 @@ func generate() -> void:
 	_chunks.clear()
 	_columns.clear()
 	_heightmaps.clear()
+	_column_colors.clear()
 	_lit.clear()
 	_chunk_nodes.clear()
 	_chunk_faces.clear()
@@ -383,6 +390,7 @@ func _finish_generation_jobs() -> void:
 func _add_column(job: GenerationJob) -> void:
 	_columns[job.column] = true
 	_heightmaps[job.column] = job.heights
+	_column_colors[job.column] = job.colors
 	_light_scan_needed = true
 	_last_generation_ms = job.generation_ms
 	for k in job.chunks.size():
@@ -397,6 +405,7 @@ func _unload_column(column: Vector2i) -> void:
 		_save_column(column)
 	_columns.erase(column)
 	_heightmaps.erase(column)
+	_column_colors.erase(column)
 	_lit.erase(column)
 	for k in WorldGenerator.HEIGHT_CHUNKS:
 		var coord := Vector3i(column.x, k, column.y)
@@ -827,6 +836,7 @@ func _start_mesh_jobs() -> void:
 		var data: ChunkData = _chunks[coord]
 		job.center = data.blocks # copy-on-write snapshots
 		job.center_light = data.light
+		job.colors = _column_colors.get(Vector2i(coord.x, coord.z), job.colors)
 		for dx in range(-1, 2):
 			for dy in range(-1, 2):
 				for dz in range(-1, 2):

@@ -51,6 +51,8 @@ static var light_opacity_table := PackedByteArray()
 static var collides_table := PackedByteArray()
 ## 1 for liquids (see BlockType.liquid).
 static var liquid_table := PackedByteArray()
+## Biome tint kind per block (see BlockType.biome_tint).
+static var biome_tint_table := PackedByteArray()
 
 static var _registered := _register_all()
 
@@ -81,7 +83,7 @@ static func _register_all() -> bool:
 	register(BlockType.column("birch_log", 21, 117).set_hardness(2.0))
 	register(BlockType.column("spruce_log", 21, 116).set_hardness(2.0))
 	register(BlockType.cube("oak_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_OAK).set_light_opacity(1) \
-		.set_hardness(0.2).set_drop("none").set_fast_tile(53))
+		.set_hardness(0.2).set_drop("none").set_biome_tint(2).set_fast_tile(53))
 	register(BlockType.cube("birch_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_BIRCH).set_light_opacity(1) \
 		.set_hardness(0.2).set_drop("none").set_fast_tile(53))
 	register(BlockType.cube("spruce_leaves", 132).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_SPRUCE).set_light_opacity(1) \
@@ -127,7 +129,7 @@ static func _register_all() -> bool:
 static func _grass(block_name: String, tint: Color) -> BlockType:
 	# Top: grayscale grass tinted. Sides: dirt-based tile + tinted grass fringe.
 	return BlockType.column(block_name, 0, 3, 2).set_side_overlay(38).set_tint(tint) \
-		.set_hardness(0.6).set_drop("dirt").set_random_tick(Callable(GrassBehavior, "random_tick"))
+		.set_hardness(0.6).set_drop("dirt").set_biome_tint(1).set_random_tick(Callable(GrassBehavior, "random_tick"))
 
 
 ## Sand, gravel: fall when the block below is air or water.
@@ -156,6 +158,7 @@ static func register(block: BlockType) -> int:
 	light_opacity_table.append(block.light_opacity)
 	collides_table.append(1 if block.collides else 0)
 	liquid_table.append(1 if block.liquid else 0)
+	biome_tint_table.append(block.biome_tint)
 	return id
 
 

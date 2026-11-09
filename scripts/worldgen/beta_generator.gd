@@ -25,7 +25,27 @@ const GRID_X := 4  # blocks per density cell horizontally
 const GRID_Y := 8  # blocks per density cell vertically
 const CELLS_X := 16 / GRID_X
 const CELLS_Y := HEIGHT / GRID_Y
-const LIMIT_AMPLITUDE := 40.0
+## Noise magnitudes of the classic generator: its octave noises are sums
+## whose amplitude doubles for every lower octave (16 octaves: up to 65535),
+## divided by 512 for the limit noises and by 10 for the main noise. The
+## noises here are normalized fBm (about -1..1), so they are scaled back:
+## the limits swing widely and the main noise switches sharply between them,
+## which gives the classic cliffs, overhangs and mountains.
+const LIMIT_AMPLITUDE := 128.0  # 65535 / 512
+const MAIN_AMPLITUDE := 25.5    # 255 / 10
+const DEPTH_AMPLITUDE := 8.2    # 65535 / 8000
+const SCALE_AMPLITUDE := 1023.0 # 10 octaves
+## Climate is sampled every CLIMATE_STEP blocks and interpolated: smooth
+## and 16 times fewer noise calls than per block column.
+const CLIMATE_STEP := 4
+## Classic-style grass and foliage colors by climate: cold, hot and dry,
+## hot and wet (corners of the classic color maps).
+const GRASS_COLD := Color("80b497")
+const GRASS_DRY := Color("bfb755")
+const GRASS_WET := Color("47cd33")
+const FOLIAGE_COLD := Color("60a17b")
+const FOLIAGE_DRY := Color("aea42a")
+const FOLIAGE_WET := Color("1abf00")
 const CAVE_RANGE := 8 # columns around this one where caves can start
 
 ## Biome table: surface blocks, grass, tree count and kinds.
@@ -89,8 +109,9 @@ func _init(seed_value: int) -> void:
 	_setup(_main_noise, 3, 0.0167, 6)
 	_setup(_depth_noise, 4, 0.0015, 6)
 	_setup(_scale_noise, 5, 0.0011, 4)
-	_setup(_temperature_noise, 6, 0.004, 4)
-	_setup(_humidity_noise, 7, 0.006, 4)
+	# Large climate zones: biomes several hundred blocks across.
+	_setup(_temperature_noise, 6, 0.0016, 4)
+	_setup(_humidity_noise, 7, 0.0024, 4)
 	_setup(_detail_noise, 8, 0.12, 2)
 	_setup(_sand_noise, 9, 0.03, 3)
 	_setup(_gravel_noise, 10, 0.03, 3)
@@ -126,6 +147,56 @@ func humidity(x: float, z: float) -> float:
 	return clampf(0.5 + _humidity_noise.get_noise_2d(x, z) * 0.9 + _detail_noise.get_noise_2d(z, x) * 0.03, 0.0, 1.0)
 
 
+## Temperature (first 256) and humidity (next 256) of every block column of
+## a chunk column, index x + 16 * z: sampled on a grid every CLIMATE_STEP
+## blocks and interpolated, so biomes and colors change smoothly.
+func climate(cx: int, cz: int) -> PackedFloat32Array:
+	const CELLS := 16 / CLIMATE_STEP + 1
+	var temps := PackedFloat32Array()
+	var humids := PackedFloat32Array()
+	temps.resize(CELLS * CELLS)
+	humids.resize(CELLS * CELLS)
+	for gz in CELLS:
+		for gx in CELLS:
+			var wx := cx * 16 + gx * CLIMATE_STEP
+			var wz := cz * 16 + gz * CLIMATE_STEP
+			temps[gx + gz * CELLS] = temperature(wx, wz)
+			humids[gx + gz * CELLS] = humidity(wx, wz)
+	var result := PackedFloat32Array()
+	result.resize(512)
+	for z in 16:
+		var gz := z / CLIMATE_STEP
+		var fz := float(z % CLIMATE_STEP) / CLIMATE_STEP
+		for x in 16:
+			var gx := x / CLIMATE_STEP
+			var fx := float(x % CLIMATE_STEP) / CLIMATE_STEP
+			var i00 := gx + gz * CELLS
+			var t0 := temps[i00] + (temps[i00 + 1] - temps[i00]) * fx
+			var t1 := temps[i00 + CELLS] + (temps[i00 + CELLS + 1] - temps[i00 + CELLS]) * fx
+			var h0 := humids[i00] + (humids[i00 + 1] - humids[i00]) * fx
+			var h1 := humids[i00 + CELLS] + (humids[i00 + CELLS + 1] - humids[i00 + CELLS]) * fx
+			result[x + 16 * z] = t0 + (t1 - t0) * fz
+			result[256 + x + 16 * z] = h0 + (h1 - h0) * fz
+	return result
+
+
+## Grass and foliage colors (linear) of every block column, like the
+## classic color maps: from bluish green in the cold to yellow-green when
+## hot and dry and lush green when hot and wet. Smooth across biomes.
+func column_colors(cx: int, cz: int) -> Array[PackedColorArray]:
+	var values := climate(cx, cz)
+	var grass := PackedColorArray()
+	var foliage := PackedColorArray()
+	grass.resize(256)
+	foliage.resize(256)
+	for i in 256:
+		var temp := values[i]
+		var humid := values[256 + i]
+		grass[i] = GRASS_COLD.lerp(GRASS_DRY.lerp(GRASS_WET, humid), temp).srgb_to_linear()
+		foliage[i] = FOLIAGE_COLD.lerp(FOLIAGE_DRY.lerp(FOLIAGE_WET, humid), temp).srgb_to_linear()
+	return [grass, foliage]
+
+
 ## The classic biome table.
 static func biome_for(temp: float, humid: float) -> String:
 	return BIOME_NAMES[biome_index(temp, humid)]
@@ -159,13 +230,11 @@ func biome_name(x: int, z: int) -> String:
 
 func generate_blocks(cx: int, cz: int) -> PackedByteArray:
 	var blocks := super(cx, cz)
+	var climate_values := climate(cx, cz)
 	var biomes := PackedByteArray()
 	biomes.resize(256)
-	for z in 16:
-		for x in 16:
-			var wx := cx * 16 + x
-			var wz := cz * 16 + z
-			biomes[x + 16 * z] = biome_index(temperature(wx, wz), humidity(wx, wz))
+	for i in 256:
+		biomes[i] = biome_index(climate_values[i], climate_values[256 + i])
 	var top := _shape_terrain(blocks, cx, cz)
 	_replace_surface(blocks, cx, cz, biomes, top)
 	_carve_caves(blocks, cx, cz)
@@ -198,10 +267,10 @@ func _shape_terrain(blocks: PackedByteArray, cx: int, cz: int) -> int:
 			dryness *= dryness
 			var vegetation := 1.0 - dryness
 
-			var scale := (_scale_noise.get_noise_2d(wx, wz) * 1000.0 + 256.0) / 512.0 * vegetation
+			var scale := (_scale_noise.get_noise_2d(wx, wz) * SCALE_AMPLITUDE + 256.0) / 512.0 * vegetation
 			if scale > 1.0:
 				scale = 1.0
-			var depth := _depth_noise.get_noise_2d(wx, wz) * 6.0
+			var depth := _depth_noise.get_noise_2d(wx, wz) * DEPTH_AMPLITUDE
 			if depth < 0.0:
 				depth = -depth * 0.3
 			depth = depth * 3.0 - 2.0
@@ -229,7 +298,7 @@ func _shape_terrain(blocks: PackedByteArray, cx: int, cz: int) -> int:
 					offset *= 4.0
 				var low := _min_noise.get_noise_3d(wx, wy * 0.5, wz) * LIMIT_AMPLITUDE
 				var high := _max_noise.get_noise_3d(wx, wy * 0.5, wz) * LIMIT_AMPLITUDE
-				var mix := (_main_noise.get_noise_3d(wx, wy * 0.25, wz) * 2.5 + 1.0) * 0.5
+				var mix := (_main_noise.get_noise_3d(wx, wy * 0.25, wz) * MAIN_AMPLITUDE + 1.0) * 0.5
 				var value := low if mix < 0.0 else (high if mix > 1.0 else lerpf(low, high, mix))
 				value -= offset
 				if gy > CELLS_Y - 3:

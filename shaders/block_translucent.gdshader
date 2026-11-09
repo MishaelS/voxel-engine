@@ -15,7 +15,7 @@ uniform float depth_bias = 0.00001;
 uniform float specular_strength = 1.0;
 
 void vertex() {
-	tile_layers = UV2;
+	BLOCK_VERTEX
 	POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
 	// Relative: depth is reverse Z (near/distance), so a fixed offset
 	// would grow to decimeters far away and let faces behind show through.

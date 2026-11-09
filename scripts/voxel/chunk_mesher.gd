@@ -69,21 +69,20 @@ static var _face_deltas := _build_face_deltas()
 ## Per face and corner: index offsets (from the block in front of the face)
 ## of the two side neighbors and the diagonal one, for AO.
 static var _ao_deltas := _build_ao_deltas()
-## FACE_CORNERS, FACE_NORMALS and AO_BRIGHTNESS as packed arrays for the
-## mesher's hot loop ([face * 4 + corner], [face], [ao level]).
+## FACE_CORNERS and FACE_NORMALS as packed arrays for the mesher's hot loop
+## ([face * 4 + corner], [face]).
 static var _corner_offsets := _build_corner_offsets()
 static var _normals := PackedVector3Array(FACE_NORMALS)
-static var _ao_brightness := PackedFloat32Array(AO_BRIGHTNESS)
-## Ambient Occlusion setting: 0 = none .. 1 = full AO_BRIGHTNESS. Re-mesh
-## after changing.
-static var ao_strength := 1.0:
-	set(value):
-		ao_strength = clampf(value, 0.0, 1.0)
-		for level in 4:
-			_ao_brightness[level] = lerpf(1.0, AO_BRIGHTNESS[level], ao_strength)
+## AO brightness per level and the light curve are applied in the block
+## shaders (block_common.gdshaderinc), which read the raw values.
 ## Water: its surface sits LIQUID_DROP below the block top unless more
 ## water is above (like the classic game).
 const LIQUID_DROP := 0.125
+
+
+## AO_BRIGHTNESS as the block shaders' `ao_levels` uniform.
+static func ao_levels() -> Vector4:
+	return Vector4(AO_BRIGHTNESS[0], AO_BRIGHTNESS[1], AO_BRIGHTNESS[2], AO_BRIGHTNESS[3])
 
 
 static func _build_light_curve() -> PackedFloat32Array:
@@ -312,7 +311,11 @@ static func block_mesh(block_id: int, material: Material = null) -> ArrayMesh:
 
 
 ## Returns {Blocks.Layer: surface arrays} for every non-empty layer.
-static func build(padded: PackedByteArray, light: PackedByteArray) -> Dictionary:
+## `grass` / `foliage`: colors of the chunk's 256 block columns (x + 16 * z)
+## for biome-tinted blocks (BlockType.biome_tint); empty = the blocks' own
+## tints.
+static func build(padded: PackedByteArray, light: PackedByteArray,
+		grass := PackedColorArray(), foliage := PackedColorArray()) -> Dictionary:
 	var opaque := Blocks.is_opaque_table
 	# Fully buried chunk (no see-through block anywhere, border included):
 	# nothing can be visible.
@@ -349,13 +352,13 @@ static func build(padded: PackedByteArray, light: PackedByteArray) -> Dictionary
 	var result := {}
 	var smooth := smooth_lighting > 0
 	var use_ao := smooth_lighting >= 2
-	var arrays := _build_layer(padded, light, opaque_cells, smooth, use_ao)
+	var arrays := _build_layer(padded, light, opaque_cells, smooth, use_ao, grass, foliage)
 	if not arrays.is_empty():
 		result[Blocks.Layer.OPAQUE] = arrays
-	arrays = _build_layer(padded, light, cutout_cells, smooth, use_ao)
+	arrays = _build_layer(padded, light, cutout_cells, smooth, use_ao, grass, foliage)
 	if not arrays.is_empty():
 		result[Blocks.Layer.CUTOUT] = arrays
-	arrays = _build_layer(padded, light, translucent_cells, false, false)
+	arrays = _build_layer(padded, light, translucent_cells, false, false, grass, foliage)
 	if not arrays.is_empty():
 		result[Blocks.Layer.TRANSLUCENT] = arrays
 	return result
@@ -370,8 +373,12 @@ static func build(padded: PackedByteArray, light: PackedByteArray) -> Dictionary
 ## two side neighbors and the diagonal one):
 ## - voxel AO (0fps method): how many of the side / diagonal cells are opaque;
 ## - smooth light: the average light of those of the 4 cells that are clear.
+##
+## Vertex data: COLOR.rgb = tint, COLOR.a = smooth sky light level / 15 (the
+## shader turns it into brightness, minus the night's darkness like the
+## classic game); UV2.x = base tile + AO level (0..3) / 4, UV2.y = overlay.
 static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells: PackedInt32Array,
-		smooth: bool, use_ao: bool) -> Array:
+		smooth: bool, use_ao: bool, grass: PackedColorArray, foliage: PackedColorArray) -> Array:
 	if cells.is_empty():
 		return []
 	var opaque := Blocks.is_opaque_table
@@ -385,8 +392,8 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 	var ao_deltas := _ao_deltas
 	var corner_offsets := _corner_offsets
 	var normals_table := _normals
-	var ao_brightness := _ao_brightness
-	var curve := LIGHT_BRIGHTNESS
+	var biome_tint := Blocks.biome_tint_table
+	var has_colors := grass.size() == 256 and foliage.size() == 256
 	var water := Blocks.id_of("water") # not a static var: Blocks may still be registering
 
 	var vertices := PackedVector3Array()
@@ -404,6 +411,9 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 		var id := padded[i]
 		var tint := tints[id]
 		var origin := Vector3(i % P - 1, i / P2 - 1, (i / P) % P - 1)
+		if has_colors and biome_tint[id] != 0:
+			var column := (i % P - 1) + 16 * ((i / P) % P - 1)
+			tint = grass[column] if biome_tint[id] == 1 else foliage[column]
 		var self_culls := cull_self[id] == 1
 		# Lowered top corners: water without water above.
 		var drop := LIQUID_DROP if id == water and padded[i + P2] != water else 0.0
@@ -427,7 +437,8 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 				raise = 1.0 - LIQUID_DROP
 
 			var index := id * 6 + face
-			var tile_layers := Vector2(face_tiles[index], face_overlays[index])
+			var tile := float(face_tiles[index])
+			var overlay := float(face_overlays[index])
 			var normal := normals_table[face]
 			var start := vertices.size()
 			var front_light := light[front]
@@ -462,11 +473,6 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 					level = float(total) / count
 					if not use_ao:
 						ao = 3
-				var low := int(level)
-				var brightness := 1.0
-				if low < SkyLight.MAX:
-					var from := curve[low]
-					brightness = from + (curve[low + 1] - from) * (level - low)
 				if c == 0 or c == 2:
 					ao_sum_02 += ao
 				else:
@@ -478,8 +484,8 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 					corner.y = raise
 				vertices.append(origin + corner)
 				normals.append(normal)
-				layers.append(tile_layers)
-				colors.append(Color(tint.r, tint.g, tint.b, ao_brightness[ao] * brightness))
+				layers.append(Vector2(tile + ao * 0.25, overlay))
+				colors.append(Color(tint.r, tint.g, tint.b, level / SkyLight.MAX))
 			uvs.append(uv0)
 			uvs.append(uv1)
 			if raise > 0.0:

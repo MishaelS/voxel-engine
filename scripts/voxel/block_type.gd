@@ -41,6 +41,10 @@ var liquid := false
 ## Tile used with Fast graphics (-1 = none): the block is then drawn opaque
 ## with this tile, like the classic game's fast leaves.
 var fast_tile := -1
+## Color from the climate of its block column instead of `tint` (in the
+## world): 0 = none, 1 = grass color, 2 = foliage color. Like the classic
+## game's color maps: colors change smoothly across biomes.
+var biome_tint := 0
 
 ## Tick behavior (all optional), each called as f(world: VoxelWorld, pos: Vector3i):
 ## - random_tick: picked at random a few times per chunk per tick
@@ -121,6 +125,11 @@ func set_slipperiness(value: float) -> BlockType:
 
 func set_drop(block_name: String) -> BlockType:
 	drop = block_name
+	return self
+
+
+func set_biome_tint(kind: int) -> BlockType:
+	biome_tint = kind
 	return self
 
 

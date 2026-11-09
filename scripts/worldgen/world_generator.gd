@@ -24,6 +24,12 @@ func generate_blocks(_cx: int, _cz: int) -> PackedByteArray:
 	return blocks
 
 
+## Grass and foliage colors (linear, index x + 16 * z) of a column, or
+## empty arrays for the blocks' own tints.
+func column_colors(_cx: int, _cz: int) -> Array[PackedColorArray]:
+	return [PackedColorArray(), PackedColorArray()]
+
+
 ## Name of the biome at a block column (for the debug screen).
 func biome_name(_x: int, _z: int) -> String:
 	return "none"

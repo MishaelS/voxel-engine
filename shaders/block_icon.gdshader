@@ -10,7 +10,7 @@ render_mode unshaded, cull_back, depth_draw_always;
 varying flat float shade;
 
 void vertex() {
-	tile_layers = UV2;
+	BLOCK_VERTEX
 	shade = NORMAL.y > 0.5 ? 1.0 : (abs(NORMAL.z) > 0.5 ? 0.8 : 0.6);
 }
 

@@ -57,6 +57,9 @@ static func _build() -> void:
 			depth.next_pass = material
 			material = depth
 		_materials.append(material)
+	# Light and AO constants come from ChunkMesher (one place for both).
+	set_parameter("ao_levels", ChunkMesher.ao_levels())
+	set_parameter("shadow_contrast", ChunkMesher.SHADOW_CONTRAST)
 	apply_pack(ShaderPacks.current)
 	ShaderPacks.changed.connect(func() -> void: apply_pack(ShaderPacks.current))
 
@@ -70,9 +73,10 @@ static func apply_pack(pack: ShaderPack) -> void:
 		var material := _color_materials[layer]
 		material.shader = CLASSIC_SHADERS[layer] if classic else SHADERS[layer]
 		material.set_shader_parameter("tiles", _tiles)
+		material.set_shader_parameter("ao_levels", ChunkMesher.ao_levels())
+		material.set_shader_parameter("shadow_contrast", ChunkMesher.SHADOW_CONTRAST)
 	if classic:
 		set_parameter("face_shading", pack.value("face_shading"))
-		set_parameter("night_brightness", pack.value("night_brightness") / 100.0)
 	else:
 		set_parameter("specular_strength", 1.0 if pack.value("water_shine") else 0.0)
 
