@@ -45,11 +45,16 @@ var fast_tile := -1
 ## world): 0 = none, 1 = grass color, 2 = foliage color. Like the classic
 ## game's color maps: colors change smoothly across biomes.
 var biome_tint := 0
-## Natural-looking ground: the texture is turned by a random multiple of
-## 90 degrees on top and bottom and randomly mirrored on the sides, the same
+## Random texture variants like the modern game's block states, the same
 ## for the same block position (Random Texture Rotation setting), so large
-## areas of one block don't show a repeating pattern.
-var random_rotation := false
+## areas of one block don't show a repeating pattern:
+## - TURN (dirt, grass, sand): the block is turned by a random multiple of
+##   90 degrees around the vertical axis: the top texture turns, the sides
+##   look the same;
+## - MIRROR (stone, bedrock): mirrored and / or turned by 180 degrees, so
+##   the texture's grain keeps its direction.
+enum Rotation { NONE, TURN, MIRROR }
+var random_rotation: int = Rotation.NONE
 ## Item this block counts as (drops, pick block, names): "" = itself.
 ## State variants (facings, lit furnace, flowing water, bed halves) name
 ## their base block or item here.
@@ -82,6 +87,16 @@ var liquid_level := -1
 ## east (-1 = not oriented); `family` groups the facings and states.
 var facing := -1
 var family := ""
+## Shape: CUBE, or CROSS (two crossed squares: tall grass, flowers).
+enum Shape { CUBE, CROSS }
+var shape: int = Shape.CUBE
+## Placing a block or pouring a liquid into it simply replaces it (plants).
+var replaceable := false
+## The block placed when the player places this one ("" = itself):
+## leaves place a variant that never decays.
+var placed_as := ""
+## Shown at full brightness whatever the light (lava).
+var emissive := false
 
 ## Tick behavior (all optional), each called as f(world: VoxelWorld, pos: Vector3i):
 ## - random_tick: picked at random a few times per chunk per tick
@@ -192,6 +207,33 @@ func set_uv_mode(face: int, mode: int) -> BlockType:
 	return self
 
 
+## A copy with another name (state variants of an existing block).
+func duplicate_type(new_name: String) -> BlockType:
+	var copy := BlockType.new()
+	for property in get_property_list():
+		if property.usage & PROPERTY_USAGE_SCRIPT_VARIABLE:
+			copy.set(property.name, get(property.name))
+	copy.name = new_name
+	copy.id = 0
+	copy.family = ""
+	copy.cull_group = -1
+	return copy
+
+
+## A plant: two crossed squares, no collision, breaks at once, replaced
+## by placed blocks and flowing liquids, needs the right ground below.
+func as_plant() -> BlockType:
+	shape = Shape.CROSS
+	layer = 1 # Blocks.Layer.CUTOUT
+	collides = false
+	hardness = 0.0
+	replaceable = true
+	light_opacity = 0
+	height = 0.8
+	on_update = Callable(PlantBehavior, "on_update")
+	return self
+
+
 func hidden_from_catalog() -> BlockType:
 	in_catalog = false
 	return self
@@ -202,7 +244,7 @@ func set_biome_tint(kind: int) -> BlockType:
 	return self
 
 
-func set_random_rotation(value: bool = true) -> BlockType:
+func set_random_rotation(value: int = Rotation.TURN) -> BlockType:
 	random_rotation = value
 	return self
 

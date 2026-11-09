@@ -117,6 +117,12 @@ func _tick(tick_index: int) -> void:
 			(item.node as Node).queue_free()
 			_items.remove_at(i)
 			continue
+		elif world and _in_lava(item.pos):
+			# Items burn up in lava.
+			world.particles.smoke(item.pos, 4)
+			(item.node as Node).queue_free()
+			_items.remove_at(i)
+			continue
 		else:
 			_physics(item)
 			item.delay = maxi(item.delay - 1, 0)
@@ -139,6 +145,10 @@ func _physics(item: Dictionary) -> void:
 		velocity.y = velocity.y * 0.8 + 0.01 # floats up slowly
 		velocity.x *= 0.9
 		velocity.z *= 0.9
+		# Carried along by the current, like the classic game.
+		var flow := LiquidBehavior.flow_vector(world, Vector3i(position.floor()))
+		if flow.length_squared() > 1e-6:
+			velocity += flow.normalized() * 0.014
 	else:
 		velocity.y -= GRAVITY
 	var on_ground := false
@@ -178,7 +188,13 @@ func _box_blocked(center: Vector3) -> bool:
 
 
 func _in_water(center: Vector3) -> bool:
-	return Blocks.liquid_table[world.get_block(Vector3i(center.floor()))] == 1
+	var id := world.get_block(Vector3i(center.floor()))
+	return Blocks.liquid_table[id] == 1 and Blocks.family_of(id) == "water"
+
+
+func _in_lava(center: Vector3) -> bool:
+	var id := world.get_block(Vector3i(center.floor()))
+	return Blocks.liquid_table[id] == 1 and Blocks.family_of(id) == "lava"
 
 
 func _try_pickup(item: Dictionary) -> void:

@@ -1,7 +1,8 @@
 // Shared code for block materials.
 // Vertex data written by ChunkMesher:
 //   UV     - position inside the tile (0..1)
-//   UV2    - x: base tile layer + AO level (0..3) / 4, y: overlay layer (-1 = none)
+//   UV2    - x: base tile layer + AO level (0..3) / 4, y: overlay layer (-1 = none,
+//            -2 = glowing: full bright whatever the light, like lava)
 //   COLOR  - rgb: tint (linear, biome colors included), a: smooth sky light / 15
 // Brightness is computed here like the classic game: the light level, minus
 // the night's darkness (sky_darkness, levels), through the classic light
@@ -55,5 +56,13 @@ vec4 block_albedo(vec2 uv, vec4 vertex_color) {
 	} else {
 		rgb = base.rgb * vertex_color.rgb;
 	}
+	if (tile_layers.y < -1.5) {
+		return vec4(rgb, base.a); // glowing (lava)
+	}
 	return vec4(rgb * block_ao * light_brightness(vertex_color.a), base.a);
+}
+
+// 1 for glowing blocks (lava): lit shaders add their color as emission.
+float block_emission() {
+	return tile_layers.y < -1.5 ? 1.0 : 0.0;
 }

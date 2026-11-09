@@ -216,7 +216,12 @@ func _apply_global(key: String, value: Variant) -> void:
 		"vsync":
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if value else DisplayServer.VSYNC_DISABLED)
 		"fullscreen":
-			window.mode = Window.MODE_FULLSCREEN if value else Window.MODE_MAXIMIZED
+			if value:
+				window.mode = Window.MODE_FULLSCREEN
+			elif has_node("/root/WindowControls"):
+				get_node("/root/WindowControls").restore_window()
+			else:
+				window.mode = Window.MODE_WINDOWED
 		"max_fps", "background_fps":
 			if has_node("/root/WindowControls"):
 				get_node("/root/WindowControls").apply_frame_cap()

@@ -50,6 +50,9 @@ static func _register_all() -> bool:
 			if material[0] == "wooden":
 				tool.set_fuel(200)
 			register(tool)
+	# Appended: ids stay stable.
+	register(ItemType.make("seeds", 9))
+	register(ItemType.make("lava_bucket", 76).stack(1).set_fuel(20000))
 	return true
 
 

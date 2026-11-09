@@ -682,7 +682,7 @@ func biome_at(x: int, z: int) -> String:
 
 
 ## First block hit by a ray (voxel traversal, Amanatides & Woo).
-## Air and water are passed through (water sources are hit with
+## Air and liquids are passed through (water and lava sources are hit with
 ## `hit_water_sources`, for buckets). Returns {hit: bool, pos: Vector3i,
 ## normal: Vector3i (face that was hit, ZERO if the ray starts inside),
 ## block: int, distance: float}.
@@ -704,7 +704,7 @@ func raycast(origin: Vector3, direction: Vector3, max_distance: float, hit_water
 	var distance := 0.0
 	while distance <= max_distance:
 		var id := get_block(pos)
-		if id != Blocks.AIR and (Blocks.liquid_table[id] == 0 or (hit_water_sources and id == _water)):
+		if id != Blocks.AIR and (Blocks.liquid_table[id] == 0 or (hit_water_sources and Blocks.liquid_level_table[id] == 0)):
 			return {"hit": true, "pos": pos, "normal": normal, "block": id, "distance": distance}
 		var axis := 0
 		if t_max.y < t_max[axis]:
@@ -784,11 +784,12 @@ const FURNACE_SIZE := 3
 ## Breaks a block like the classic game: bits fly (particles), it drops what
 ## it gives (when `drop`; `can_harvest` = broken with the right tool), a
 ## chest or furnace spills what it holds and a bed loses its other half.
-func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true) -> void:
+func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true, effects: bool = true) -> void:
 	var id := get_block(pos)
 	if id == Blocks.AIR:
 		return
-	particles.break_block(pos, id)
+	if effects:
+		particles.break_block(pos, id)
 	if drop:
 		for entry: Array in Blocks.drops_of(id, rng, can_harvest):
 			items.drop_from_block(pos, entry[0], entry[1])
@@ -859,7 +860,10 @@ func _tick_furnace(pos: Vector3i, entity: Dictionary) -> void:
 		if fuel > 0:
 			entity.burn = fuel
 			entity.burn_total = fuel
-			inventory.take(1)
+			if Items.name_of(inventory.id_at(1)) == "lava_bucket":
+				inventory.set_slot(1, Items.id_of("bucket"), 1) # the bucket stays
+			else:
+				inventory.take(1)
 	if entity.burn > 0 and can_smelt:
 		entity.cook += 1
 		if entity.cook >= Smelting.COOK_TICKS:

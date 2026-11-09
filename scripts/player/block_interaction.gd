@@ -208,7 +208,9 @@ func _use() -> void:
 		"bucket":
 			_fill_bucket()
 		"water_bucket":
-			_empty_bucket()
+			_empty_bucket("water")
+		"lava_bucket":
+			_empty_bucket("lava")
 		"bed":
 			_place_bed()
 
@@ -240,7 +242,11 @@ func _screen() -> InventoryScreen:
 ## The cell a placed block goes to: next to the targeted face, or the
 ## targeted cell itself when it is water.
 func _place_cell() -> Variant:
-	if not target.get("hit", false) or target.normal == Vector3i.ZERO:
+	if not target.get("hit", false):
+		return null
+	if Blocks.replaceable_table[target.block] == 1:
+		return target.pos # plants are simply replaced
+	if target.normal == Vector3i.ZERO:
 		return null
 	var pos: Vector3i = target.pos + target.normal
 	if not world.is_inside(pos) or Blocks.collides_table[world.get_block(pos)] == 1:
@@ -259,6 +265,13 @@ func _place_block(id: int) -> void:
 	var family := Blocks.family_of(id)
 	if Blocks.family_ids(family).size() == 4 and Blocks.facing_table[id] >= 0:
 		id = Blocks.variant(family, Blocks.facing_toward(player.look_direction()))
+	var block := Blocks.get_type(id)
+	if block.shape == BlockType.Shape.CROSS and not PlantBehavior.can_stay(id, world.get_block(pos + Vector3i.DOWN)):
+		return # plants only on their ground
+	if block.placed_as != "":
+		id = Blocks.id_of(block.placed_as) # placed leaves never decay
+	if world.get_block(pos) != Blocks.AIR:
+		world.destroy_block(pos, true, true, false) # a plant or liquid in the way
 	world.set_block(pos, id)
 	player.swing()
 	if not player.is_creative():
@@ -289,31 +302,34 @@ func _place_bed() -> void:
 		player.inventory.take(player.selected_slot)
 
 
-## An empty bucket scoops up a water source.
+## An empty bucket scoops up a water or lava source.
 func _fill_bucket() -> void:
 	var hit := world.raycast(player.eye_position(), player.look_direction(), player.reach(), true)
-	if not hit.get("hit", false) or hit.block != Blocks.id_of("water"):
+	if not hit.get("hit", false) or Blocks.liquid_level_table[hit.block] != 0:
 		return
+	var filled := Items.id_of(Blocks.family_of(hit.block) + "_bucket")
 	world.set_block(hit.pos, Blocks.AIR)
 	player.swing()
 	if player.is_creative():
 		return
 	var slot := player.selected_slot
 	if player.inventory.count_at(slot) == 1:
-		player.inventory.set_slot(slot, Items.id_of("water_bucket"), 1)
+		player.inventory.set_slot(slot, filled, 1)
 	else:
 		player.inventory.take(slot)
-		var left := player.inventory.add(Items.id_of("water_bucket"), 1)
+		var left := player.inventory.add(filled, 1)
 		if left > 0:
-			player.throw_items(Items.id_of("water_bucket"), left)
+			player.throw_items(filled, left)
 
 
-## A water bucket pours a source block out; the bucket stays.
-func _empty_bucket() -> void:
+## A filled bucket pours a source block out; the bucket stays.
+func _empty_bucket(family: String) -> void:
 	var cell: Variant = _place_cell()
 	if cell == null:
 		return
-	world.set_block(cell, Blocks.id_of("water"))
+	if world.get_block(cell) != Blocks.AIR:
+		world.destroy_block(cell, family == "water")
+	world.set_block(cell, Blocks.id_of(family))
 	player.swing()
 	if not player.is_creative():
 		player.inventory.set_slot(player.selected_slot, Items.id_of("bucket"), 1)

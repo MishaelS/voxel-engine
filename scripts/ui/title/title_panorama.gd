@@ -97,6 +97,7 @@ func _build_scene() -> void:
 	_update_camera(0.0)
 
 	add_child(WaterAnimation.new())
+	add_child(LavaAnimation.new())
 	var clouds := Clouds.new()
 	clouds.camera = camera
 	add_child(clouds)

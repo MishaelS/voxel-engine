@@ -28,6 +28,8 @@ static func get_icon(id: int) -> Texture2D:
 		return null
 	if not Items.is_block(id):
 		return Items.icon(id) # flat items: their items.png tile
+	if Blocks.shape_table[id] == BlockType.Shape.CROSS:
+		return _flat_icon(id) # plants: their picture, like the classic game
 	var pixels := icon_pixels()
 	if pixels != _pixels:
 		clear()
@@ -50,6 +52,25 @@ static func clear() -> void:
 	if is_instance_valid(_holder):
 		_holder.queue_free()
 	_holder = null
+
+
+## A plant's tile from the block atlas, colored like in the world.
+static func _flat_icon(id: int) -> Texture2D:
+	if _cache.has(id):
+		return _cache[id]
+	var atlas: Image = (load(Blocks.ATLAS_PATH) as Texture2D).get_image()
+	if atlas.is_compressed():
+		atlas.decompress()
+	var tile := Blocks.face_tiles[id * 6 + 2]
+	var image := atlas.get_region(Rect2i((tile % 16) * 16, (tile / 16) * 16, 16, 16))
+	image.convert(Image.FORMAT_RGBA8)
+	var block := Blocks.get_type(id)
+	if block.biome_tint != 0:
+		for y in 16:
+			for x in 16:
+				image.set_pixel(x, y, image.get_pixel(x, y) * Color(block.tint, 1.0))
+	_cache[id] = ImageTexture.create_from_image(image)
+	return _cache[id]
 
 
 static func _render(id: int, pixels: int) -> Texture2D:

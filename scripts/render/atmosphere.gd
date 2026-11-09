@@ -15,6 +15,10 @@ extends Node
 const WATER_FOG_END := 18.0
 const WATER_TINT := Color(0.05, 0.15, 0.45, 0.35)
 const WATER_FOG := Color(0.03, 0.08, 0.25)
+## Inside lava: thick glowing fog, like the classic game.
+const LAVA_FOG := Color(0.6, 0.1, 0.0)
+const LAVA_FOG_END := 2.0
+const LAVA_TINT := Color(0.9, 0.25, 0.0, 0.55)
 
 @export var world_environment: WorldEnvironment
 @export var sun: DayNightCycle
@@ -25,6 +29,7 @@ const WATER_FOG := Color(0.03, 0.08, 0.25)
 var daylight := 1.0
 ## True while the eyes are in water.
 var underwater := false
+var in_lava := false
 ## The isometric camera is in use / an isometric screenshot is being
 ## rendered: fog and clouds follow the Isometric Camera settings.
 var isometric := false
@@ -49,6 +54,7 @@ func _ready() -> void:
 	environment.fog_sky_affect = 0.0
 
 	add_child(WaterAnimation.new())
+	add_child(LavaAnimation.new())
 	_clouds = Clouds.new()
 	_clouds.name = "Clouds"
 	_clouds.camera = player.camera if player else null
@@ -90,7 +96,9 @@ func _process(_delta: float) -> void:
 	sky_darkness = sun.sky_darkness() * _night_factor() if sun and classic else 0.0
 	BlockMaterials.set_parameter("sky_darkness", sky_darkness)
 	var eye := player.eye_position() if player else Vector3.ZERO
-	underwater = world != null and Blocks.liquid_table[world.get_block(Vector3i(eye.floor()))] == 1
+	var eye_block := world.get_block(Vector3i(eye.floor())) if world else Blocks.AIR
+	in_lava = Blocks.liquid_table[eye_block] == 1 and Blocks.family_of(eye_block) == "lava"
+	underwater = Blocks.liquid_table[eye_block] == 1 and not in_lava
 	_update_fog(to_sun)
 	_update_clouds(to_sun)
 	_update_overlay(eye)
@@ -117,7 +125,13 @@ func horizon_color(to_sun: Vector3, view: Vector3) -> Color:
 func _update_fog(to_sun: Vector3) -> void:
 	var environment := world_environment.environment
 	# Under water the fog covers the sky too: everything far is deep water.
-	environment.fog_sky_affect = 1.0 if underwater else 0.0
+	environment.fog_sky_affect = 1.0 if underwater or in_lava else 0.0
+	if in_lava:
+		environment.fog_enabled = true
+		environment.fog_light_color = LAVA_FOG
+		environment.fog_depth_begin = 0.0
+		environment.fog_depth_end = LAVA_FOG_END
+		return
 	if underwater:
 		environment.fog_enabled = true
 		environment.fog_light_color = WATER_FOG * (0.2 + 0.8 * daylight)
@@ -161,8 +175,10 @@ func _update_overlay(eye: Vector3) -> void:
 	tint.r *= 0.3 + 0.7 * daylight
 	tint.g *= 0.3 + 0.7 * daylight
 	tint.b *= 0.3 + 0.7 * daylight
+	if in_lava:
+		tint = LAVA_TINT # glows: no night darkening
 	material.set_shader_parameter("tint", tint)
-	_overlay.visible = strength > 0.0 or underwater
+	_overlay.visible = strength > 0.0 or underwater or in_lava
 
 
 func _sky_color(parameter: String, fallback: Color) -> Color:

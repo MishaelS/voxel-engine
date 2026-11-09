@@ -103,6 +103,15 @@ func item_crumbs(item_id: int, origin: Vector3, direction: Vector3, amount: int 
 			_add(origin, velocity, Color(-1, u, v, _size(1.0)), Color(light, light, light), _life(), 1.0, false)
 
 
+## A puff of smoke (lava hardening, items burning).
+func smoke(point: Vector3, amount: int = 8) -> void:
+	for i in amount:
+		var start := point + Vector3(_rng.randf_range(-0.4, 0.4), _rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.4, 0.4))
+		var gray := _rng.randf_range(0.25, 0.45)
+		_add(start, Vector3(0, _rng.randf_range(0.02, 0.05), 0), Color(-2, 0, 0, _rng.randf_range(0.12, 0.25)),
+			Color(gray, gray, gray, 0.8), _rng.randi_range(15, 30), -0.01, true)
+
+
 ## Smoke and sometimes a flame in front of a lit furnace.
 func furnace(pos: Vector3i, facing: int) -> void:
 	var front := Vector3(Blocks.FACING_DIRECTIONS[facing])

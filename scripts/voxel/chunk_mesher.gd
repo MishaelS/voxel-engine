@@ -43,6 +43,16 @@ const FACE_CORNERS := [
 	[Vector3(1, 1, 0), Vector3(0, 1, 0), Vector3(0, 0, 0), Vector3(1, 0, 0)], # -Z
 ]
 const CORNER_UVS: Array[Vector2] = [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
+## Plants: two diagonal squares across the block, each drawn from both
+## sides (corners top-left, top-right, bottom-right, bottom-left).
+const CROSS_LOW := 0.05
+const CROSS_HIGH := 0.95
+static var CROSS_QUADS: Array[PackedVector3Array] = [
+	PackedVector3Array([Vector3(CROSS_LOW, 1, CROSS_LOW), Vector3(CROSS_HIGH, 1, CROSS_HIGH), Vector3(CROSS_HIGH, 0, CROSS_HIGH), Vector3(CROSS_LOW, 0, CROSS_LOW)]),
+	PackedVector3Array([Vector3(CROSS_HIGH, 1, CROSS_HIGH), Vector3(CROSS_LOW, 1, CROSS_LOW), Vector3(CROSS_LOW, 0, CROSS_LOW), Vector3(CROSS_HIGH, 0, CROSS_HIGH)]),
+	PackedVector3Array([Vector3(CROSS_LOW, 1, CROSS_HIGH), Vector3(CROSS_HIGH, 1, CROSS_LOW), Vector3(CROSS_HIGH, 0, CROSS_LOW), Vector3(CROSS_LOW, 0, CROSS_HIGH)]),
+	PackedVector3Array([Vector3(CROSS_HIGH, 1, CROSS_LOW), Vector3(CROSS_LOW, 1, CROSS_HIGH), Vector3(CROSS_LOW, 0, CROSS_HIGH), Vector3(CROSS_HIGH, 0, CROSS_LOW)]),
+]
 
 ## Brightness for AO level 0 (fully enclosed corner) .. 3 (open corner).
 ## Linear light multipliers (the shader works in linear space).
@@ -408,6 +418,7 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 	var liquid_levels := Blocks.liquid_level_table
 	var collides := Blocks.collides_table
 	var corner_heights := PackedFloat32Array([1.0, 1.0, 1.0, 1.0])
+	var shapes := Blocks.shape_table
 	var has_colors := grass.size() == 256 and foliage.size() == 256
 
 	var vertices := PackedVector3Array()
@@ -424,6 +435,21 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 		if has_colors and biome_tint[id] != 0:
 			var column := (i % P - 1) + 16 * ((i / P) % P - 1)
 			tint = grass[column] if biome_tint[id] == 1 else foliage[column]
+		if shapes[id] == BlockType.Shape.CROSS:
+			# Two crossed squares, both sides, lit by the light in the cell
+			# (no face shading or AO, like the classic game's plants).
+			var cross_tile := float(face_tiles[id * 6 + 2]) + 0.75
+			var cross_color := Color(tint.r, tint.g, tint.b, float(light[i]) / SkyLight.MAX)
+			for quad: PackedVector3Array in CROSS_QUADS:
+				var start := vertices.size()
+				for c in 4:
+					vertices.append(origin + quad[c])
+					normals.append(Vector3.UP)
+					uvs.append(corner_uvs[c])
+					layers.append(Vector2(cross_tile, -1.0))
+					colors.append(cross_color)
+				indices.append_array(PackedInt32Array([start, start + 1, start + 2, start, start + 2, start + 3]))
+			continue
 		var self_culls := cull_self[id] == 1
 		var group := cull_groups[id]
 		var top := heights[id]
@@ -455,16 +481,22 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 							total += 1.0
 							weight += 1.0
 				corner_heights[k] = 1.0 if full else 1.0 - total / maxf(weight, 1.0)
-		# Random texture rotation, fixed per block position (like the modern
-		# game's position random): bits 0-1 turn top / bottom, bit 2 mirrors sides.
+		# Random texture variant, fixed per block position (like the modern
+		# game's position random): bits 0-1 turn the top / bottom, bit 2
+		# mirrors (MIRROR blocks only).
 		var turn := -1
-		if rotate and rotation_table[id] == 1:
+		var variants := rotation_table[id]
+		if rotate and variants != BlockType.Rotation.NONE:
 			var wx := at.x + i % P - 1
 			var wy := at.y + i / P2 - 1
 			var wz := at.z + (i / P) % P - 1
 			var h := (wx * 3129871) ^ (wz * 116129781) ^ wy
 			h = h * h * 42317861 + h * 11
 			turn = (h >> 16) & 7
+			if variants == BlockType.Rotation.TURN:
+				turn &= 3 # turned around the vertical axis: sides unchanged
+			else:
+				turn &= 6 # mirrored and / or turned by 180 degrees
 
 		for face in 6:
 			var front := i + face_deltas[face]
@@ -542,7 +574,7 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 			# strips) show the matching part of the texture.
 			var mode := uv_modes[index]
 			if turn >= 0 and raise == 0.0:
-				mode = (turn & 3) if face < 2 else (turn & 4)
+				mode = turn if face < 2 else (turn & 4)
 			for c in 4:
 				var uv := corner_uvs[(c + mode) & 3]
 				if mode & 4:

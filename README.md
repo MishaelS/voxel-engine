@@ -24,7 +24,7 @@ Controls
 * T: open the chat, /: open it with a command (Tab completes, Up/Down choose, Esc closes)
 * P: freeze game ticks, . (period): run one tick while frozen
 * M: skip to the next day (moon phases)
-* F11 / Alt+Enter: toggle fullscreen (the window starts maximized and can be resized)
+* F11 / Alt+Enter: toggle fullscreen (the window keeps its last size and opens in the middle of the screen)
 
 ## Settings
 Player options live in the `Settings` autoload and are saved to `user://settings.cfg`.
@@ -101,7 +101,7 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/items/` - item registry (tools, ingots, food, buckets, the bed) and the 3D shapes of flat items in hand
 * `scripts/player/crafting.gd`, `scripts/player/smelting.gd` - crafting and furnace recipes
 * `scripts/entities/item_entities.gd`, `scripts/entities/block_particles.gd` - dropped items and particles
-* `scripts/voxel/behaviors/water_behavior.gd` - flowing water
+* `scripts/voxel/behaviors/` - block behaviors: flowing water and lava, falling sand, grass, plants, leaf decay
 * `scripts/voxel/block_type.gd` - block type description (faces, overlay, tint, render layer)
 * `scripts/voxel/block_materials.gd` - atlas → Texture2DArray, one material per render layer
 * `scripts/voxel/chunk_data.gd` - block storage of a 16×16×16 chunk

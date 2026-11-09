@@ -53,7 +53,7 @@ static var collides_table := PackedByteArray()
 static var liquid_table := PackedByteArray()
 ## Biome tint kind per block (see BlockType.biome_tint).
 static var biome_tint_table := PackedByteArray()
-## 1 if the texture is randomly turned (see BlockType.random_rotation).
+## Random texture variants per block (BlockType.Rotation).
 static var random_rotation_table := PackedByteArray()
 ## Top height per block (see BlockType.height).
 static var height_table := PackedFloat32Array()
@@ -65,6 +65,10 @@ static var cull_group_table := PackedInt32Array()
 static var liquid_level_table := PackedInt32Array()
 ## Facing per block (-1 = not oriented).
 static var facing_table := PackedInt32Array()
+## Shape per block (BlockType.Shape).
+static var shape_table := PackedByteArray()
+## 1 for blocks that placing or flowing liquids replace (plants).
+static var replaceable_table := PackedByteArray()
 ## family -> [ids by facing] (or [id] for blocks without facing).
 static var _families := {}
 
@@ -75,7 +79,7 @@ static func _register_all() -> bool:
 	register(BlockType.cube("air", 0).set_layer(Layer.TRANSLUCENT).set_collides(false).set_hardness(-1)) # id 0, never drawn
 
 	# Terrain
-	register(BlockType.cube("stone", 1).set_random_rotation().set_hardness(1.5).set_drop("cobblestone").set_tool("pickaxe", 0))
+	register(BlockType.cube("stone", 1).set_random_rotation(BlockType.Rotation.MIRROR).set_hardness(1.5).set_drop("cobblestone").set_tool("pickaxe", 0))
 	register(BlockType.cube("dirt", 2).set_random_rotation().set_hardness(0.5).set_tool("shovel"))
 	register(_grass("grass_plains", GRASS_PLAINS))
 	register(_grass("grass_forest", GRASS_FOREST))
@@ -83,25 +87,28 @@ static func _register_all() -> bool:
 	register(_grass("grass_swamp", GRASS_SWAMP))
 	register(_grass("grass_savanna", GRASS_SAVANNA))
 	register(BlockType.cube("cobblestone", 16).set_hardness(2.0).set_tool("pickaxe", 0))
-	register(BlockType.cube("bedrock", 17).set_random_rotation().set_hardness(-1))
+	register(BlockType.cube("bedrock", 17).set_random_rotation(BlockType.Rotation.MIRROR).set_hardness(-1))
 	register(_falling(BlockType.cube("sand", 18).set_random_rotation().set_hardness(0.5).set_tool("shovel")))
-	register(_falling(BlockType.cube("gravel", 19).set_random_rotation().set_hardness(0.6).set_tool("shovel") \
+	register(_falling(BlockType.cube("gravel", 19).set_hardness(0.6).set_tool("shovel") \
 		.set_drops([{"item": "flint", "chance": 0.1}, {"item": "gravel"}])))
 	register(BlockType.column("sandstone", 176, 192, 208).set_hardness(0.8).set_tool("pickaxe", 0))
 	register(BlockType.cube("obsidian", 37).set_hardness(10.0).set_tool("pickaxe", 3))
 	# Still water on top and bottom, flowing water on the sides (both animated, WaterAnimation).
-	register(_water("water", 0).set_item("water"))
+	register(_liquid("water", 0).set_item("water"))
 
 	# Trees
 	register(BlockType.column("oak_log", 21, 20).set_hardness(2.0).set_tool("axe"))
 	register(BlockType.column("birch_log", 21, 117).set_hardness(2.0).set_tool("axe"))
 	register(BlockType.column("spruce_log", 21, 116).set_hardness(2.0).set_tool("axe"))
 	register(BlockType.cube("oak_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_OAK).set_light_opacity(1) \
-		.set_hardness(0.2).set_drops([{"item": "apple", "chance": 0.005}]).set_biome_tint(2).set_fast_tile(53))
+		.set_hardness(0.2).set_drops([{"item": "apple", "chance": 0.005}]).set_biome_tint(2).set_fast_tile(53) \
+		.set_on_update(Callable(LeafBehavior, "on_update")).set_scheduled_tick(Callable(LeafBehavior, "scheduled_tick")))
 	register(BlockType.cube("birch_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_BIRCH).set_light_opacity(1) \
-		.set_hardness(0.2).set_drop("none").set_fast_tile(53))
+		.set_hardness(0.2).set_drop("none").set_fast_tile(53) \
+		.set_on_update(Callable(LeafBehavior, "on_update")).set_scheduled_tick(Callable(LeafBehavior, "scheduled_tick")))
 	register(BlockType.cube("spruce_leaves", 132).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_SPRUCE).set_light_opacity(1) \
-		.set_hardness(0.2).set_drop("none").set_fast_tile(133))
+		.set_hardness(0.2).set_drop("none").set_fast_tile(133) \
+		.set_on_update(Callable(LeafBehavior, "on_update")).set_scheduled_tick(Callable(LeafBehavior, "scheduled_tick")))
 	register(BlockType.cube("oak_planks", 4).set_hardness(2.0).set_tool("axe"))
 	register(BlockType.cube("birch_planks", 214).set_hardness(2.0).set_tool("axe"))
 	register(BlockType.cube("spruce_planks", 198).set_hardness(2.0).set_tool("axe"))
@@ -133,8 +140,8 @@ static func _register_all() -> bool:
 	register(_furnace("furnace", 44, 0))
 
 	# Cold biomes (appended: ids must stay stable)
-	register(BlockType.column("snowy_grass", 66, 68, 2).set_random_rotation().set_hardness(0.6).set_drop("dirt").set_tool("shovel"))
-	register(BlockType.cube("snow", 66).set_random_rotation().set_hardness(0.2).set_tool("shovel", 0) \
+	register(BlockType.column("snowy_grass", 66, 68, 2).set_hardness(0.6).set_drop("dirt").set_tool("shovel"))
+	register(BlockType.cube("snow", 66).set_hardness(0.2).set_tool("shovel", 0) \
 		.set_drops([{"item": "snowball", "min": 4, "max": 4}]))
 	register(BlockType.cube("ice", 67).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2) \
 		.set_hardness(0.5).set_slipperiness(0.98).set_drop("none").set_tool("pickaxe"))
@@ -147,10 +154,30 @@ static func _register_all() -> bool:
 	for facing in 4:
 		register(_chest(facing))
 	for level in range(1, 9):
-		register(_water("water_falling" if level == 8 else "water_%d" % level, level))
+		register(_liquid("water_falling" if level == 8 else "water_%d" % level, level))
 	for part in ["foot", "head"]:
 		for facing in 4:
 			register(_bed(part, facing))
+
+	# Plants, lava and leaves placed by the player (appended: ids stay stable).
+	register(BlockType.cube("tall_grass", 39).as_plant().set_tint(GRASS_PLAINS).set_biome_tint(1) \
+		.set_drops([{"item": "seeds", "chance": 0.125}, {}]))
+	register(BlockType.cube("fern", 56).as_plant().set_tint(GRASS_PLAINS).set_biome_tint(1) \
+		.set_drops([{"item": "seeds", "chance": 0.125}, {}]))
+	register(BlockType.cube("dead_bush", 55).as_plant().set_drop("none"))
+	register(BlockType.cube("dandelion", 13).as_plant().set_height(0.6))
+	register(BlockType.cube("rose", 12).as_plant().set_height(0.6))
+	for level in range(0, 9):
+		var lava_name := "lava" if level == 0 else ("lava_falling" if level == 8 else "lava_%d" % level)
+		register(_liquid(lava_name, level, "lava"))
+	for leaves: String in ["oak", "birch", "spruce"]:
+		var placed := Blocks.get_type(id_of(leaves + "_leaves")).duplicate_type(leaves + "_leaves_placed")
+		placed.item = leaves + "_leaves"
+		placed.in_catalog = false
+		placed.on_update = Callable()
+		placed.scheduled_tick = Callable()
+		types[id_of(leaves + "_leaves")].placed_as = placed.name
+		register(placed)
 	return true
 
 
@@ -187,17 +214,24 @@ static func _chest(facing: int) -> BlockType:
 	return _oriented("chest", facing, 27, 27, 189, 42).set_hardness(2.5).set_tool("axe")
 
 
-## Water: still (level 0, the source) or flowing (1..7 lower and lower,
-## 8 falling); see WaterBehavior.
-static func _water(block_name: String, level: int) -> BlockType:
-	var block := BlockType.column(block_name, 205, 206).set_layer(Layer.TRANSLUCENT).set_cull_self() \
-		.set_light_opacity(2).set_collides(false).set_hardness(-1).set_liquid().set_drop("none") \
-		.set_on_update(Callable(WaterBehavior, "on_update")) \
-		.set_scheduled_tick(Callable(WaterBehavior, "scheduled_tick"))
+## Water or lava: still (level 0, the source) or flowing (1..7 lower and
+## lower, 8 falling); see LiquidBehavior. Water is translucent and lets
+## some light through; lava is opaque, glows (always full bright) and
+## blocks sky light.
+static func _liquid(block_name: String, level: int, family: String = "water") -> BlockType:
+	var block: BlockType
+	if family == "lava":
+		block = BlockType.column(block_name, 237, 238).set_cull_self().set_light_opacity(15)
+		block.emissive = true
+	else:
+		block = BlockType.column(block_name, 205, 206).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2)
+	block.set_collides(false).set_hardness(-1).set_liquid().set_drop("none") \
+		.set_on_update(Callable(LiquidBehavior, "on_update")) \
+		.set_scheduled_tick(Callable(LiquidBehavior, "scheduled_tick"))
 	block.liquid_level = level
-	block.family = "water"
+	block.family = family
 	if level > 0:
-		block.item = "water"
+		block.item = family
 		block.in_catalog = false
 	return block
 
@@ -250,7 +284,9 @@ static func register(block: BlockType) -> int:
 	types.append(block)
 	_ids_by_name[block.name] = id
 
-	is_opaque_table.append(1 if block.layer == Layer.OPAQUE and id != AIR and block.height >= 1.0 else 0)
+	is_opaque_table.append(1 if block.layer == Layer.OPAQUE and id != AIR and block.height >= 1.0 and not block.liquid else 0)
+	if block.emissive:
+		block.overlays = PackedInt32Array([-2, -2, -2, -2, -2, -2]) # full bright (block shaders)
 	layer_table.append(block.layer)
 	cull_self_table.append(1 if block.cull_self else 0)
 	face_tiles.append_array(block.tiles)
@@ -262,11 +298,13 @@ static func register(block: BlockType) -> int:
 	light_opacity_table.append(block.light_opacity)
 	collides_table.append(1 if block.collides else 0)
 	liquid_table.append(1 if block.liquid else 0)
-	random_rotation_table.append(1 if block.random_rotation else 0)
+	random_rotation_table.append(block.random_rotation)
 	height_table.append(block.height)
 	uv_mode_table.append_array(block.uv_modes)
 	liquid_level_table.append(block.liquid_level)
 	facing_table.append(block.facing)
+	shape_table.append(block.shape)
+	replaceable_table.append(1 if block.replaceable else 0)
 	var family := block.family if block.family != "" else block.name
 	if not _families.has(family):
 		_families[family] = []

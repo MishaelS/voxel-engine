@@ -103,6 +103,14 @@ var _last_damage := 0
 var sprinting := false
 var sneaking := false
 var in_water := false
+var in_lava := false
+## Ticks the player keeps burning (lava sets on fire for 15 s), like the
+## classic game: 1 damage per second; water puts it out.
+var fire_ticks := 0
+## How fast the current pushes (blocks per tick per tick), the classic 0.014.
+const CURRENT_PUSH := 0.014
+const FIRE_TICKS := 300
+const LAVA_DAMAGE := 4
 var horizontal_collision := false
 ## Where the player respawns: the last bed slept in (INF = world spawn).
 var spawn_point := Vector3.INF
@@ -113,6 +121,7 @@ var eating := -1.0
 var sleep_ticks := 0
 var _bed := Vector3i.ZERO
 var _sleep_fade: ColorRect
+var _fire: TextureRect
 
 # Physics state in 64-bit floats (Vector3 is 32-bit: not precise enough for
 # collision far from the origin). Feet, center of the box.
@@ -159,6 +168,22 @@ func _ready() -> void:
 	_sleep_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_sleep_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_sleep_fade)
+	# Burning: flames rise from the bottom of the screen.
+	var gradient := Gradient.new()
+	gradient.set_color(0, Color(1.0, 0.85, 0.2, 0.0))
+	gradient.set_color(1, Color(1.0, 0.35, 0.0, 0.85))
+	gradient.add_point(0.6, Color(1.0, 0.55, 0.05, 0.25))
+	var flames := GradientTexture2D.new()
+	flames.gradient = gradient
+	flames.fill_from = Vector2(0.5, 0.45)
+	flames.fill_to = Vector2(0.5, 1.0)
+	_fire = TextureRect.new()
+	_fire.texture = flames
+	_fire.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fire.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_fire.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fire.visible = false
+	layer.add_child(_fire)
 	var save := WorldSave.current
 	if save:
 		game_mode = save.game_mode as GameMode
@@ -324,6 +349,9 @@ func _process(delta: float) -> void:
 	rotation = Vector3(0, _yaw, 0)
 	_update_camera(alpha, delta)
 	_sleep_fade.color.a = clampf((sleep_ticks + alpha) / SLEEP_TICKS, 0.0, 1.0) * 0.95 if sleeping else 0.0
+	_fire.visible = fire_ticks > 0 and not dead
+	if _fire.visible:
+		_fire.modulate.a = 0.75 + 0.25 * sin(Time.get_ticks_msec() / 60.0)
 
 
 func _teleported() -> void:
@@ -411,7 +439,9 @@ func _tick() -> void:
 		sprinting = false
 	forward *= 0.98
 	strafe *= 0.98
-	in_water = _touches_water()
+	in_water = _touches_liquid_at(_x, _y, _z, "water")
+	in_lava = _touches_liquid_at(_x, _y, _z, "lava")
+	_burn()
 
 	if flying:
 		if sneak_key:
@@ -421,12 +451,15 @@ func _tick() -> void:
 
 	var start_x := _x
 	var start_z := _z
-	if in_water and not flying:
+	if (in_water or in_lava) and not flying:
 		if jumping:
 			velocity.y += 0.04
 		_move_relative(strafe, forward, AIR_ACCELERATION)
+		if in_water:
+			velocity += _current() * CURRENT_PUSH
 		_move(velocity)
-		velocity *= 0.8
+		# Lava is thicker than water: much slower.
+		velocity *= 0.5 if in_lava else 0.8
 		velocity.y -= 0.02
 		if horizontal_collision and _fits(_x + velocity.x, _y + velocity.y + 0.6, _z + velocity.z):
 			velocity.y = 0.3 # climb out onto the shore
@@ -608,25 +641,49 @@ func _free(x: float, y: float, z: float) -> bool:
 
 
 func _fits(x: float, y: float, z: float) -> bool:
-	return _free(x, y, z) and not _touches_water_at(x, y, z)
+	return _free(x, y, z) and not _touches_liquid_at(x, y, z, "water") and not _touches_liquid_at(x, y, z, "lava")
 
 
-func _touches_water() -> bool:
-	return _touches_water_at(_x, _y, _z)
-
-
-## Water inside the box shrunk by 0.4 vertically (the classic check: feet
-## and head have to be really in it).
-func _touches_water_at(x: float, y: float, z: float) -> bool:
+## Liquid of a family ("water", "lava") inside the box shrunk by 0.4
+## vertically (the classic check: feet and head have to be really in it).
+func _touches_liquid_at(x: float, y: float, z: float, family: String) -> bool:
 	if world == null:
 		return false
 	var liquid := Blocks.liquid_table
 	for by in range(floori(y + 0.4), floori(y + HEIGHT - 0.4) + 1):
 		for bz in range(floori(z - HALF_WIDTH + 0.001), floori(z + HALF_WIDTH - 0.001) + 1):
 			for bx in range(floori(x - HALF_WIDTH + 0.001), floori(x + HALF_WIDTH - 0.001) + 1):
-				if liquid[world.get_block(Vector3i(bx, by, bz))] == 1:
+				var id := world.get_block(Vector3i(bx, by, bz))
+				if liquid[id] == 1 and Blocks.family_of(id) == family:
 					return true
 	return false
+
+
+## The push of flowing water on the player: the currents of all water
+## blocks the box touches, as one direction (the classic game).
+func _current() -> Vector3:
+	var flow := Vector3.ZERO
+	for by in range(floori(_y + 0.4), floori(_y + HEIGHT - 0.4) + 1):
+		for bz in range(floori(_z - HALF_WIDTH + 0.001), floori(_z + HALF_WIDTH - 0.001) + 1):
+			for bx in range(floori(_x - HALF_WIDTH + 0.001), floori(_x + HALF_WIDTH - 0.001) + 1):
+				flow += LiquidBehavior.flow_vector(world, Vector3i(bx, by, bz))
+	return flow.normalized() if flow.length_squared() > 1e-6 else Vector3.ZERO
+
+
+## Lava hurts (4 at a time) and sets on fire; burning hurts 1 per second;
+## water puts the fire out (the classic game). Creative players don't burn.
+func _burn() -> void:
+	if in_lava and not is_creative():
+		damage(LAVA_DAMAGE)
+		fire_ticks = FIRE_TICKS
+	if in_water:
+		fire_ticks = 0
+	if fire_ticks > 0:
+		fire_ticks -= 1
+		if fire_ticks % 20 == 0 and not in_lava:
+			damage(1)
+	if is_creative():
+		fire_ticks = 0
 
 
 func _ground_slipperiness() -> float:
@@ -669,6 +726,7 @@ func heal(amount: int) -> void:
 ## Back to life at `position` with full health and food (death screen).
 func respawn(position: Vector3) -> void:
 	wake_up()
+	fire_ticks = 0
 	dead = false
 	death_ticks = 0
 	health = MAX_HEALTH
@@ -743,7 +801,7 @@ func block_broken() -> void:
 ## Fall damage like the classic game: distance fallen since last standing,
 ## minus 3 blocks, when landing. Water and flying reset it.
 func _track_fall() -> void:
-	if flying or in_water:
+	if flying or in_water or in_lava:
 		_fall_distance = 0.0
 		return
 	var dropped := _prev.y - _y

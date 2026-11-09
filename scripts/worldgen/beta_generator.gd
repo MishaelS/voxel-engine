@@ -99,7 +99,12 @@ var _biome_filler := PackedInt32Array()
 var _biome_trees := PackedInt32Array()
 var _biome_cold := PackedByteArray()
 var _water := 0
+var _lava := 0
 var _bedrock := 0
+## Patches of tall grass per column and biome, like the classic game.
+const GRASS_PATCHES := {"plains": 10, "rainforest": 10, "forest": 2, "seasonal_forest": 2, "taiga": 1, "shrubland": 1, "savanna": 1, "swampland": 1}
+## Below this height caves are filled with lava (the classic lava level).
+const LAVA_LEVEL := 10
 
 
 func _init(seed_value: int) -> void:
@@ -126,6 +131,7 @@ func _init(seed_value: int) -> void:
 		_biome_trees.append(biome.trees)
 		_biome_cold.append(1 if biome.cold else 0)
 	_water = _id["water"]
+	_lava = _id["lava"]
 	_bedrock = _id["bedrock"]
 
 
@@ -239,8 +245,10 @@ func generate_blocks(cx: int, cz: int) -> PackedByteArray:
 	_replace_surface(blocks, cx, cz, biomes, top)
 	_carve_caves(blocks, cx, cz)
 	var rng := column_rng(cx, cz, 100)
+	_place_lava_lake(blocks, column_rng(cx, cz, 200))
 	_place_ores(blocks, rng, top)
 	_place_trees(blocks, cx, cz, biomes, rng)
+	_place_plants(blocks, biomes, column_rng(cx, cz, 300))
 	_freeze(blocks, biomes)
 	return blocks
 
@@ -528,7 +536,8 @@ func _carve_ellipsoid(blocks: PackedByteArray, cx: int, cz: int, center: Vector3
 				if fy > -0.7 and fx * fx + fy * fy + fz * fz < 1.0:
 					var i := x + 16 * (z + 16 * y)
 					if blocks[i] != bedrock:
-						blocks[i] = Blocks.AIR
+						# Deep caves fill with lava, like the classic game.
+						blocks[i] = _lava if y < LAVA_LEVEL else Blocks.AIR
 
 
 ## Step 5: ore veins and dirt / gravel pockets, only inside stone.
@@ -608,6 +617,81 @@ func _place_trees(blocks: PackedByteArray, cx: int, cz: int, biomes: PackedByteA
 					_round_tree(blocks, rng, x, y + 1, z, _id["oak_log"], _id["oak_leaves"], 4)
 			_:
 				_round_tree(blocks, rng, x, y + 1, z, _id["oak_log"], _id["oak_leaves"], 4)
+
+
+## Lava lakes like the classic game: one column in 8 may get one, mostly
+## deep underground (above sea level only one in 10). A few overlapping
+## blobs; the lower half fills with lava, the upper half is air.
+func _place_lava_lake(blocks: PackedByteArray, rng: RandomNumberGenerator) -> void:
+	if rng.randi_range(0, 7) != 0:
+		return
+	var y := rng.randi_range(0, rng.randi_range(0, 119) + 7)
+	if y >= SEA_LEVEL and rng.randi_range(0, 9) != 0:
+		return
+	var floor_y := y - 4
+	if floor_y < 2:
+		return
+	var shape := PackedByteArray()
+	shape.resize(16 * 16 * 8)
+	for blob in rng.randi_range(4, 7):
+		var size := Vector3(rng.randf() * 6.0 + 3.0, rng.randf() * 4.0 + 2.0, rng.randf() * 6.0 + 3.0)
+		var center := Vector3(rng.randf() * (16.0 - size.x - 2.0) + 1.0 + size.x / 2.0,
+			rng.randf() * (8.0 - size.y - 4.0) + 2.0 + size.y / 2.0,
+			rng.randf() * (16.0 - size.z - 2.0) + 1.0 + size.z / 2.0)
+		for lx in range(1, 15):
+			for lz in range(1, 15):
+				for ly in range(1, 7):
+					var d := (Vector3(lx, ly, lz) + Vector3(0.5, 0.5, 0.5) - center) / (size / 2.0)
+					if d.length_squared() < 1.0:
+						shape[lx + 16 * (lz + 16 * ly)] = 1
+	# Not into water or open air: the classic game skips such spots.
+	for i in shape.size():
+		if shape[i] == 0:
+			continue
+		var ly := i / 256
+		var block := blocks[index(i % 16, floor_y + ly, (i / 16) % 16)]
+		if block == _water or (ly < 4 and block == Blocks.AIR):
+			return
+	for i in shape.size():
+		if shape[i] == 1:
+			var ly := i / 256
+			var j := index(i % 16, floor_y + ly, (i / 16) % 16)
+			if blocks[j] != _bedrock:
+				blocks[j] = _lava if ly < 4 else Blocks.AIR
+
+
+## Tall grass, ferns, flowers and dead bushes like the classic game: patches
+## around random spots (grass per biome, rainforests mostly ferns), two
+## patches of dandelions and sometimes roses everywhere, dead bushes in
+## deserts. Only on ground they can grow on, inside this column.
+func _place_plants(blocks: PackedByteArray, biomes: PackedByteArray, rng: RandomNumberGenerator) -> void:
+	var biome := BIOME_NAMES[biomes[8 * 16 + 8]]
+	for patch in GRASS_PATCHES.get(biome, 0):
+		var plant: int = _id["fern"] if biome == "rainforest" and rng.randi_range(0, 2) != 0 else _id["tall_grass"]
+		_plant_patch(blocks, rng, plant, 128)
+	for patch in 2:
+		_plant_patch(blocks, rng, _id["dandelion"], 64)
+	if rng.randi_range(0, 1) == 0:
+		_plant_patch(blocks, rng, _id["rose"], 64)
+	if biome == "desert":
+		for patch in 2:
+			_plant_patch(blocks, rng, _id["dead_bush"], 4)
+
+
+func _plant_patch(blocks: PackedByteArray, rng: RandomNumberGenerator, plant: int, tries: int) -> void:
+	var x0 := rng.randi_range(0, 15)
+	var z0 := rng.randi_range(0, 15)
+	var y0 := _surface_y(blocks, x0, z0) + 1
+	if y0 <= 0:
+		return
+	for t in tries:
+		var x := x0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
+		var y := y0 + rng.randi_range(0, 3) - rng.randi_range(0, 3)
+		var z := z0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
+		if x < 0 or x > 15 or z < 0 or z > 15 or y < 1 or y >= HEIGHT:
+			continue
+		if blocks[index(x, y, z)] == Blocks.AIR and PlantBehavior.can_stay(plant, blocks[index(x, y - 1, z)]):
+			blocks[index(x, y, z)] = plant
 
 
 func _surface_y(blocks: PackedByteArray, x: int, z: int) -> int:
