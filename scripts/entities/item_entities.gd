@@ -58,14 +58,19 @@ func spawn(id: int, item_count: int, position: Vector3, velocity: Vector3 = Vect
 ## Drops what breaking a block gives, from the block's cell, like the classic
 ## game: a random spot inside the block and a small random push.
 func drop_from_block(pos: Vector3i, id: int, item_count: int, damage: int = 0) -> void:
-	var position := Vector3(pos) + Vector3(_rng.randf_range(0.15, 0.85), _rng.randf_range(0.15, 0.85), _rng.randf_range(0.15, 0.85))
+	# The game's way: near the middle of the block (a quarter block either
+	# way), a small random push and 0.2 up.
+	var position := Vector3(pos) + Vector3(0.5 + _rng.randf_range(-0.25, 0.25), 0.5 + _rng.randf_range(-0.25, 0.25), 0.5 + _rng.randf_range(-0.25, 0.25))
 	var velocity := Vector3(_rng.randf_range(-0.1, 0.1), 0.2, _rng.randf_range(-0.1, 0.1))
 	spawn(id, item_count, position, velocity, PICKUP_DELAY, damage)
 
 
 ## Throws an item from the player's eyes along the look direction (Q).
 func throw_from(eye: Vector3, look: Vector3, id: int, item_count: int, damage: int = 0) -> void:
-	var velocity := look * 0.3 + Vector3(_rng.randf_range(-0.02, 0.02), 0.1, _rng.randf_range(-0.02, 0.02))
+	# The game's throw: 0.3 along the look, 0.1 up, a small random push.
+	var angle := _rng.randf() * TAU
+	var push := _rng.randf() * 0.02
+	var velocity := look * 0.3 + Vector3(cos(angle) * push, 0.1 + (_rng.randf() - _rng.randf()) * 0.1, sin(angle) * push)
 	spawn(id, item_count, eye - Vector3(0, 0.3, 0), velocity, THROW_PICKUP_DELAY, damage)
 
 
@@ -253,60 +258,74 @@ func _make_node(item: Dictionary) -> Node3D:
 	return node
 
 
-## 1 copy, 2 for more than 1, 3 for more than 5, 4 for more than 20.
+## How many copies a stack shows, like the modern game: 1, 2 for more
+## than 1, 3 for more than 16, 4 for more than 32, 5 for more than 48.
+static func copies_of(count: int) -> int:
+	return 1 + int(count > 1) + int(count > 16) + int(count > 32) + int(count > 48)
+
+
 func _update_copies(item: Dictionary) -> void:
 	var node: Node3D = item.node
-	var wanted := 1 + int(item.count > 1) + int(item.count > 5) + int(item.count > 20)
+	var wanted := copies_of(item.count)
 	if node.get_child_count() == wanted:
 		return
 	for child in node.get_children():
 		child.queue_free()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(item.spin)
+	var flat := ItemMeshes.is_flat(item.id)
 	for copy in wanted:
-		var offset := Vector3.ZERO if copy == 0 else Vector3(rng.randf_range(-0.1, 0.1), rng.randf_range(-0.1, 0.1), rng.randf_range(-0.1, 0.1))
-		if Items.is_block(item.id):
-			var mesh := MeshInstance3D.new()
+		var mesh := MeshInstance3D.new()
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if flat:
+			# A thin 3D picture standing upright, the copies one behind the
+			# other with a little random shift (the modern game).
+			mesh.mesh = ItemMeshes.extruded(item.id, _flat_material(item.id))
+			mesh.scale = Vector3.ONE * ITEM_SIZE
+			var shift := Vector3.ZERO if copy == 0 else Vector3(rng.randf_range(-0.075, 0.075), rng.randf_range(-0.075, 0.075), 0.0)
+			mesh.position = shift + Vector3(-ITEM_SIZE * 0.5, -HALF, -ITEM_SIZE / 32.0 + copy * 0.09375 * ITEM_SIZE)
+		else:
+			# A small cube; the copies scattered a little around it.
 			mesh.mesh = FallingBlocks.block_mesh(item.id)
 			mesh.scale = Vector3.ONE * BLOCK_SCALE
-			mesh.position = offset - Vector3.ONE * BLOCK_SCALE * 0.5
-			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			var pivot := Node3D.new()
-			pivot.add_child(mesh)
-			node.add_child(pivot)
-		else:
-			var sprite := Sprite3D.new()
-			sprite.texture = Items.icon(item.id)
-			sprite.pixel_size = ITEM_SIZE / 16.0
-			sprite.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-			sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-			sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
-			sprite.shaded = false
-			sprite.position = offset + Vector3(0, ITEM_SIZE * 0.5 - HALF, 0)
-			node.add_child(sprite)
+			var shift := Vector3.ZERO if copy == 0 else Vector3(rng.randf_range(-0.15, 0.15), rng.randf_range(-0.15, 0.15), rng.randf_range(-0.15, 0.15)) * BLOCK_SCALE * 2.0
+			mesh.position = shift - Vector3.ONE * BLOCK_SCALE * 0.5
+		node.add_child(mesh)
 
 
+static var _flat_materials := {} # atlas path -> ShaderMaterial
+
+
+static func _flat_material(id: int) -> ShaderMaterial:
+	var path := ItemMeshes.atlas_path(id)
+	if not _flat_materials.has(path):
+		var material := ShaderMaterial.new()
+		material.shader = preload("res://shaders/item_world.gdshader")
+		material.set_shader_parameter("items", load(path))
+		_flat_materials[path] = material
+	return _flat_materials[path]
+
+
+## Like the game: the item bobs (0.1 up and down, every 10 ticks a radian)
+## and turns around (a radian every 20 ticks); flying to the player when
+## picked up.
 func _process(_delta: float) -> void:
 	var alpha := TickLoop.alpha
-	var time := Time.get_ticks_msec() / 1000.0
 	var atmosphere := Atmosphere.find(get_tree())
 	for item in _items:
 		var node: Node3D = item.node
 		var position: Vector3 = (item.prev as Vector3).lerp(item.pos, alpha)
 		if item.picked >= 0 and player:
-			# Flying into the player.
 			var t := clampf((item.picked + alpha) / PICKUP_TICKS, 0.0, 1.0)
 			position = position.lerp(player.global_position + Vector3(0, 0.8, 0), t)
 		var age := float(item.age) + alpha
 		var bob := sin(age / 10.0 + item.spin) * 0.1 + 0.1
 		node.position = position + Vector3(0, bob, 0)
-		var spin: float = age / 20.0 + item.spin
-		var brightness := _brightness(position, atmosphere)
-		for child in node.get_children():
-			if child is Sprite3D:
-				(child as Sprite3D).modulate = Color(brightness, brightness, brightness)
-			else:
-				(child as Node3D).rotation.y = spin
+		node.rotation.y = age / 20.0 + item.spin
+		if ItemMeshes.is_flat(item.id):
+			var brightness := _brightness(position, atmosphere)
+			for child in node.get_children():
+				(child as GeometryInstance3D).set_instance_shader_parameter("brightness", brightness)
 
 
 func _brightness(point: Vector3, atmosphere: Atmosphere) -> float:

@@ -1,22 +1,44 @@
 class_name ItemMeshes
 extends RefCounted
-## 3D shapes of flat items, like the classic game's items in hand: the
-## 16 x 16 icon as a front and a back face 1/16 thick, with an edge strip
-## along every border between filled and empty pixels. Size 1 x 1 x 1/16,
-## the icon's top left at (0, 1, 0).
+## 3D shapes of flat items, like the game's items in hand and on the
+## ground: the 16 x 16 picture as a front and a back face 1/16 thick, with an
+## edge strip along every border between filled and empty pixels. Size
+## 1 x 1 x 1/16, the picture's top left at (0, 1, 0).
+## Flat items are the non-block items (their icon in items.png) and the
+## plants (their tile in the block atlas, colored like grass where needed;
+## the color is in the vertex COLOR).
 
-static var _cache := {} # id -> ArrayMesh
+static var _cache := {} # [id, material] -> ArrayMesh
+
+
+## Drawn flat (not as a cube): items and plants.
+static func is_flat(id: int) -> bool:
+	return not Items.is_block(id) or Blocks.shape_table[id] == BlockType.Shape.CROSS
+
+
+## The texture the flat picture comes from: items.png or the block atlas.
+static func atlas_path(id: int) -> String:
+	return Items.ICONS_PATH if not Items.is_block(id) else Blocks.ATLAS_PATH
 
 
 static func extruded(item_id: int, material: Material) -> ArrayMesh:
-	if _cache.has(item_id):
-		return _cache[item_id]
-	var item := Items.get_type(item_id)
-	var atlas: Image = (load(Items.ICONS_PATH) as Texture2D).get_image()
+	var key := [item_id, material.get_instance_id()]
+	if _cache.has(key):
+		return _cache[key]
+	var atlas: Image = (load(atlas_path(item_id)) as Texture2D).get_image()
 	if atlas.is_compressed():
 		atlas.decompress()
-	var tile_x := (item.icon % 16) * 16
-	var tile_y := (item.icon / 16) * 16
+	var tile := 0
+	var tint := Color.WHITE
+	if Items.is_block(item_id):
+		tile = Blocks.face_tiles[item_id * 6 + 2]
+		var block := Blocks.get_type(item_id)
+		if block.biome_tint != 0:
+			tint = block.tint.srgb_to_linear()
+	else:
+		tile = Items.get_type(item_id).icon
+	var tile_x := (tile % 16) * 16
+	var tile_y := (tile / 16) * 16
 	var filled := func(x: int, y: int) -> bool:
 		return x >= 0 and y >= 0 and x < 16 and y < 16 and atlas.get_pixel(tile_x + x, tile_y + y).a > 0.5
 	const T := 1.0 / 16.0
@@ -26,12 +48,14 @@ static func extruded(item_id: int, material: Material) -> ArrayMesh:
 	var indices := PackedInt32Array()
 	var uv0 := Vector2(tile_x, tile_y) / 256.0
 	var uv_size := Vector2(16, 16) / 256.0
+	var colors := PackedColorArray()
 	var add_quad := func(corners: Array, normal: Vector3, quad_uvs: Array) -> void:
 		var start := vertices.size()
 		for k in 4:
 			vertices.append(corners[k])
 			normals.append(normal)
 			uvs.append(quad_uvs[k])
+			colors.append(tint)
 		indices.append_array([start, start + 1, start + 2, start, start + 2, start + 3])
 	# Front (+Z) and back (-Z).
 	add_quad.call([Vector3(0, 1, T), Vector3(1, 1, T), Vector3(1, 0, T), Vector3(0, 0, T)], Vector3.BACK,
@@ -62,9 +86,10 @@ static func extruded(item_id: int, material: Material) -> ArrayMesh:
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh.surface_set_material(0, material)
-	_cache[item_id] = mesh
+	_cache[key] = mesh
 	return mesh

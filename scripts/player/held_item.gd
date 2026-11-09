@@ -8,7 +8,8 @@ extends Node3D
 ## - lit by the light at the player (sky light and time of day).
 ## It is a child of the camera and is drawn over the world.
 
-const SWING_TICKS := 6.0
+## Ticks of one swing (a bit slower than the classic 6, smoother).
+const SWING_TICKS := 8.0
 ## Equip speed: share of the motion per tick (the classic 0.4).
 const EQUIP_STEP := 0.4
 ## Position in front of the camera (camera space) and size.
@@ -33,6 +34,7 @@ var hidden := false
 var _mesh_instance := MeshInstance3D.new()
 var _material := ShaderMaterial.new()
 var _item_material := ShaderMaterial.new()
+var _plant_material := ShaderMaterial.new()
 var _meshes := {} # block id -> mesh
 var _shown := Blocks.AIR
 var _swing := -1.0 # 0..1 while swinging
@@ -47,13 +49,17 @@ func _ready() -> void:
 	_item_material.shader = preload("res://shaders/item_held.gdshader")
 	_item_material.set_shader_parameter("items", load(Items.ICONS_PATH))
 	_item_material.render_priority = 100
+	_plant_material.shader = _item_material.shader
+	_plant_material.set_shader_parameter("items", load(Blocks.ATLAS_PATH))
+	_plant_material.render_priority = 100
 	_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_mesh_instance)
 
 
-## Starts a swing (restarts it once past halfway, like the classic game).
+## Starts a swing; while one is playing it finishes first, so holding the
+## button gives one smooth swing after another instead of a twitch.
 func swing() -> void:
-	if _swing < 0.0 or _swing > 0.5:
+	if _swing < 0.0:
 		_swing = 0.0
 
 
@@ -85,6 +91,7 @@ func _process(delta: float) -> void:
 		var brightness := _brightness()
 		_material.set_shader_parameter("brightness", brightness)
 		_item_material.set_shader_parameter("brightness", brightness)
+		_plant_material.set_shader_parameter("brightness", brightness)
 
 
 func _show(id: int) -> void:
@@ -92,10 +99,10 @@ func _show(id: int) -> void:
 	if id == Blocks.AIR:
 		return
 	if not _meshes.has(id):
-		if Items.is_block(id):
+		if not ItemMeshes.is_flat(id):
 			_meshes[id] = ChunkMesher.block_mesh(id, _material)
 		else:
-			_meshes[id] = ItemMeshes.extruded(id, _item_material)
+			_meshes[id] = ItemMeshes.extruded(id, _item_material if not Items.is_block(id) else _plant_material)
 	_mesh_instance.mesh = _meshes[id]
 
 
@@ -118,7 +125,7 @@ func _pose() -> void:
 		position_3d = position_3d.lerp(Vector3(0.2, -0.38, -0.8), t)
 		position_3d.y += absf(cos(player.eating * 32.0 / 4.0 * PI)) * 0.05 * t
 	transform = Transform3D(basis_3d.scaled(Vector3.ONE * SCALE), position_3d)
-	if Items.is_block(_shown):
+	if not ItemMeshes.is_flat(_shown):
 		# The block's mesh spans 0..1: center it on the pivot.
 		_mesh_instance.transform = Transform3D(Basis.IDENTITY, Vector3(-0.5, -0.5, -0.5))
 	else:

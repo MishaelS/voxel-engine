@@ -132,6 +132,8 @@ Sections:
 - Seasons and the analemma: the sun position is computed for an observer at `latitude_deg` with the sun's declination (axial tilt 23.44°) and the equation of time (orbit eccentricity 0.0167) over a 365.24-day year, so at the same clock time the sun traces a figure 8 over the year; summer days are longer and the noon sun higher. The game starts at the March equinox; HUD shows the calendar date. `analemma_enabled` turns it off.
 
 ### Changed
+- Dropped items look and move like the modern game: items and plants are thin 3D pictures (`shaders/item_world.gdshader`) that turn around and bob like dropped blocks instead of flat pictures facing the camera; stacks show 1-5 copies (more than 1, 16, 32, 48 items); blocks drop from near the middle of the broken block and thrown items fly with the game's push. Plants (saplings, flowers, grass) are held in the hand as flat 3D pictures too.
+- The hand swing while breaking is slower (8 ticks) and each swing finishes before the next starts, so holding the button no longer makes the hand twitch.
 - Leaves drop like the classic game, broken or decaying: a sapling of their tree 1 time in 20, oak leaves also an apple 1 time in 200 (both can drop at once), else nothing. Drop entries can now drop besides each other (`"also"`).
 - Grass under water (or under anything that lets almost no light through) turns into dirt on a random tick, and grass spreads only with enough light (9+) onto dirt that is not under water, like the modern game.
 - The swing of the item in hand turns in the classic order (around Y, then Z, then X in the item's own space), so tools swing forward toward the middle of the view.
