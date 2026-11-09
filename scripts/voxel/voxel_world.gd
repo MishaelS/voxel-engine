@@ -105,6 +105,12 @@ var _water := Blocks.id_of("water")
 ## Worker jobs of each kind (generation, light, meshing) at a time; leaves
 ## two cores for the main and render threads.
 var _max_jobs := maxi(OS.get_processor_count() - 2, 1)
+## While the loading screen waits for the columns within this radius of the
+## player (-1 = not loading), their chunks are meshed before all others.
+var loading_radius := -1:
+	set(value):
+		loading_radius = value
+		_mesh_scan_needed = true
 var _player_column := Vector2i(2147483647, 0)
 var _wanted_columns: Array[Vector2i] = []
 var _total_faces := 0
@@ -173,9 +179,12 @@ class GenerationJob:
 		var start_us := Time.get_ticks_usec()
 		var blocks := PackedByteArray()
 		if save and save.has_column(column):
-			blocks = save.load_column(column) # changed by the player: saved
+			blocks = save.load_column(column) # generated or changed before: saved
 		if blocks.is_empty():
 			blocks = generator.generate_blocks(column.x, column.y)
+			if save:
+				# Kept on disk: next time the world loads it is read, not generated.
+				save.save_column(column, blocks)
 		heights = WorldGenerator.heightmap(blocks)
 		chunks = WorldGenerator.split_column(blocks)
 		colors = generator.column_colors(column.x, column.y)
@@ -876,8 +885,15 @@ func _rebuild_mesh_queue() -> void:
 		# Like the modern game, chunks in front of the camera come first:
 		# the ones behind count as three times farther.
 		var offset := Vector3(coord) - center
-		var weight := 3.0 if offset.length_squared() > 2.0 and offset.normalized().dot(view) < -0.2 else 1.0
-		var distance := int(offset.length_squared() * weight * 16.0)
+		var distance: int
+		if loading_radius >= 0:
+			# Loading: the columns the loading screen waits for come first,
+			# nearest columns first, whichever way the camera looks.
+			var away := maxi(absi(column.x - _player_column.x), absi(column.y - _player_column.y))
+			distance = int(Vector2(offset.x, offset.z).length_squared() * 16.0) + (1 << 24 if away > loading_radius else 0)
+		else:
+			var weight := 3.0 if offset.length_squared() > 2.0 and offset.normalized().dot(view) < -0.2 else 1.0
+			distance = int(offset.length_squared() * weight * 16.0)
 		keys.append((-distance << 20) | coords.size())
 		coords.append(coord)
 	keys.sort()
@@ -1089,6 +1105,11 @@ func column_states(radius: int) -> Array:
 			var column := center + Vector2i(dx, dz)
 			var state := 0
 			var height := -1
+			if maxi(absi(dx), absi(dz)) > render_distance:
+				# Never meshed (beyond the render distance): counts as done.
+				var heights: Variant = _heightmaps.get(column)
+				result.append([3, (heights as PackedInt32Array)[8 + 16 * 8] if heights else 64])
+				continue
 			if _columns.has(column):
 				state = 1
 				height = (_heightmaps[column] as PackedInt32Array)[8 + 16 * 8]

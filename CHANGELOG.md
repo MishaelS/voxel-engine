@@ -114,6 +114,10 @@ Sections:
 - Seasons and the analemma: the sun position is computed for an observer at `latitude_deg` with the sun's declination (axial tilt 23.44°) and the equation of time (orbit eccentricity 0.0167) over a 365.24-day year, so at the same clock time the sun traces a figure 8 over the year; summer days are longer and the noon sun higher. The game starts at the March equinox; HUD shows the calendar date. `analemma_enabled` turns it off.
 
 ### Changed
+- Title screen: a new logo built like the classic one (`tools/make_title_logo.py`): VOXEL ENGINE made of stone blocks from the block atlas, each with a darker 3D side below, a black outline and a soft shadow, and BEDROCK EDITION in smaller blocks; drawn as sharp pixel art. The logo and the buttons sit together in the middle of the screen.
+- Hearts and hunger sit right above the hotbar, like the classic game.
+- The loading screen island is a little lower.
+- Every generated column is saved with the world (not only the changed ones), so an existing world loads from disk instead of generating its terrain again; while the loading screen is up, the columns it waits for are meshed first (nearest first, whichever way the camera looks). Loading an existing world with render distance 6: 9.3 s → 5.1 s.
 - Terrain like the classic Beta generator: its noise magnitudes are restored (limit noises x128, main noise x25.5, depth x8.2), so the main noise switches sharply between the limits again: hills, cliffs, overhangs and mountains instead of mostly flat land. Biomes are about 2.5 times bigger; climate is sampled every 4 blocks and interpolated.
 - Lighting like the classic game: the mesh stores the raw light level and the shaders apply the light curve; at night sky light loses up to 11 levels (the classic skylightSubtracted), so the surface darkens step by step while caves stay as they are (Classic pack; its Night Brightness option now means fewer lost levels). Ambient occlusion is applied in the shaders too: the Ambient Occlusion setting no longer re-meshes.
 - The sun and moon move like the classic game: the classic celestial angle (a day of 24000 ticks, faster around noon and midnight), sunrise in the east, noon overhead, sunset in the west, the moon opposite; 8 moon phases, one per day (day 0 is a full moon). The analemma, latitude, seasons and the sun path rotation keys are removed.
@@ -161,6 +165,7 @@ Sections:
 - Main scene starts in `RANDOM_BLOCKS` mode.
 
 ### Fixed
+- The loading screen no longer hangs at 83% with Render Distance 2: island columns beyond the render distance (never meshed) count as done; a safety net finishes loading 6 s after the world itself is ready.
 - A dark, chunk-sized rectangle on ice seen from above: translucent faces were drawn from both sides, so the backs of faces under the surface showed through. They are front-faced again; the water surface gets its own downward-facing copy, so it is still seen from under water.
 - The loading screen island was cut off at the top and bottom: its view is bigger and the camera farther.
 - Under water the surface was invisible from below (the sky showed through) and the sky stayed bright: water and ice faces are now drawn from both sides, so the water surface and ice are seen from below like the classic game, and the underwater fog (18 blocks) also covers the sky.
@@ -171,6 +176,7 @@ Sections:
 - Voxel AO was 2–3× too dark: the AO factor was applied to sRGB vertex colors and then gamma-expanded by the material (0.5 became ~0.22). Block colors are now converted to linear once and AO is applied in linear space (`vertex_color_is_srgb = false`).
 
 ### Removed
+- Changing the time of day with the Up/Down arrows (and their Time Forward / Time Backward key bindings); M still skips to the next day.
 - Free-flying camera (`FreeCamera`, Ctrl + mouse wheel fly speed): replaced by the player and creative flying.
 - The single-chunk heightmap `TerrainGenerator` (replaced by the beta generator).
 - `VoxelBlock` (`scripts/voxel_block.gd`), replaced by chunk meshing.

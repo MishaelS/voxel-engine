@@ -18,7 +18,6 @@ Controls
 * Survival: health and hunger like the classic game (fall damage, starvation, natural healing at full food)
 * R: regenerate the world with a new seed (unsaved test world only)
 * Esc → Save and Quit to Title; the world also autosaves every 45 s and when the window closes
-* Up/Down arrows: time of day
 * T: open the chat, /: open it with a command (Tab completes, Up/Down choose, Esc closes)
 * P: freeze game ticks, . (period): run one tick while frozen
 * M: skip to the next day (moon phases)

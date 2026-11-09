@@ -3,9 +3,11 @@ extends RefCounted
 ## A saved world, like the classic game's world folders:
 ##   user://saves/<folder>/level.cfg     - name, seed, generator, game mode,
 ##                                         time, game rules and the player
-##   user://saves/<folder>/columns/x.z.bin - columns the player changed
-## Only changed columns are stored (zstd-compressed, 32 KB raw each); the
-## rest is generated again from the seed, which gives the same terrain.
+##   user://saves/<folder>/columns/x.z.bin - every column generated so far
+##                                           (with the player's changes)
+## Columns are zstd-compressed (32 KB raw each). A column is written when it
+## is first generated, so loading the world again reads it instead of
+## generating it, and again when the player changed it.
 ##
 ## `current` is the world being played; the game scene reads it on start.
 ## Without it (the game scene run directly) the world is not saved.

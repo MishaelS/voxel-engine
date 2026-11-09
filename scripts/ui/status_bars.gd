@@ -41,8 +41,8 @@ func _ready() -> void:
 	anchor_bottom = 1.0
 	offset_left = -91 * P
 	offset_right = 91 * P
-	offset_top = -40 * P
-	offset_bottom = -30 * P
+	offset_top = -33 * P # right above the hotbar, like the classic game
+	offset_bottom = -23 * P
 	_heart_jitter.resize(ICONS)
 	_food_jitter.resize(ICONS)
 

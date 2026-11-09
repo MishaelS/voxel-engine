@@ -12,7 +12,7 @@ extends DirectionalLight3D
 ## moonlight (Dynamic Lighting shader pack; Classic uses the light levels).
 ## Time comes from the world clock, interpolated between ticks.
 ##
-## Up/Down arrows - change the time of day, M - skip to the next day.
+## M - skip to the next day (time is changed by commands, not keys).
 ## Time stops with /gamerule doDaylightCycle false.
 
 const PHASE_NAMES: Array[String] = [
@@ -29,10 +29,6 @@ const MAX_SKY_DARKNESS := 11.0
 ## Time of day in ticks (0 = sunrise, 6000 = noon) and the day number.
 var day_time := 1000.0
 var day := 0
-
-@export_group("Cycle")
-## Ticks per second when changing time with the arrow keys.
-@export var manual_speed_ticks := 3000.0
 
 @export_group("Light")
 @export var sun_energy: float = 1.2
@@ -61,10 +57,6 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	if world:
-		if not GameInput.is_blocked():
-			var time_input := Input.get_axis("sun_lower", "sun_raise")
-			if time_input != 0.0:
-				world.clock.add_day_time(time_input * manual_speed_ticks * delta)
 		var clock := world.clock
 		var time := clock.day_time
 		if clock.daylight_cycle and not TickLoop.frozen:

@@ -42,8 +42,10 @@ var _phase: Label
 var _percent: Label
 var _bar_fill: ColorRect
 var _shown := 0.0     # displayed progress, follows the island
+const STUCK_SECONDS := 6.0
 var _elapsed := 0.0
 var _finished_at := -1.0
+var _real_done_at := -1.0 # when the world itself was ready
 var _meshes := {}
 var _ids := {}
 
@@ -81,8 +83,8 @@ func _build_island_view() -> void:
 	var view_size := Vector2(420, 330) * P
 	view.offset_left = -view_size.x / 2
 	view.offset_right = view_size.x / 2
-	view.offset_top = -view_size.y / 2 - 40 * P
-	view.offset_bottom = view_size.y / 2 - 40 * P
+	view.offset_top = -view_size.y / 2 - 18 * P
+	view.offset_bottom = view_size.y / 2 - 18 * P
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(view)
 	_viewport = SubViewport.new()
@@ -217,6 +219,8 @@ func _process(delta: float) -> void:
 	var radius := mini(RADIUS, world.render_distance) if world else RADIUS
 	var states := world.column_states(RADIUS) if world else []
 	var counts := world.loading_progress(radius) if world else {}
+	if world and world.loading_radius != radius:
+		world.loading_radius = radius
 	_advance_cells(states)
 	_update_island(delta)
 
@@ -230,6 +234,13 @@ func _process(delta: float) -> void:
 	_update_texts(counts, total)
 
 	var real_done: bool = counts.get("meshed", total) >= total
+	if real_done and _real_done_at < 0.0:
+		_real_done_at = _elapsed
+	elif not real_done:
+		_real_done_at = -1.0
+	# Safety net: the world is ready but the island got stuck - finish anyway.
+	if _finished_at < 0.0 and _real_done_at >= 0.0 and _elapsed - _real_done_at > STUCK_SECONDS:
+		_finished_at = _elapsed
 	if _finished_at < 0.0 and real_done and _tree_at >= 0.0 and _elapsed - _tree_at > DROP_SECONDS \
 			and _shown >= 0.999:
 		_finished_at = _elapsed
@@ -331,6 +342,8 @@ static func _ease_out_back(t: float) -> float:
 
 
 func _finish() -> void:
+	if world:
+		world.loading_radius = -1
 	GameInput.unlock()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	queue_free()

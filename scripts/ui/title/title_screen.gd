@@ -11,7 +11,9 @@ extends Node3D
 
 const GAME_SCENE := "res://scenes/main.tscn"
 const P := UiTheme.PIXEL
-const LOGO_WIDTH := 256 * P
+const LOGO_WIDTH := 280 * P
+## The logo stands this much higher than right above the buttons.
+const LOGO_RAISE := 14 * P
 const SPLASH_COLOR := Color("ffff00")
 const SPLASHES := [
 	"Made with Godot!", "Now with 3D clouds!", "Voxels all the way down!",
@@ -99,10 +101,15 @@ func _build_main() -> void:
 	logo.texture = _scaled_logo()
 	logo.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	var logo_size := logo.texture.get_size()
+	# The logo and the buttons together sit in the middle of the screen.
+	var total := logo_size.y + 12 * P + UiTheme.BUTTON_HEIGHT * 2 + 4 * P
+	var top := -total / 2.0
+	logo.anchor_top = 0.5
+	logo.anchor_bottom = 0.5
 	logo.offset_left = -logo_size.x / 2
 	logo.offset_right = logo_size.x / 2
-	logo.offset_top = 14 * P
-	logo.offset_bottom = 14 * P + logo_size.y
+	logo.offset_top = top - LOGO_RAISE
+	logo.offset_bottom = top - LOGO_RAISE + logo_size.y
 	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_main.add_child(logo)
 
@@ -114,16 +121,17 @@ func _build_main() -> void:
 	_splash.reset_size()
 	_splash.pivot_offset = _splash.size / 2
 	_splash.rotation_degrees = -20.0
-	_splash.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_splash.position = Vector2(logo_size.x * 0.33 - _splash.size.x / 2, 14 * P + logo_size.y * 0.78)
+	_splash.set_anchors_preset(Control.PRESET_CENTER)
+	_splash.position = Vector2(logo_size.x * 0.43 - _splash.size.x / 2, top - LOGO_RAISE + logo_size.y * 0.72)
 	_splash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_main.add_child(_splash)
 
 	var buttons := VBoxContainer.new()
-	buttons.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	buttons.set_anchors_preset(Control.PRESET_CENTER)
 	buttons.offset_left = -UiTheme.WIDE_BUTTON / 2.0
 	buttons.offset_right = UiTheme.WIDE_BUTTON / 2.0
-	buttons.offset_top = 14 * P + logo_size.y + 12 * P
+	buttons.offset_top = top + logo_size.y + 12 * P
+	buttons.offset_bottom = buttons.offset_top
 	buttons.add_theme_constant_override("separation", 4 * P)
 	_main.add_child(buttons)
 	buttons.add_child(_button("Singleplayer", UiTheme.WIDE_BUTTON, _open_singleplayer))

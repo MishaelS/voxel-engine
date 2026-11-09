@@ -28,8 +28,6 @@ const ACTIONS := [
 	["hotbar_9", "Hotbar Slot 9", "Inventory"],
 	["open_chat", "Open Chat", "Multiplayer"],
 	["open_command", "Open Command", "Multiplayer"],
-	["sun_raise", "Time Forward", "World"],
-	["sun_lower", "Time Backward", "World"],
 	["next_day", "Next Day", "World"],
 	["regenerate_world", "Regenerate World", "World"],
 	["hide_gui", "Hide GUI", "Camera"],
