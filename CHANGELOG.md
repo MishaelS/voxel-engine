@@ -14,6 +14,7 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Saplings (oak, birch, spruce) like the classic game: dropped by leaves, planted on grass or dirt; with enough light (9+) they grow into a tree of their kind after a while (1 in 14 random ticks, `SaplingBehavior`), when there is room.
 - Plants like the classic game: tall grass and ferns (colored by the climate), dandelions, roses and dead bushes, drawn as two crossed squares. Generated per column like Beta 1.7.3: patches of grass by biome (plains and rainforests 10, forests 2, taiga, shrubland, savanna and swamps 1; rainforests mostly ferns), two patches of dandelions and sometimes roses everywhere, dead bushes in deserts. They break at once, tall grass and ferns sometimes drop seeds, they break when their ground goes, placed blocks and flowing liquids replace them (water washes them away, lava burns them) and they are placed only on grass / dirt (dead bushes on sand). Inventory icons show their picture.
 - Leaf decay like the classic game (`LeafBehavior`): tree leaves need a log within 4 blocks through leaves; when something next to them changes they check again after 1-10 s and fall apart without one, dropping what they give (oak leaves sometimes an apple). A cut tree loses its crown bit by bit. Leaves placed by the player never decay (`*_leaves_placed` variants).
 - Lava like the classic game: still and flowing lava (flows 3 blocks, slower than water: a step every 1.5 s), glowing at full brightness day and night (also in Dynamic Lighting), animated like the Beta lava (`LavaAnimation`). Generated in caves below y = 10 and in lava lakes (one column in 8, mostly underground). Lava touching water hardens: a source into obsidian, flowing lava into cobblestone; lava falling onto water turns it into stone. Buckets scoop lava (lava bucket: 1000 s of furnace fuel, the bucket stays) and pour it.
@@ -131,6 +132,8 @@ Sections:
 - Seasons and the analemma: the sun position is computed for an observer at `latitude_deg` with the sun's declination (axial tilt 23.44°) and the equation of time (orbit eccentricity 0.0167) over a 365.24-day year, so at the same clock time the sun traces a figure 8 over the year; summer days are longer and the noon sun higher. The game starts at the March equinox; HUD shows the calendar date. `analemma_enabled` turns it off.
 
 ### Changed
+- Leaves drop like the classic game, broken or decaying: a sapling of their tree 1 time in 20, oak leaves also an apple 1 time in 200 (both can drop at once), else nothing. Drop entries can now drop besides each other (`"also"`).
+- Grass under water (or under anything that lets almost no light through) turns into dirt on a random tick, and grass spreads only with enough light (9+) onto dirt that is not under water, like the modern game.
 - The swing of the item in hand turns in the classic order (around Y, then Z, then X in the item's own space), so tools swing forward toward the middle of the view.
 - Flowing water became flowing liquids (`LiquidBehavior`, was `WaterBehavior`) shared by water and lava.
 - The window opens with the size it had last time (or maximized, if it was), always in the middle of the screen; the first start takes 3/4 of the screen (`user://window.cfg`, WindowControls). Leaving fullscreen goes back to that window.

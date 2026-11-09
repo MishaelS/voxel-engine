@@ -76,9 +76,10 @@ var in_catalog := true
 var tool := ""
 var harvest_level := -1
 ## What breaking it gives, like the classic game: entries tried in order,
-## the first whose chance roll succeeds is dropped. Each entry is
-## {"item": name, "chance": 0..1, "min": n, "max": n}. Empty = the block's
-## item; [{}] (an empty entry) or "none" in set_drop = nothing.
+## the first whose chance roll succeeds is dropped (entries with "also"
+## drop besides the others). Each entry is {"item": name, "chance": 0..1,
+## "min": n, "max": n, "also": bool}. Empty = the block's item; [{}] (an
+## empty entry) or "none" in set_drop = nothing.
 var drops: Array = []
 ## Liquid level like the classic game: 0 = source, 1..7 = flowing (lower
 ## and lower), 8 = falling; -1 = not a liquid.

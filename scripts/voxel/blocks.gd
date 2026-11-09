@@ -101,13 +101,13 @@ static func _register_all() -> bool:
 	register(BlockType.column("birch_log", 21, 117).set_hardness(2.0).set_tool("axe"))
 	register(BlockType.column("spruce_log", 21, 116).set_hardness(2.0).set_tool("axe"))
 	register(BlockType.cube("oak_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_OAK).set_light_opacity(1) \
-		.set_hardness(0.2).set_drops([{"item": "apple", "chance": 0.005}]).set_biome_tint(2).set_fast_tile(53) \
+		.set_hardness(0.2).set_drops(_leaf_drops("oak", true)).set_biome_tint(2).set_fast_tile(53) \
 		.set_on_update(Callable(LeafBehavior, "on_update")).set_scheduled_tick(Callable(LeafBehavior, "scheduled_tick")))
 	register(BlockType.cube("birch_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_BIRCH).set_light_opacity(1) \
-		.set_hardness(0.2).set_drop("none").set_fast_tile(53) \
+		.set_hardness(0.2).set_drops(_leaf_drops("birch", false)).set_fast_tile(53) \
 		.set_on_update(Callable(LeafBehavior, "on_update")).set_scheduled_tick(Callable(LeafBehavior, "scheduled_tick")))
 	register(BlockType.cube("spruce_leaves", 132).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_SPRUCE).set_light_opacity(1) \
-		.set_hardness(0.2).set_drop("none").set_fast_tile(133) \
+		.set_hardness(0.2).set_drops(_leaf_drops("spruce", false)).set_fast_tile(133) \
 		.set_on_update(Callable(LeafBehavior, "on_update")).set_scheduled_tick(Callable(LeafBehavior, "scheduled_tick")))
 	register(BlockType.cube("oak_planks", 4).set_hardness(2.0).set_tool("axe"))
 	register(BlockType.cube("birch_planks", 214).set_hardness(2.0).set_tool("axe"))
@@ -178,7 +178,22 @@ static func _register_all() -> bool:
 		placed.scheduled_tick = Callable()
 		types[id_of(leaves + "_leaves")].placed_as = placed.name
 		register(placed)
+	for sapling: Array in [["oak", 15], ["birch", 79], ["spruce", 63]]:
+		var block := BlockType.cube(sapling[0] + "_sapling", sapling[1]).as_plant() \
+			.set_random_tick(Callable(SaplingBehavior, "random_tick"))
+		block.replaceable = false # placing a block next to it doesn't remove it
+		register(block)
 	return true
+
+
+## Leaves drop like the classic game: a sapling of their tree 1 time in 20,
+## oak leaves also an apple 1 time in 200 (both can happen), else nothing
+## (shears are not in the game yet).
+static func _leaf_drops(tree: String, apple: bool) -> Array:
+	var drops := [{"item": tree + "_sapling", "chance": 0.05, "also": true}]
+	if apple:
+		drops.append({"item": "apple", "chance": 0.005, "also": true})
+	return drops
 
 
 const FACING_NAMES: Array[String] = ["south", "west", "north", "east"]
@@ -357,14 +372,17 @@ static func drops_of(id: int, rng: RandomNumberGenerator, can_harvest: bool = tr
 		return [[id_of(block.drop), 1]]
 	if block.drops.is_empty():
 		return [[item_of(id), 1]]
+	var result := []
 	for entry: Dictionary in block.drops:
 		if entry.is_empty():
-			return []
+			break
 		if rng.randf() >= entry.get("chance", 1.0):
 			continue
 		var count := rng.randi_range(entry.get("min", 1), entry.get("max", entry.get("min", 1)))
-		return [[Items.id_of(entry.item), count]]
-	return []
+		result.append([Items.id_of(entry.item), count])
+		if not entry.get("also", false):
+			break # the first that drops (gravel: flint or gravel)
+	return result
 
 
 ## The block of `family` with `facing` (0 south, 1 west, 2 north, 3 east).
