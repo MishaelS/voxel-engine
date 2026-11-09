@@ -1,23 +1,32 @@
 class_name BlockInteraction
 extends Node3D
-## What the player does with blocks (with the mouse captured), like the
-## classic game:
+## What the player does with blocks and items (with the mouse captured),
+## like the classic game:
 ## - LMB: break the targeted block. Creative: instantly (holding repeats
-##   every 5 ticks). Survival: hold it until the block breaks (hardness x
-##   1.5 seconds by hand, cracks show the progress), then it goes into the
-##   inventory (stone gives cobblestone, glass and leaves nothing).
-##   Unbreakable blocks (bedrock) never break in survival.
-## - RMB: place the selected hotbar block on the targeted face (holding
-##   repeats every 4 ticks). Survival uses up one item.
+##   every 5 ticks). Survival: hold it until the block breaks; cracks show
+##   the progress and bits chip off. Speed: the right tool's speed (wood 2,
+##   stone 4, iron 6, diamond 8, gold 12) / hardness / 30 per tick, or
+##   / 100 when the block needs a better tool, which then drops nothing
+##   (stone and ores need a pickaxe, iron ore a stone one, diamonds an
+##   iron one). Tools wear out. Drops fall out as items.
+## - RMB: use the targeted block (crafting table, chest, furnace, bed;
+##   not while sneaking), else use the item in hand: place a block (chests
+##   and furnaces face the player), place a bed, fill / empty a bucket,
+##   or eat (hold for 1.6 s). Holding repeats placing every 4 ticks.
 ## - MMB: pick the targeted block (see Hotbar.pick).
+## - Q: throw one item from the hand (Ctrl+Q: the whole stack).
 ## - 1-9 and the mouse wheel choose the hotbar slot.
 ## The targeted block gets a thin black outline.
 
 const TICK := 1.0 / 20.0
 const BREAK_DELAY_TICKS := 5
 const PLACE_DELAY_TICKS := 4
-## Breaking speed by hand: progress per tick = 1 / (hardness * 30).
+## Breaking speed: progress per tick = speed / hardness / 30 (or / 100
+## without the right tool).
 const HAND_BREAK_FACTOR := 30.0
+const WRONG_TOOL_FACTOR := 100.0
+## Ticks of eating, like the classic game (32).
+const EAT_TICKS := 32
 ## Atlas tiles of the 10 crack stages.
 const CRACK_TILE := 240
 ## Cracks are drawn on a slightly bigger cube to stay above the block.
@@ -38,6 +47,9 @@ var _crack_material: ShaderMaterial
 var _breaking_pos := Vector3i(0, -1000, 0)
 var _break_delay := 0.0 # ticks
 var _place_delay := 0.0 # ticks
+var _tick_time := 0.0
+var _eating := -1.0 # ticks eaten, -1 = not eating
+var _inventory_screen: InventoryScreen
 
 
 func _ready() -> void:
@@ -56,21 +68,28 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	target = world.raycast(player.eye_position(), player.look_direction(), player.reach()) if player and world else {}
 	var hit: bool = target.get("hit", false)
-	_outline.visible = hit
+	_outline.visible = hit and not player.sleeping
 	if hit:
 		_outline.global_position = Vector3(target.pos)
+		var height := Blocks.height_table[target.block]
+		_outline.scale = Vector3(1.0, height, 1.0)
 
 	var ticks := delta / TICK
 	_break_delay = maxf(_break_delay - ticks, 0.0)
 	_place_delay = maxf(_place_delay - ticks, 0.0)
-	var active := _captured() and not GameInput.is_blocked()
+	var active := _captured() and not GameInput.is_blocked() and not player.dead and not player.sleeping
 	if active and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and hit:
 		_continue_breaking(target.pos, ticks)
 	else:
 		_stop_breaking()
-	if active and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and _place_delay <= 0.0:
-		_place()
-		_place_delay = PLACE_DELAY_TICKS
+	var using := active and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	if using and _eating >= 0.0:
+		_continue_eating(ticks)
+	else:
+		_stop_eating()
+		if using and _place_delay <= 0.0:
+			_use()
+			_place_delay = PLACE_DELAY_TICKS
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -81,6 +100,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			hotbar.select(i)
 			get_viewport().set_input_as_handled()
 			return
+	if event.is_action_pressed("drop_item") and not player.dead:
+		_throw_held(event is InputEventWithModifiers and (event.ctrl_pressed or event.meta_pressed))
+		get_viewport().set_input_as_handled()
+		return
 	if not (event is InputEventMouseButton and event.pressed):
 		return
 	match event.button_index:
@@ -105,6 +128,17 @@ func _captured() -> bool:
 	return Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 
 
+func _throw_held(whole_stack: bool) -> void:
+	var slot := player.selected_slot
+	var inventory := player.inventory
+	if inventory.is_empty_slot(slot):
+		return
+	var count := inventory.count_at(slot) if whole_stack else 1
+	player.throw_items(inventory.id_at(slot), count, inventory.damage_at(slot))
+	inventory.take(slot, count)
+	player.swing()
+
+
 # --- Breaking ---------------------------------------------------------------------
 
 func _continue_breaking(pos: Vector3i, ticks: float) -> void:
@@ -112,22 +146,32 @@ func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 		return
 	player.swing()
 	if player.is_creative():
-		world.set_block(pos, Blocks.AIR)
+		world.destroy_block(pos, false)
 		_break_delay = BREAK_DELAY_TICKS
 		return
-	var hardness := Blocks.get_type(world.get_block(pos)).hardness
+	var id := world.get_block(pos)
+	var hardness := Blocks.get_type(id).hardness
 	if hardness < 0.0:
 		_stop_breaking()
 		return
 	if pos != _breaking_pos:
 		_breaking_pos = pos
 		break_progress = 0.0
-	break_progress += ticks / maxf(hardness * HAND_BREAK_FACTOR, 0.001)
+		_tick_time = 0.0
+	var tool := player.held_block()
+	var can_harvest := Items.can_harvest(tool, id)
+	var factor := HAND_BREAK_FACTOR if can_harvest else WRONG_TOOL_FACTOR
+	break_progress += ticks * Items.break_speed(tool, id) / maxf(hardness * factor, 0.001)
+	# Bits chip off the face every tick.
+	_tick_time += ticks
+	while _tick_time >= 1.0:
+		_tick_time -= 1.0
+		world.particles.hit_block(pos, target.get("normal", Vector3i.UP), id)
 	if break_progress >= 1.0:
-		var id := world.get_block(pos)
-		world.set_block(pos, Blocks.AIR)
-		player.inventory.add(Blocks.drop_of(id), 1)
+		world.destroy_block(pos, true, can_harvest)
 		player.block_broken()
+		if Items.durability(tool) > 0 and hardness > 0.0:
+			player.inventory.wear(player.selected_slot, 2 if Items.get_type(tool).tool == "sword" else 1)
 		_stop_breaking()
 		_break_delay = BREAK_DELAY_TICKS
 		return
@@ -142,24 +186,164 @@ func _stop_breaking() -> void:
 	_cracks.visible = false
 
 
-# --- Placing -----------------------------------------------------------------------
+# --- Using -------------------------------------------------------------------------
 
-func _place() -> void:
+## RMB: the targeted block's own use first (unless sneaking), then the item.
+func _use() -> void:
+	var hit: bool = target.get("hit", false)
+	if hit and not player.sneaking and _use_block(target.pos, target.block):
+		player.swing()
+		return
+	var id := player.held_block()
+	var item := Items.get_type(id)
+	if item == null:
+		if id != Blocks.AIR:
+			_place_block(id)
+		return
+	if item.food > 0:
+		if player.is_creative() or player.food.food < FoodStats.MAX_FOOD:
+			_eating = 0.0
+		return
+	match item.name:
+		"bucket":
+			_fill_bucket()
+		"water_bucket":
+			_empty_bucket()
+		"bed":
+			_place_bed()
+
+
+## Crafting table, chest, furnace and bed react to RMB. Returns true if used.
+func _use_block(pos: Vector3i, id: int) -> bool:
+	var family := Blocks.family_of(id)
+	match family:
+		"crafting_table":
+			_screen().open_crafting_table()
+		"chest", "furnace", "furnace_lit":
+			_screen().open_container(world.block_entity(pos))
+		"bed_foot", "bed_head":
+			var head := pos
+			if family == "bed_foot":
+				head += Blocks.FACING_DIRECTIONS[Blocks.facing_table[id]]
+			player.sleep_in(head)
+		_:
+			return false
+	return true
+
+
+func _screen() -> InventoryScreen:
+	if _inventory_screen == null:
+		_inventory_screen = get_tree().root.find_children("*", "InventoryScreen", true, false)[0]
+	return _inventory_screen
+
+
+## The cell a placed block goes to: next to the targeted face, or the
+## targeted cell itself when it is water.
+func _place_cell() -> Variant:
 	if not target.get("hit", false) or target.normal == Vector3i.ZERO:
-		return
-	var id := hotbar.selected_block()
-	if id == Blocks.AIR:
-		return
+		return null
 	var pos: Vector3i = target.pos + target.normal
-	var current := world.get_block(pos)
-	if not world.is_inside(pos) or Blocks.collides_table[current] == 1:
+	if not world.is_inside(pos) or Blocks.collides_table[world.get_block(pos)] == 1:
+		return null
+	return pos
+
+
+func _place_block(id: int) -> void:
+	var cell: Variant = _place_cell()
+	if cell == null:
 		return
+	var pos: Vector3i = cell
 	if Blocks.collides_table[id] == 1 and player.intersects_block(pos):
 		return # not inside the player
+	# Oriented blocks (chest, furnace) look at the player.
+	var family := Blocks.family_of(id)
+	if Blocks.family_ids(family).size() == 4 and Blocks.facing_table[id] >= 0:
+		id = Blocks.variant(family, Blocks.facing_toward(player.look_direction()))
 	world.set_block(pos, id)
 	player.swing()
 	if not player.is_creative():
 		player.inventory.take(player.selected_slot)
+
+
+## A bed takes two cells on solid ground, the head away from the player.
+func _place_bed() -> void:
+	if not target.get("hit", false) or target.normal != Vector3i.UP:
+		return
+	var look := player.look_direction()
+	var facing := 2 # north
+	if absf(look.x) > absf(look.z):
+		facing = 3 if look.x > 0.0 else 1
+	elif look.z > 0.0:
+		facing = 0
+	var foot: Vector3i = target.pos + Vector3i.UP
+	var head: Vector3i = foot + Blocks.FACING_DIRECTIONS[facing]
+	for cell: Vector3i in [foot, head]:
+		var below := world.get_block(cell + Vector3i.DOWN)
+		if not world.is_inside(cell) or Blocks.collides_table[world.get_block(cell)] == 1 \
+				or Blocks.is_opaque_table[below] == 0 or player.intersects_block(cell):
+			return
+	world.set_block(foot, Blocks.variant("bed_foot", facing))
+	world.set_block(head, Blocks.variant("bed_head", facing))
+	player.swing()
+	if not player.is_creative():
+		player.inventory.take(player.selected_slot)
+
+
+## An empty bucket scoops up a water source.
+func _fill_bucket() -> void:
+	var hit := world.raycast(player.eye_position(), player.look_direction(), player.reach(), true)
+	if not hit.get("hit", false) or hit.block != Blocks.id_of("water"):
+		return
+	world.set_block(hit.pos, Blocks.AIR)
+	player.swing()
+	if player.is_creative():
+		return
+	var slot := player.selected_slot
+	if player.inventory.count_at(slot) == 1:
+		player.inventory.set_slot(slot, Items.id_of("water_bucket"), 1)
+	else:
+		player.inventory.take(slot)
+		var left := player.inventory.add(Items.id_of("water_bucket"), 1)
+		if left > 0:
+			player.throw_items(Items.id_of("water_bucket"), left)
+
+
+## A water bucket pours a source block out; the bucket stays.
+func _empty_bucket() -> void:
+	var cell: Variant = _place_cell()
+	if cell == null:
+		return
+	world.set_block(cell, Blocks.id_of("water"))
+	player.swing()
+	if not player.is_creative():
+		player.inventory.set_slot(player.selected_slot, Items.id_of("bucket"), 1)
+
+
+func _continue_eating(ticks: float) -> void:
+	var id := player.held_block()
+	var item := Items.get_type(id)
+	if item == null or item.food <= 0:
+		_stop_eating()
+		return
+	var before := int(_eating)
+	_eating += ticks
+	player.eating = _eating / EAT_TICKS
+	# Crumbs every 4 ticks from the mouth.
+	if int(_eating) / 4 != before / 4 and _eating > 6.0:
+		var mouth := player.eye_position() + player.look_direction() * 0.4 - Vector3(0, 0.15, 0)
+		world.particles.item_crumbs(id, mouth, player.look_direction())
+	if _eating >= EAT_TICKS:
+		player.eat(id)
+		if not player.is_creative():
+			player.inventory.take(player.selected_slot)
+		_stop_eating()
+		_place_delay = PLACE_DELAY_TICKS * 2
+
+
+func _stop_eating() -> void:
+	_eating = -1.0
+	if player:
+		player.eating = -1.0
 
 
 # --- Meshes --------------------------------------------------------------------------

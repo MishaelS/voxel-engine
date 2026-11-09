@@ -7,8 +7,11 @@ Open the project folder in Godot 4.5+ (Import → `project.godot`) and press F5:
 opens (Singleplayer → select or create a world). Worlds are saved in `user://saves/<world>/`.
 Running `scenes/main.tscn` directly (F6) also goes to the title screen first.
 Controls
-* LMB: capture the mouse, then break blocks (survival: hold); RMB: place the selected block; MMB: pick the targeted block
-* 1-9 / mouse wheel: hotbar slot; E: inventory (survival: 2x2 crafting; creative: all blocks)
+* LMB: capture the mouse, then break blocks (survival: hold; the right tool is faster, stone and ores need a pickaxe to drop anything); MMB: pick the targeted block
+* RMB: use the targeted crafting table, chest, furnace or bed (Shift: place against it instead), else use the item in hand: place a block, a bed, fill / pour a bucket, eat (hold)
+* 1-9 / mouse wheel: hotbar slot; E: inventory (survival: 2x2 crafting; creative: all blocks and items); Q: throw one item (Ctrl+Q: the stack)
+* Crafting table: 3x3 recipes (sticks, tools, chest, furnace, bed, bucket, ...); furnace: smelts ores, sand, cobblestone and logs with coal, charcoal or wood
+* Beds skip the night (only at night) and set the respawn point; dropped items are picked up by walking over them
 * F3: debug screen; F4: toggle VSync
 * F1: hide GUI; F2: screenshot; F6: isometric camera (Z / X turn, wheel zooms); F7: isometric screenshot of the whole area
 * Esc: menu (pauses the game): Options - video, controls (key rebinding), world
@@ -94,7 +97,11 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `assets/textures/terrain.png` - block texture atlas (16×16 tiles)
 * `assets/textures/sky/` - sun and moon textures (32×32, 8×8 disc with a halo)
 * `shaders/` - block shaders (opaque, cutout, translucent with animated water, icon, held block, cracks), sky, clouds, screen overlay
-* `scripts/voxel/blocks.gd` - block registry: all block types and their atlas tiles
+* `scripts/voxel/blocks.gd` - block registry: all block types and their atlas tiles (with facings, flowing water levels, bed halves)
+* `scripts/items/` - item registry (tools, ingots, food, buckets, the bed) and the 3D shapes of flat items in hand
+* `scripts/player/crafting.gd`, `scripts/player/smelting.gd` - crafting and furnace recipes
+* `scripts/entities/item_entities.gd`, `scripts/entities/block_particles.gd` - dropped items and particles
+* `scripts/voxel/behaviors/water_behavior.gd` - flowing water
 * `scripts/voxel/block_type.gd` - block type description (faces, overlay, tint, render layer)
 * `scripts/voxel/block_materials.gd` - atlas → Texture2DArray, one material per render layer
 * `scripts/voxel/chunk_data.gd` - block storage of a 16×16×16 chunk

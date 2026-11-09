@@ -26,6 +26,8 @@ static var _material: ShaderMaterial
 static func get_icon(id: int) -> Texture2D:
 	if id == Blocks.AIR:
 		return null
+	if not Items.is_block(id):
+		return Items.icon(id) # flat items: their items.png tile
 	var pixels := icon_pixels()
 	if pixels != _pixels:
 		clear()

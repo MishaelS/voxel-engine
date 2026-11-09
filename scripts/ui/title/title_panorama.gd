@@ -41,6 +41,7 @@ var _eye := Vector3(72.0, 80.0, 72.0)
 
 
 func _ready() -> void:
+	ChunkMesher.random_rotation = Settings.get_value("random_rotation")
 	_build_scene()
 	_generator = BetaGenerator.new(TITLE_SEED)
 	_chunk_blocks.resize(CHUNKS)
@@ -196,7 +197,8 @@ func _mesh_chunk(index: int) -> void:
 				neighbor_light[Vector3i(dx, dy, dz)] = _chunk_light[other]
 	var colors: Array = _colors[column]
 	_surfaces[index] = ChunkMesher.build(ChunkMesher.pad(_chunk_blocks[index], neighbors),
-		ChunkMesher.pad(_chunk_light[index], neighbor_light, SkyLight.MAX), colors[0], colors[1])
+		ChunkMesher.pad(_chunk_light[index], neighbor_light, SkyLight.MAX), colors[0], colors[1],
+		Vector3i(TITLE_COLUMN.x + x - RADIUS, k, TITLE_COLUMN.y + z - RADIUS) * ChunkData.SIZE)
 
 
 func _show_meshes() -> void:

@@ -101,4 +101,4 @@ func _respawn() -> void:
 	visible = false
 	GameInput.unlock()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	player.respawn(world.find_spawn() if world else Vector3.ZERO)
+	player.respawn(player.spawn_position())

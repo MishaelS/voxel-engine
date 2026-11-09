@@ -14,6 +14,8 @@ const EQUIP_STEP := 0.4
 ## Position in front of the camera (camera space) and size.
 const REST := Vector3(0.56, -0.52, -0.72)
 const SCALE := 0.4
+## Size of flat items in hand.
+const ITEM_SCALE := 0.5
 
 var player: Player
 ## Hidden while another camera is used (isometric view, screenshots): the
@@ -22,6 +24,7 @@ var hidden := false
 
 var _mesh_instance := MeshInstance3D.new()
 var _material := ShaderMaterial.new()
+var _item_material := ShaderMaterial.new()
 var _meshes := {} # block id -> mesh
 var _shown := Blocks.AIR
 var _swing := -1.0 # 0..1 while swinging
@@ -33,6 +36,9 @@ func _ready() -> void:
 	_material.set_shader_parameter("tiles",
 		BlockMaterials.tiles())
 	_material.render_priority = 100
+	_item_material.shader = preload("res://shaders/item_held.gdshader")
+	_item_material.set_shader_parameter("items", load(Items.ICONS_PATH))
+	_item_material.render_priority = 100
 	_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_mesh_instance)
 
@@ -68,7 +74,9 @@ func _process(delta: float) -> void:
 	visible = _shown != Blocks.AIR and not hidden
 	if visible:
 		_pose()
-		_material.set_shader_parameter("brightness", _brightness())
+		var brightness := _brightness()
+		_material.set_shader_parameter("brightness", brightness)
+		_item_material.set_shader_parameter("brightness", brightness)
 
 
 func _show(id: int) -> void:
@@ -76,7 +84,10 @@ func _show(id: int) -> void:
 	if id == Blocks.AIR:
 		return
 	if not _meshes.has(id):
-		_meshes[id] = ChunkMesher.block_mesh(id, _material)
+		if Items.is_block(id):
+			_meshes[id] = ChunkMesher.block_mesh(id, _material)
+		else:
+			_meshes[id] = ItemMeshes.extruded(id, _item_material)
 	_mesh_instance.mesh = _meshes[id]
 
 
@@ -91,6 +102,20 @@ func _pose() -> void:
 	var basis_3d := Basis(Vector3.UP, deg_to_rad(45.0 - sin(swing * swing * PI) * 20.0))
 	basis_3d = Basis(Vector3.BACK, deg_to_rad(-arc_sqrt * 20.0)) * basis_3d
 	basis_3d = Basis(Vector3.RIGHT, deg_to_rad(-arc_sqrt * 80.0)) * basis_3d
+	if player.eating >= 0.0:
+		# Eating: the food comes to the mouth and bobs.
+		var t := minf(player.eating * 4.0, 1.0)
+		position_3d = position_3d.lerp(Vector3(0.2, -0.38, -0.8), t)
+		position_3d.y += absf(cos(player.eating * 32.0 / 4.0 * PI)) * 0.05 * t
+	if not Items.is_block(_shown):
+		# Flat items like the classic hand: seen from behind at an angle, the
+		# tool's head toward the middle of the view.
+		basis_3d = Basis(Vector3.UP, deg_to_rad(-168.0 - sin(swing * swing * PI) * 20.0))
+		basis_3d = Basis(Vector3.BACK, deg_to_rad(-20.0 - arc_sqrt * 20.0)) * basis_3d
+		basis_3d = Basis(Vector3.RIGHT, deg_to_rad(-arc_sqrt * 80.0)) * basis_3d
+		transform = Transform3D(basis_3d.scaled(Vector3.ONE * ITEM_SCALE), position_3d + Vector3(0.0, 0.05, 0.0))
+		_mesh_instance.position = Vector3(-0.5, -0.35, -1.0 / 32.0)
+		return
 	transform = Transform3D(basis_3d.scaled(Vector3.ONE * SCALE), position_3d)
 	# The block's mesh spans 0..1: center it on the pivot.
 	_mesh_instance.position = Vector3(-0.5, -0.5, -0.5)

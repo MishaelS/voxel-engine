@@ -60,6 +60,9 @@ var clock := WorldClock.new()
 var rng := RandomNumberGenerator.new()
 ## Falling block entities in this world.
 var falling_blocks: FallingBlocks
+## Dropped items and particles in this world.
+var items: ItemEntities
+var particles: BlockParticles
 ## The active world generator.
 var world_generator: WorldGenerator
 ## keepInventory game rule: the player keeps the items on death.
@@ -85,6 +88,9 @@ var _scheduled_count := 0
 var _modified := {}        # Vector2i -> true: columns changed since they were saved
 var _column_colors := {}   # Vector2i -> [grass, foliage] (WorldGenerator.column_colors)
 var _connectivity := {}    # Vector3i -> face connectivity (ChunkMesher.connectivity)
+## Block entities like the classic game's tile entities: what a chest
+## holds, a furnace's slots and fire. Vector3i -> {"type", "inventory", ...}.
+var _block_entities := {}
 var _cull_dirty := true
 var _cull_timer := 0.0
 var _camera_chunk := Vector3i(0, -1000, 0)
@@ -146,7 +152,7 @@ class MeshJob:
 		var start_us := Time.get_ticks_usec()
 		var padded := ChunkMesher.pad(center, neighbors)
 		surfaces = ChunkMesher.build(padded, ChunkMesher.pad(center_light, neighbor_light, SkyLight.MAX),
-			colors[0], colors[1])
+			colors[0], colors[1], coord * ChunkData.SIZE)
 		connectivity = ChunkMesher.connectivity(padded)
 		mesh_ms = (Time.get_ticks_usec() - start_us) / 1000.0
 
@@ -200,6 +206,15 @@ func _ready() -> void:
 	falling_blocks.name = "FallingBlocks"
 	falling_blocks.world = self
 	add_child(falling_blocks)
+	items = ItemEntities.new()
+	items.name = "Items"
+	items.world = self
+	items.player = player as Player
+	add_child(items)
+	particles = BlockParticles.new()
+	particles.name = "Particles"
+	particles.world = self
+	add_child(particles)
 	generate()
 	TickLoop.add_listener(_tick, TickLoop.Phase.WORLD)
 
@@ -248,6 +263,8 @@ func generate() -> void:
 	rng.seed = world_seed
 	clock = WorldClock.new(start_day_time)
 	falling_blocks.clear()
+	items.clear()
+	_block_entities.clear()
 	_scheduled.clear()
 	_scheduled_count = 0
 	_modified.clear()
@@ -665,10 +682,11 @@ func biome_at(x: int, z: int) -> String:
 
 
 ## First block hit by a ray (voxel traversal, Amanatides & Woo).
-## Air and water are passed through. Returns {hit: bool, pos: Vector3i,
+## Air and water are passed through (water sources are hit with
+## `hit_water_sources`, for buckets). Returns {hit: bool, pos: Vector3i,
 ## normal: Vector3i (face that was hit, ZERO if the ray starts inside),
 ## block: int, distance: float}.
-func raycast(origin: Vector3, direction: Vector3, max_distance: float) -> Dictionary:
+func raycast(origin: Vector3, direction: Vector3, max_distance: float, hit_water_sources: bool = false) -> Dictionary:
 	var dir := direction.normalized()
 	var pos := Vector3i(origin.floor())
 	var step := Vector3i(int(signf(dir.x)), int(signf(dir.y)), int(signf(dir.z)))
@@ -686,7 +704,7 @@ func raycast(origin: Vector3, direction: Vector3, max_distance: float) -> Dictio
 	var distance := 0.0
 	while distance <= max_distance:
 		var id := get_block(pos)
-		if id != Blocks.AIR and id != _water:
+		if id != Blocks.AIR and (Blocks.liquid_table[id] == 0 or (hit_water_sources and id == _water)):
 			return {"hit": true, "pos": pos, "normal": normal, "block": id, "distance": distance}
 		var axis := 0
 		if t_max.y < t_max[axis]:
@@ -713,6 +731,8 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 	if data.get_block(local.x, local.y, local.z) == id:
 		return
 	data.set_block(local.x, local.y, local.z, id)
+	if _block_entities.has(pos) and _block_entities[pos].type != _entity_type(id):
+		_block_entities.erase(pos) # the chest / furnace is gone
 	_modified[Vector2i(coord.x, coord.z)] = true
 	_mark_dirty_around(coord, local)
 	_update_heightmap(pos, id)
@@ -755,6 +775,105 @@ func start_falling(pos: Vector3i) -> void:
 	falling_blocks.spawn(pos, id)
 
 
+# --- Breaking and block entities -------------------------------------------------------
+
+const CHEST_SIZE := 27
+const FURNACE_SIZE := 3
+
+
+## Breaks a block like the classic game: bits fly (particles), it drops what
+## it gives (when `drop`; `can_harvest` = broken with the right tool), a
+## chest or furnace spills what it holds and a bed loses its other half.
+func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true) -> void:
+	var id := get_block(pos)
+	if id == Blocks.AIR:
+		return
+	particles.break_block(pos, id)
+	if drop:
+		for entry: Array in Blocks.drops_of(id, rng, can_harvest):
+			items.drop_from_block(pos, entry[0], entry[1])
+	var entity: Dictionary = _block_entities.get(pos, {})
+	if not entity.is_empty():
+		var inventory: Inventory = entity.inventory
+		for slot in inventory.size():
+			if inventory.count_at(slot) > 0:
+				items.drop_from_block(pos, inventory.id_at(slot), inventory.count_at(slot), inventory.damage_at(slot))
+		_block_entities.erase(pos)
+	var family := Blocks.family_of(id)
+	if family.begins_with("bed_"):
+		var direction := Blocks.FACING_DIRECTIONS[Blocks.facing_table[id]]
+		var other := pos + (direction if family == "bed_foot" else -direction)
+		if Blocks.family_of(get_block(other)).begins_with("bed_"):
+			particles.break_block(other, get_block(other))
+			set_block(other, Blocks.AIR)
+	set_block(pos, Blocks.AIR)
+
+
+## "chest" / "furnace" for blocks with a block entity, else "".
+static func _entity_type(id: int) -> String:
+	var family := Blocks.family_of(id)
+	if family == "chest":
+		return "chest"
+	if family == "furnace" or family == "furnace_lit":
+		return "furnace"
+	return ""
+
+
+## The block entity at `pos` (made when missing), or {} if the block has none.
+func block_entity(pos: Vector3i) -> Dictionary:
+	var type := _entity_type(get_block(pos))
+	if type == "":
+		return {}
+	if not _block_entities.has(pos) or _block_entities[pos].type != type:
+		var entity := {"type": type, "inventory": Inventory.new(CHEST_SIZE if type == "chest" else FURNACE_SIZE)}
+		if type == "furnace":
+			entity.merge({"burn": 0, "burn_total": 0, "cook": 0})
+		_block_entities[pos] = entity
+	return _block_entities[pos]
+
+
+func _tick_block_entities() -> void:
+	var eye := player.global_position if player else Vector3.ZERO
+	for pos: Vector3i in _block_entities.keys():
+		var entity: Dictionary = _block_entities[pos]
+		if entity.type != "furnace" or not is_inside(pos):
+			continue
+		_tick_furnace(pos, entity)
+		if entity.burn > 0 and rng.randf() < 0.25 and eye.distance_squared_to(Vector3(pos)) < 32.0 * 32.0:
+			particles.furnace(pos, maxi(Blocks.facing_table[get_block(pos)], 0))
+
+
+## A furnace tick like the classic game: fuel burns down; when something
+## can be smelted, new fuel is lit and the item cooks for COOK_TICKS; the
+## block shows its fire while burning.
+func _tick_furnace(pos: Vector3i, entity: Dictionary) -> void:
+	var inventory: Inventory = entity.inventory
+	var was_burning: bool = entity.burn > 0
+	if entity.burn > 0:
+		entity.burn -= 1
+	var result := Smelting.result_of(inventory.id_at(0))
+	var can_smelt := result != Blocks.AIR and (inventory.is_empty_slot(2) \
+		or (inventory.id_at(2) == result and inventory.count_at(2) < Items.max_stack(result)))
+	if entity.burn == 0 and can_smelt:
+		var fuel := Items.fuel_ticks(inventory.id_at(1))
+		if fuel > 0:
+			entity.burn = fuel
+			entity.burn_total = fuel
+			inventory.take(1)
+	if entity.burn > 0 and can_smelt:
+		entity.cook += 1
+		if entity.cook >= Smelting.COOK_TICKS:
+			entity.cook = 0
+			inventory.take(0)
+			inventory.set_slot(2, result, inventory.count_at(2) + 1)
+	else:
+		entity.cook = 0
+	var burning: bool = entity.burn > 0
+	if burning != was_burning:
+		var facing := maxi(Blocks.facing_table[get_block(pos)], 0)
+		set_block(pos, Blocks.variant("furnace_lit" if burning else "furnace", facing))
+
+
 # --- Ticks -----------------------------------------------------------------------------
 
 ## Requests a scheduled tick for the block at pos in `delay` game ticks.
@@ -785,6 +904,7 @@ func _tick(_tick_index: int) -> void:
 	clock.tick()
 	_run_scheduled_ticks()
 	_run_random_ticks()
+	_tick_block_entities()
 
 
 func _run_scheduled_ticks() -> void:
@@ -1078,7 +1198,13 @@ func save_state() -> Dictionary:
 	var rules := {}
 	for rule_name in GameRules.names():
 		rules[rule_name] = GameRules.rules[rule_name].get.call(self)
-	return {"game_time": clock.game_time, "day_time": clock.day_time, "rules": rules}
+	var entities := {}
+	for pos: Vector3i in _block_entities:
+		var entity: Dictionary = _block_entities[pos].duplicate()
+		entity.inventory = (entity.inventory as Inventory).save_state()
+		entities[pos] = entity
+	return {"game_time": clock.game_time, "day_time": clock.day_time, "rules": rules,
+		"block_entities": entities, "items": items.save_state()}
 
 
 func _restore_state() -> void:
@@ -1086,6 +1212,14 @@ func _restore_state() -> void:
 	if world_state.is_empty():
 		return
 	clock.game_time = world_state.get("game_time", 0)
+	var entities: Dictionary = world_state.get("block_entities", {})
+	for pos: Vector3i in entities:
+		var entity: Dictionary = entities[pos].duplicate()
+		var inventory := Inventory.new(CHEST_SIZE if entity.type == "chest" else FURNACE_SIZE)
+		inventory.load_state(entity.inventory)
+		entity.inventory = inventory
+		_block_entities[pos] = entity
+	items.load_state(world_state.get("items", []))
 	clock.day_time = world_state.get("day_time", start_day_time)
 	var rules: Dictionary = world_state.get("rules", {})
 	for rule_name: String in rules:

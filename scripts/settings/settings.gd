@@ -89,6 +89,7 @@ func _register_all() -> void:
 		PackedStringArray(["OFF", "2x", "4x", "8x", "16x"]), 2))
 	define("quality", Setting.range_of("ambient_occlusion", "Ambient Occlusion", 0, 100, 100, 10) \
 		.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0.0 else "%d%%" % int(v)))
+	define("quality", Setting.toggle("random_rotation", "Random Texture Rotation", true))
 
 	# Performance: how much work per frame.
 	define("performance", Setting.range_of("render_scale", "Render Scale", 50, 100, 100, 5) \

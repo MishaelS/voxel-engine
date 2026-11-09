@@ -1,24 +1,59 @@
 class_name Crafting
 extends RefCounted
-## Shaped crafting recipes, like the classic game: a pattern of up to 3x3
-## blocks anywhere in the crafting grid gives a result. The survival
-## inventory has a 2x2 grid, so recipes that fit in 2x2 work there.
+## Shaped crafting recipes like the classic game: a pattern of up to 3x3
+## items anywhere in the crafting grid (or mirrored left-right) gives a
+## result. The inventory has a 2x2 grid, the crafting table a 3x3 one.
 ##
 ## To add a recipe, append to RECIPES: pattern rows (one character per
-## cell, " " = empty), what each character means (a block name or an
-## array of block names that are all accepted), the result and its count.
+## cell, " " = empty), what each character means (an item name or an array
+## of item names that are all accepted), the result and its count.
 ## A "$" result means "the same kind as the ingredient" (oak log -> oak
 ## planks) via the result_by_ingredient table.
 
-const RECIPES := [
-	{"pattern": ["L"], "keys": {"L": ["oak_log", "birch_log", "spruce_log"]},
-		"result": "$", "count": 4,
-		"result_by_ingredient": {"oak_log": "oak_planks", "birch_log": "birch_planks", "spruce_log": "spruce_planks"}},
-	{"pattern": ["PP", "PP"], "keys": {"P": ["oak_planks", "birch_planks", "spruce_planks"]},
-		"result": "crafting_table", "count": 1},
-	{"pattern": ["SS", "SS"], "keys": {"S": "sand"}, "result": "sandstone", "count": 1},
-	{"pattern": ["SS", "SS"], "keys": {"S": "snow"}, "result": "snow", "count": 1},
+const PLANKS := ["oak_planks", "birch_planks", "spruce_planks"]
+const WOOL := [
+	"white_wool", "orange_wool", "magenta_wool", "light_blue_wool", "yellow_wool", "lime_wool",
+	"pink_wool", "gray_wool", "light_gray_wool", "cyan_wool", "purple_wool", "blue_wool",
+	"brown_wool", "green_wool", "red_wool", "black_wool",
 ]
+## Tool heads: material key -> what it is made of.
+const TOOL_MATERIALS := {
+	"wooden": PLANKS, "stone": "cobblestone", "iron": "iron_ingot",
+	"diamond": "diamond", "golden": "gold_ingot",
+}
+const TOOL_PATTERNS := {
+	"pickaxe": ["MMM", " S ", " S "],
+	"axe": ["MM", "MS", " S"],
+	"shovel": ["M", "S", "S"],
+	"sword": ["M", "M", "S"],
+}
+
+static var RECIPES: Array = _build_recipes()
+
+
+static func _build_recipes() -> Array:
+	var recipes := [
+		{"pattern": ["L"], "keys": {"L": ["oak_log", "birch_log", "spruce_log"]},
+			"result": "$", "count": 4,
+			"result_by_ingredient": {"oak_log": "oak_planks", "birch_log": "birch_planks", "spruce_log": "spruce_planks"}},
+		{"pattern": ["P", "P"], "keys": {"P": PLANKS}, "result": "stick", "count": 4},
+		{"pattern": ["PP", "PP"], "keys": {"P": PLANKS}, "result": "crafting_table", "count": 1},
+		{"pattern": ["PPP", "P P", "PPP"], "keys": {"P": PLANKS}, "result": "chest", "count": 1},
+		{"pattern": ["CCC", "C C", "CCC"], "keys": {"C": "cobblestone"}, "result": "furnace", "count": 1},
+		{"pattern": ["WWW", "PPP"], "keys": {"W": WOOL, "P": PLANKS}, "result": "bed", "count": 1},
+		{"pattern": ["I I", " I "], "keys": {"I": "iron_ingot"}, "result": "bucket", "count": 1},
+		{"pattern": ["SS", "SS"], "keys": {"S": "sand"}, "result": "sandstone", "count": 1},
+		{"pattern": ["SS", "SS"], "keys": {"S": "snowball"}, "result": "snow", "count": 1},
+	]
+	for block: String in ["iron", "gold", "diamond"]:
+		var item := "diamond" if block == "diamond" else block + "_ingot"
+		recipes.append({"pattern": ["XXX", "XXX", "XXX"], "keys": {"X": item}, "result": block + "_block", "count": 1})
+		recipes.append({"pattern": ["B"], "keys": {"B": block + "_block"}, "result": item, "count": 9})
+	for material: String in TOOL_MATERIALS:
+		for kind: String in TOOL_PATTERNS:
+			recipes.append({"pattern": TOOL_PATTERNS[kind], "keys": {"M": TOOL_MATERIALS[material], "S": "stick"},
+				"result": "%s_%s" % [material, kind], "count": 1})
+	return recipes
 
 
 ## Result of a crafting grid of `width` columns (ids row by row, AIR =
@@ -43,28 +78,36 @@ static func result_of(grid: PackedInt32Array, width: int) -> Dictionary:
 		var pattern: Array = recipe.pattern
 		if pattern.size() != max_y - min_y + 1 or (pattern[0] as String).length() != max_x - min_x + 1:
 			continue
-		var ingredient := Blocks.AIR
-		var matches := true
-		for y in pattern.size():
-			var row: String = pattern[y]
-			for x in row.length():
-				var id := grid[(min_x + x) + (min_y + y) * width]
-				if not _accepts(recipe.keys, row[x], id):
-					matches = false
-					break
-				if id != Blocks.AIR:
-					if ingredient != Blocks.AIR and ingredient != id:
-						matches = false # one kind per recipe (no mixed planks)
-						break
-					ingredient = id
-			if not matches:
-				break
-		if matches:
-			var result_name: String = recipe.result
-			if result_name == "$":
-				result_name = recipe.result_by_ingredient[Blocks.get_type(ingredient).name]
-			return {"id": Blocks.id_of(result_name), "count": recipe.count}
+		for mirrored in [false, true]:
+			var ingredient := _match(recipe, grid, width, min_x, min_y, mirrored)
+			if ingredient >= 0:
+				var result_name: String = recipe.result
+				if result_name == "$":
+					result_name = recipe.result_by_ingredient[Items.name_of(ingredient)]
+				return {"id": Items.id_of(result_name), "count": recipe.count}
 	return {}
+
+
+## The (single) ingredient kind if the grid matches the recipe, else -1.
+static func _match(recipe: Dictionary, grid: PackedInt32Array, width: int, min_x: int, min_y: int, mirrored: bool) -> int:
+	var pattern: Array = recipe.pattern
+	var ingredient := Blocks.AIR
+	var kinds := {} # key -> item
+	for y in pattern.size():
+		var row: String = pattern[y]
+		for x in row.length():
+			var key := row[row.length() - 1 - x] if mirrored else row[x]
+			var id := grid[(min_x + x) + (min_y + y) * width]
+			if not _accepts(recipe.keys, key, id):
+				return -1
+			if id == Blocks.AIR:
+				continue
+			if kinds.has(key) and kinds[key] != id and key != "W":
+				return -1 # one kind per ingredient (no mixed planks); wool colors may mix
+			kinds[key] = id
+			if ingredient == Blocks.AIR:
+				ingredient = id
+	return ingredient
 
 
 static func _accepts(keys: Dictionary, key: String, id: int) -> bool:
@@ -73,7 +116,7 @@ static func _accepts(keys: Dictionary, key: String, id: int) -> bool:
 	if id == Blocks.AIR:
 		return false
 	var accepted: Variant = keys[key]
-	var block_name := Blocks.get_type(id).name
+	var item_name := Items.name_of(id)
 	if accepted is Array:
-		return (accepted as Array).has(block_name)
-	return accepted == block_name
+		return (accepted as Array).has(item_name)
+	return accepted == item_name

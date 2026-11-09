@@ -63,6 +63,8 @@ static var LIGHT_BRIGHTNESS := _build_light_curve()
 ## (light averaged per corner, no ambient occlusion), 2 = maximum (with
 ## voxel AO). Re-mesh after changing.
 static var smooth_lighting := 2
+## Random Texture Rotation setting (see BlockType.random_rotation).
+static var random_rotation := true
 
 ## Index offset in the padded volume for each face direction.
 static var _face_deltas := _build_face_deltas()
@@ -75,8 +77,8 @@ static var _corner_offsets := _build_corner_offsets()
 static var _normals := PackedVector3Array(FACE_NORMALS)
 ## AO brightness per level and the light curve are applied in the block
 ## shaders (block_common.gdshaderinc), which read the raw values.
-## Water: its surface sits LIQUID_DROP below the block top unless more
-## water is above (like the classic game).
+## Height of still water's surface below the block top (the ice strip next
+## to water is drawn above it).
 const LIQUID_DROP := 0.125
 
 
@@ -314,8 +316,10 @@ static func block_mesh(block_id: int, material: Material = null) -> ArrayMesh:
 ## `grass` / `foliage`: colors of the chunk's 256 block columns (x + 16 * z)
 ## for biome-tinted blocks (BlockType.biome_tint); empty = the blocks' own
 ## tints.
+## `origin`: world position of the chunk's first block, which picks each
+## block's random texture rotation (null = no random rotation: single blocks).
 static func build(padded: PackedByteArray, light: PackedByteArray,
-		grass := PackedColorArray(), foliage := PackedColorArray()) -> Dictionary:
+		grass := PackedColorArray(), foliage := PackedColorArray(), origin: Variant = null) -> Dictionary:
 	var opaque := Blocks.is_opaque_table
 	# Fully buried chunk (no see-through block anywhere, border included):
 	# nothing can be visible.
@@ -350,15 +354,17 @@ static func build(padded: PackedByteArray, light: PackedByteArray,
 					translucent_cells.append(i)
 
 	var result := {}
+	var rotate := random_rotation and origin != null
+	var at: Vector3i = origin if rotate else Vector3i.ZERO
 	var smooth := smooth_lighting > 0
 	var use_ao := smooth_lighting >= 2
-	var arrays := _build_layer(padded, light, opaque_cells, smooth, use_ao, grass, foliage)
+	var arrays := _build_layer(padded, light, opaque_cells, smooth, use_ao, grass, foliage, rotate, at)
 	if not arrays.is_empty():
 		result[Blocks.Layer.OPAQUE] = arrays
-	arrays = _build_layer(padded, light, cutout_cells, smooth, use_ao, grass, foliage)
+	arrays = _build_layer(padded, light, cutout_cells, smooth, use_ao, grass, foliage, rotate, at)
 	if not arrays.is_empty():
 		result[Blocks.Layer.CUTOUT] = arrays
-	arrays = _build_layer(padded, light, translucent_cells, false, false, grass, foliage)
+	arrays = _build_layer(padded, light, translucent_cells, false, false, grass, foliage, rotate, at)
 	if not arrays.is_empty():
 		result[Blocks.Layer.TRANSLUCENT] = arrays
 	return result
@@ -378,7 +384,8 @@ static func build(padded: PackedByteArray, light: PackedByteArray,
 ## shader turns it into brightness, minus the night's darkness like the
 ## classic game); UV2.x = base tile + AO level (0..3) / 4, UV2.y = overlay.
 static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells: PackedInt32Array,
-		smooth: bool, use_ao: bool, grass: PackedColorArray, foliage: PackedColorArray) -> Array:
+		smooth: bool, use_ao: bool, grass: PackedColorArray, foliage: PackedColorArray,
+		rotate := false, at := Vector3i.ZERO) -> Array:
 	if cells.is_empty():
 		return []
 	var opaque := Blocks.is_opaque_table
@@ -393,8 +400,15 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 	var corner_offsets := _corner_offsets
 	var normals_table := _normals
 	var biome_tint := Blocks.biome_tint_table
+	var rotation_table := Blocks.random_rotation_table
+	var corner_uvs := CORNER_UVS
+	var heights := Blocks.height_table
+	var uv_modes := Blocks.uv_mode_table
+	var cull_groups := Blocks.cull_group_table
+	var liquid_levels := Blocks.liquid_level_table
+	var collides := Blocks.collides_table
+	var corner_heights := PackedFloat32Array([1.0, 1.0, 1.0, 1.0])
 	var has_colors := grass.size() == 256 and foliage.size() == 256
-	var water := Blocks.id_of("water") # not a static var: Blocks may still be registering
 
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
@@ -402,10 +416,6 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 	var layers := PackedVector2Array()
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
-	var uv0 := Vector2(0, 0)
-	var uv1 := Vector2(1, 0)
-	var uv2 := Vector2(1, 1)
-	var uv3 := Vector2(0, 1)
 
 	for i in cells:
 		var id := padded[i]
@@ -415,16 +425,54 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 			var column := (i % P - 1) + 16 * ((i / P) % P - 1)
 			tint = grass[column] if biome_tint[id] == 1 else foliage[column]
 		var self_culls := cull_self[id] == 1
-		# Lowered top corners: water without water above.
-		var drop := LIQUID_DROP if id == water and padded[i + P2] != water else 0.0
+		var group := cull_groups[id]
+		var top := heights[id]
+		# Liquid surface without liquid above: each top corner as high as the
+		# liquid around it, like the classic game (flowing water slopes down).
+		var sloped := liquid[id] == 1 and liquid[padded[i + P2]] == 0
+		if sloped:
+			for k in 4:
+				var cx := k & 1
+				var cz := k >> 1
+				var total := 0.0
+				var weight := 0.0
+				var full := false
+				for dz in 2:
+					for dx in 2:
+						var j := i + (cx - 1 + dx) + (cz - 1 + dz) * P
+						var other := padded[j]
+						if liquid[padded[j + P2]] == 1:
+							full = true
+						if liquid[other] == 1:
+							var level := liquid_levels[other]
+							var part := ((0 if level >= 8 else level) + 1) / 9.0
+							if level == 0 or level >= 8:
+								total += part * 10.0
+								weight += 10.0
+							total += part
+							weight += 1.0
+						elif collides[other] == 0:
+							total += 1.0
+							weight += 1.0
+				corner_heights[k] = 1.0 if full else 1.0 - total / maxf(weight, 1.0)
+		# Random texture rotation, fixed per block position (like the modern
+		# game's position random): bits 0-1 turn top / bottom, bit 2 mirrors sides.
+		var turn := -1
+		if rotate and rotation_table[id] == 1:
+			var wx := at.x + i % P - 1
+			var wy := at.y + i / P2 - 1
+			var wz := at.z + (i / P) % P - 1
+			var h := (wx * 3129871) ^ (wz * 116129781) ^ wy
+			h = h * h * 42317861 + h * 11
+			turn = (h >> 16) & 7
 
 		for face in 6:
 			var front := i + face_deltas[face]
 			var neighbor := padded[front]
-			if opaque[neighbor] == 1:
+			if opaque[neighbor] == 1 and (face != 0 or top >= 1.0):
 				continue # hidden by an opaque block: never sent to the GPU
-			if neighbor == id and self_culls:
-				continue # glass next to glass, water next to water
+			if self_culls and cull_groups[neighbor] == group:
+				continue # glass next to glass, water next to water, bed halves
 			if liquid[id] == 1 and neighbor != Blocks.AIR and layer_of[neighbor] == Blocks.Layer.TRANSLUCENT:
 				continue # water under ice: only the ice face is drawn
 			# Ice next to water: only the strip above the water's surface is
@@ -479,21 +527,32 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 					ao_sum_13 += ao
 				var corner := corner_offsets[face * 4 + c]
 				if corner.y > 0.5:
-					corner.y -= drop
+					if sloped:
+						corner.y = corner_heights[int(corner.x) + 2 * int(corner.z)]
+					elif top < 1.0:
+						corner.y = top
 				elif raise > 0.0:
 					corner.y = raise
 				vertices.append(origin + corner)
 				normals.append(normal)
 				layers.append(Vector2(tile + ao * 0.25, overlay))
 				colors.append(Color(tint.r, tint.g, tint.b, level / SkyLight.MAX))
-			uvs.append(uv0)
-			uvs.append(uv1)
-			if raise > 0.0:
-				uvs.append(Vector2(1, 1.0 - raise))
-				uvs.append(Vector2(0, 1.0 - raise))
-			else:
-				uvs.append(uv2)
-				uvs.append(uv3)
+			# Texture coordinates: the block's own orientation (beds) or its
+			# random rotation; lowered tops (beds) and raised bottoms (ice
+			# strips) show the matching part of the texture.
+			var mode := uv_modes[index]
+			if turn >= 0 and raise == 0.0:
+				mode = (turn & 3) if face < 2 else (turn & 4)
+			for c in 4:
+				var uv := corner_uvs[(c + mode) & 3]
+				if mode & 4:
+					uv.x = 1.0 - uv.x
+				if face >= 2:
+					if c < 2 and top < 1.0:
+						uv.y = 1.0 - top
+					elif c >= 2 and raise > 0.0:
+						uv.y = 1.0 - raise
+				uvs.append(uv)
 
 			# Split the quad along the diagonal through the darker corners,
 			# otherwise AO interpolates unevenly (anisotropy artifact).

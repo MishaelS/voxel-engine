@@ -45,6 +45,43 @@ var fast_tile := -1
 ## world): 0 = none, 1 = grass color, 2 = foliage color. Like the classic
 ## game's color maps: colors change smoothly across biomes.
 var biome_tint := 0
+## Natural-looking ground: the texture is turned by a random multiple of
+## 90 degrees on top and bottom and randomly mirrored on the sides, the same
+## for the same block position (Random Texture Rotation setting), so large
+## areas of one block don't show a repeating pattern.
+var random_rotation := false
+## Item this block counts as (drops, pick block, names): "" = itself.
+## State variants (facings, lit furnace, flowing water, bed halves) name
+## their base block or item here.
+var item := ""
+## Height of the block's top (1 = full cube; the bed is 9/16). Blocks lower
+## than 1 never hide their neighbors' faces.
+var height := 1.0
+## Texture turn per face (bits 0-1: quarter turns of the UVs, bit 2: mirror
+## left-right), for oriented textures (beds).
+var uv_modes := PackedInt32Array([0, 0, 0, 0, 0, 0])
+## Blocks of the same cull group hide faces between them when cull_self is
+## set (water and flowing water, the two bed halves). -1 = the block itself.
+var cull_group := -1
+## Listed in the creative catalog (state variants are not).
+var in_catalog := true
+## Tool that breaks it fast ("pickaxe", "shovel", "axe", "" = none) and
+## the tool tier needed to get its drops (-1 = anything, even the hand;
+## 0 = wood, 1 = stone, 2 = iron, 3 = diamond), like the classic game.
+var tool := ""
+var harvest_level := -1
+## What breaking it gives, like the classic game: entries tried in order,
+## the first whose chance roll succeeds is dropped. Each entry is
+## {"item": name, "chance": 0..1, "min": n, "max": n}. Empty = the block's
+## item; [{}] (an empty entry) or "none" in set_drop = nothing.
+var drops: Array = []
+## Liquid level like the classic game: 0 = source, 1..7 = flowing (lower
+## and lower), 8 = falling; -1 = not a liquid.
+var liquid_level := -1
+## Facing of oriented blocks: 0 = south (+Z), 1 = west, 2 = north, 3 =
+## east (-1 = not oriented); `family` groups the facings and states.
+var facing := -1
+var family := ""
 
 ## Tick behavior (all optional), each called as f(world: VoxelWorld, pos: Vector3i):
 ## - random_tick: picked at random a few times per chunk per tick
@@ -128,8 +165,45 @@ func set_drop(block_name: String) -> BlockType:
 	return self
 
 
+## Drop entries (see `drops`).
+func set_drops(entries: Array) -> BlockType:
+	drops = entries
+	return self
+
+
+func set_item(item_name: String) -> BlockType:
+	item = item_name
+	return self
+
+
+func set_height(value: float) -> BlockType:
+	height = value
+	return self
+
+
+func set_tool(tool_kind: String, level: int = -1) -> BlockType:
+	tool = tool_kind
+	harvest_level = level
+	return self
+
+
+func set_uv_mode(face: int, mode: int) -> BlockType:
+	uv_modes[face] = mode
+	return self
+
+
+func hidden_from_catalog() -> BlockType:
+	in_catalog = false
+	return self
+
+
 func set_biome_tint(kind: int) -> BlockType:
 	biome_tint = kind
+	return self
+
+
+func set_random_rotation(value: bool = true) -> BlockType:
+	random_rotation = value
 	return self
 
 

@@ -69,7 +69,11 @@ func _process(delta: float) -> void:
 ## The classic celestial angle (0 = noon, 0.25 = sunset, 0.5 = midnight,
 ## 0.75 = sunrise): the sun moves a bit faster around noon and midnight.
 func celestial_angle() -> float:
-	var f := day_time / WorldClock.TICKS_PER_DAY - 0.25
+	return angle_at(day_time)
+
+
+static func angle_at(time: float) -> float:
+	var f := fposmod(time, WorldClock.TICKS_PER_DAY) / WorldClock.TICKS_PER_DAY - 0.25
 	if f < 0.0:
 		f += 1.0
 	if f > 1.0:
@@ -88,6 +92,13 @@ func sun_direction() -> Vector3:
 ## Brightness of the sky, 0 (night) .. 1 (day), the classic formula.
 func sky_brightness() -> float:
 	return clampf(cos(celestial_angle() * TAU) * 2.0 + 0.5, 0.0, 1.0)
+
+
+## Night like the classic game's bed check: the sky has lost 4 or more
+## light levels.
+static func is_night(time: float) -> bool:
+	var brightness := clampf(cos(angle_at(time) * TAU) * 2.0 + 0.5, 0.0, 1.0)
+	return (1.0 - brightness) * MAX_SKY_DARKNESS >= 4.0
 
 
 ## Light levels sky light loses now (0 by day .. 11 at night).

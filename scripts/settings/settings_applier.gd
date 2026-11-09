@@ -11,7 +11,7 @@ extends Node
 
 func _ready() -> void:
 	Settings.changed.connect(_apply)
-	for key in ["render_distance", "smooth_lighting", "ambient_occlusion", "graphics", "brightness", "debug_screen"]:
+	for key in ["render_distance", "smooth_lighting", "ambient_occlusion", "random_rotation", "graphics", "brightness", "debug_screen"]:
 		_apply(key, Settings.get_value(key))
 
 
@@ -20,6 +20,11 @@ func _apply(key: String, value: Variant) -> void:
 		"smooth_lighting":
 			if ChunkMesher.smooth_lighting != value:
 				ChunkMesher.smooth_lighting = value
+				if world:
+					world.remesh_all()
+		"random_rotation":
+			if ChunkMesher.random_rotation != value:
+				ChunkMesher.random_rotation = value
 				if world:
 					world.remesh_all()
 		"ambient_occlusion":

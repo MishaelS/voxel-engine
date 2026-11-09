@@ -23,6 +23,8 @@ extends Node3D
 signal game_mode_changed(mode: GameMode)
 ## Health went to 0 (survival); the death screen offers to respawn.
 signal died
+## A message for the chat ("You can only sleep at night").
+signal message(text: String)
 
 enum GameMode { SURVIVAL, CREATIVE }
 
@@ -58,6 +60,8 @@ const DEATH_TICKS := 20
 const SAFE_FALL := 3.0
 ## Below this height the void hurts (4 per half second), even in creative.
 const VOID_Y := -64.0
+## Ticks asleep before the night is skipped (the classic 100).
+const SLEEP_TICKS := 100
 ## Blocks in a new player's hotbar (registry names).
 const STARTING_BLOCKS := [
 	"grass_plains", "dirt", "stone", "cobblestone", "oak_planks",
@@ -100,6 +104,15 @@ var sprinting := false
 var sneaking := false
 var in_water := false
 var horizontal_collision := false
+## Where the player respawns: the last bed slept in (INF = world spawn).
+var spawn_point := Vector3.INF
+## Asleep in a bed (ticks asleep), like the classic game.
+var sleeping := false
+## Eating progress 0..1 (-1 = not eating), for the hand animation.
+var eating := -1.0
+var sleep_ticks := 0
+var _bed := Vector3i.ZERO
+var _sleep_fade: ColorRect
 
 # Physics state in 64-bit floats (Vector3 is 32-bit: not precise enough for
 # collision far from the origin). Feet, center of the box.
@@ -137,6 +150,15 @@ func _ready() -> void:
 	_yaw = rotation.y
 	rotation = Vector3(0, _yaw, 0)
 	_teleported()
+	# Falling asleep darkens the screen.
+	var layer := CanvasLayer.new()
+	layer.layer = 5
+	add_child(layer)
+	_sleep_fade = ColorRect.new()
+	_sleep_fade.color = Color(0.03, 0.03, 0.06, 0.0)
+	_sleep_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_sleep_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_sleep_fade)
 	var save := WorldSave.current
 	if save:
 		game_mode = save.game_mode as GameMode
@@ -154,7 +176,7 @@ func save_state() -> Dictionary:
 	return {
 		"position": Vector3(_x, _y, _z), "yaw": _yaw, "pitch": _pitch,
 		"flying": flying, "selected_slot": selected_slot,
-		"inventory_ids": inventory.ids, "inventory_counts": inventory.counts,
+		"inventory": inventory.save_state(), "spawn": spawn_point,
 		"health": health if not dead else MAX_HEALTH,
 		"food": food.save_state() if not dead else FoodStats.new().save_state(),
 	}
@@ -167,12 +189,12 @@ func load_state(saved: Dictionary) -> void:
 	selected_slot = saved.get("selected_slot", 0)
 	health = clampi(saved.get("health", MAX_HEALTH), 1, MAX_HEALTH)
 	food.load_state(saved.get("food", {}))
-	var ids: PackedInt32Array = saved.get("inventory_ids", PackedInt32Array())
-	var counts: PackedInt32Array = saved.get("inventory_counts", PackedInt32Array())
-	for slot in mini(ids.size(), Inventory.SIZE):
-		# Ids of blocks that no longer exist are dropped.
-		var id := ids[slot] if ids[slot] < Blocks.count() else Blocks.AIR
-		inventory.set_slot(slot, id, counts[slot] if slot < counts.size() else 0)
+	spawn_point = saved.get("spawn", Vector3.INF)
+	if saved.has("inventory"):
+		inventory.load_state(saved.inventory)
+	else: # older saves
+		inventory.load_state({"ids": saved.get("inventory_ids", PackedInt32Array()),
+			"counts": saved.get("inventory_counts", PackedInt32Array())})
 
 
 func is_creative() -> bool:
@@ -181,6 +203,53 @@ func is_creative() -> bool:
 
 func held_block() -> int:
 	return inventory.id_at(selected_slot)
+
+
+## Throws items out in front of the player (Q, or out of the inventory window).
+func throw_items(id: int, count: int, damage: int = 0) -> void:
+	if world and id != Blocks.AIR and count > 0:
+		world.items.throw_from(eye_position(), look_direction(), id, count, damage)
+
+
+## Where to respawn: next to the bed if it is still there, else the world spawn.
+func spawn_position() -> Vector3:
+	if world and spawn_point != Vector3.INF:
+		var bed := Vector3i(spawn_point.floor())
+		if Blocks.family_of(world.get_block(bed)).begins_with("bed_"):
+			return Vector3(bed) + Vector3(0.5, Blocks.height_table[world.get_block(bed)], 0.5)
+		spawn_point = Vector3.INF
+		message.emit(Lang.t("Your home bed was missing or obstructed"))
+	return world.find_spawn() if world else Vector3.ZERO
+
+
+## Lies down in the bed at `bed` (its head half) like the classic game:
+## only at night; the bed becomes the spawn point; after SLEEP_TICKS the
+## night is skipped to the morning.
+func sleep_in(bed: Vector3i) -> void:
+	if world == null or sleeping or dead:
+		return
+	if not DayNightCycle.is_night(world.clock.day_time):
+		message.emit(Lang.t("You can only sleep at night"))
+		return
+	if Vector3(bed).distance_to(global_position) > 3.0:
+		message.emit(Lang.t("You may not rest now, the bed is too far away"))
+		return
+	sleeping = true
+	sleep_ticks = 0
+	_bed = bed
+	spawn_point = Vector3(bed) + Vector3(0.5, 0.0, 0.5)
+	velocity = Vector3.ZERO
+	sprinting = false
+	global_position = Vector3(bed) + Vector3(0.5, Blocks.height_table[world.get_block(bed)], 0.5)
+	_teleported()
+
+
+func wake_up() -> void:
+	if not sleeping:
+		return
+	sleeping = false
+	sleep_ticks = 0
+	_sleep_fade.color.a = 0.0
 
 
 ## Arm swing (breaking, placing), shown by the block in hand.
@@ -254,6 +323,7 @@ func _process(delta: float) -> void:
 	_last_rendered = global_position
 	rotation = Vector3(0, _yaw, 0)
 	_update_camera(alpha, delta)
+	_sleep_fade.color.a = clampf((sleep_ticks + alpha) / SLEEP_TICKS, 0.0, 1.0) * 0.95 if sleeping else 0.0
 
 
 func _teleported() -> void:
@@ -269,6 +339,8 @@ func _teleported() -> void:
 
 func _update_camera(alpha: float, delta: float) -> void:
 	var target_eye := EYE_HEIGHT - (SNEAK_EYE_DROP if sneaking else 0.0)
+	if sleeping:
+		target_eye = 0.25 # lying in the bed
 	_eye = move_toward(_eye, target_eye, delta * 1.0)
 	var eye := _eye
 	var death_roll := 0.0
@@ -313,6 +385,9 @@ func _tick() -> void:
 		death_ticks += 1
 		return
 	_update_health()
+	if sleeping:
+		_tick_sleep()
+		return
 	if world and not world.is_inside(Vector3i(floori(_x), 0, floori(_z))) and _y > 0.0:
 		return # the ground is not loaded yet: wait in place
 
@@ -485,12 +560,12 @@ func _sweep(x: float, y: float, z: float, dx: float, dy: float, dz: float) -> Pa
 		if max_x > b.x and min_x < b.x + 1 and max_z > b.z and min_z < b.z + 1:
 			if dy > 0.0 and max_y <= b.y:
 				dy = minf(dy, b.y - max_y)
-			elif dy < 0.0 and min_y >= b.y + 1:
-				dy = maxf(dy, b.y + 1 - min_y)
+			elif dy < 0.0 and min_y >= b.y + b.w - 1e-7:
+				dy = maxf(dy, b.y + b.w - min_y)
 	min_y += dy
 	max_y += dy
 	for b in boxes:
-		if max_y > b.y and min_y < b.y + 1 and max_z > b.z and min_z < b.z + 1:
+		if max_y > b.y and min_y < b.y + b.w and max_z > b.z and min_z < b.z + 1:
 			if dx > 0.0 and max_x <= b.x:
 				dx = minf(dx, b.x - max_x)
 			elif dx < 0.0 and min_x >= b.x + 1:
@@ -498,7 +573,7 @@ func _sweep(x: float, y: float, z: float, dx: float, dy: float, dz: float) -> Pa
 	min_x += dx
 	max_x += dx
 	for b in boxes:
-		if max_x > b.x and min_x < b.x + 1 and max_y > b.y and min_y < b.y + 1:
+		if max_x > b.x and min_x < b.x + 1 and max_y > b.y and min_y < b.y + b.w:
 			if dz > 0.0 and max_z <= b.z:
 				dz = minf(dz, b.z - max_z)
 			elif dz < 0.0 and min_z >= b.z + 1:
@@ -506,20 +581,22 @@ func _sweep(x: float, y: float, z: float, dx: float, dy: float, dz: float) -> Pa
 	return PackedFloat64Array([dx, dy, dz])
 
 
-## Positions of the colliding blocks touching the given box.
-func _solid_blocks(min_x: float, min_y: float, min_z: float, max_x: float, max_y: float, max_z: float) -> Array[Vector3i]:
-	var result: Array[Vector3i] = []
+## The colliding blocks touching the given box: (x, y, z, height of the
+## block's top above y; 1 for full blocks, 9/16 for beds).
+func _solid_blocks(min_x: float, min_y: float, min_z: float, max_x: float, max_y: float, max_z: float) -> Array[Vector4]:
+	var result: Array[Vector4] = []
 	if world == null:
 		return result
 	var collides := Blocks.collides_table
+	var heights := Blocks.height_table
 	for y in range(floori(min_y), floori(max_y) + 1):
 		if y < 0 or y >= WorldGenerator.HEIGHT:
 			continue
 		for z in range(floori(min_z), floori(max_z) + 1):
 			for x in range(floori(min_x), floori(max_x) + 1):
-				var pos := Vector3i(x, y, z)
-				if collides[world.get_block(pos)] == 1:
-					result.append(pos)
+				var id := world.get_block(Vector3i(x, y, z))
+				if collides[id] == 1 and min_y < y + heights[id]:
+					result.append(Vector4(x, y, z, heights[id]))
 	return result
 
 
@@ -543,11 +620,11 @@ func _touches_water() -> bool:
 func _touches_water_at(x: float, y: float, z: float) -> bool:
 	if world == null:
 		return false
-	var water := Blocks.id_of("water")
+	var liquid := Blocks.liquid_table
 	for by in range(floori(y + 0.4), floori(y + HEIGHT - 0.4) + 1):
 		for bz in range(floori(z - HALF_WIDTH + 0.001), floori(z + HALF_WIDTH - 0.001) + 1):
 			for bx in range(floori(x - HALF_WIDTH + 0.001), floori(x + HALF_WIDTH - 0.001) + 1):
-				if world.get_block(Vector3i(bx, by, bz)) == water:
+				if liquid[world.get_block(Vector3i(bx, by, bz))] == 1:
 					return true
 	return false
 
@@ -568,6 +645,7 @@ func _ground_slipperiness() -> float:
 func damage(amount: int, always: bool = false) -> void:
 	if dead or amount <= 0 or (is_creative() and not always):
 		return
+	wake_up()
 	if _invulnerable > INVULNERABLE_TICKS / 2:
 		if amount <= _last_damage:
 			return
@@ -590,6 +668,7 @@ func heal(amount: int) -> void:
 
 ## Back to life at `position` with full health and food (death screen).
 func respawn(position: Vector3) -> void:
+	wake_up()
 	dead = false
 	death_ticks = 0
 	health = MAX_HEALTH
@@ -605,9 +684,15 @@ func _die() -> void:
 	death_ticks = 0
 	velocity = Vector3.ZERO
 	sprinting = false
-	# The classic game drops everything; there are no item entities yet, so
-	# the items are lost (unless the keepInventory game rule is on).
+	wake_up()
+	# The classic game drops everything around the player (unless the
+	# keepInventory game rule is on).
 	if world == null or not world.keep_inventory:
+		if world:
+			var center := global_position + Vector3(0, 1.0, 0)
+			for slot in inventory.size():
+				if inventory.count_at(slot) > 0:
+					world.items.scatter(center, inventory.id_at(slot), inventory.count_at(slot), inventory.damage_at(slot))
 		inventory.clear()
 	died.emit()
 
@@ -627,6 +712,27 @@ func _can_sprint() -> bool:
 func _exhaust(amount: float) -> void:
 	if not is_creative():
 		food.add_exhaustion(amount)
+
+
+## Asleep: after SLEEP_TICKS the night is skipped to the morning (06:00
+## of the next day) and the player wakes up; getting hurt, the bed
+## disappearing or the day coming wakes up early.
+func _tick_sleep() -> void:
+	sleep_ticks += 1
+	if not Blocks.family_of(world.get_block(_bed)).begins_with("bed_"):
+		wake_up()
+		return
+	if sleep_ticks >= SLEEP_TICKS:
+		var day_time := world.clock.day_time
+		world.clock.add_day_time(WorldClock.TICKS_PER_DAY - fposmod(day_time, WorldClock.TICKS_PER_DAY))
+		wake_up()
+
+
+## Eats a food item (BlockInteraction, after holding the use button).
+func eat(item_id: int) -> void:
+	var item := Items.get_type(item_id)
+	if item and item.food > 0:
+		food.eat(item.food, item.saturation)
 
 
 ## Exhaustion from breaking a block (BlockInteraction).

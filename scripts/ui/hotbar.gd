@@ -99,6 +99,9 @@ func scroll(direction: int) -> void:
 ## that has the block; otherwise in creative put it into the selected slot
 ## (or the first empty one), in survival swap it in from the main inventory.
 func pick(block_id: int) -> void:
+	block_id = Blocks.item_of(block_id) # oriented / lit variants: the block itself
+	if block_id == Blocks.id_of("water"):
+		return
 	var inventory := player.inventory
 	var existing := inventory.find(block_id, 0, SLOT_COUNT)
 	if existing >= 0:
@@ -124,11 +127,11 @@ func _refresh() -> void:
 	if player == null:
 		return
 	for i in SLOT_COUNT:
-		_icons[i].set_item(player.inventory.id_at(i), player.inventory.count_at(i))
+		_icons[i].set_item(player.inventory.id_at(i), player.inventory.count_at(i), true, player.inventory.damage_at(i))
 	_selector.position = Vector2(-1 + selected * 20, -1) * P
 
 
 func _show_name() -> void:
 	var id := selected_block()
-	_name_label.text = Blocks.display_name(id) if id != Blocks.AIR else ""
+	_name_label.text = Items.display_name(id) if id != Blocks.AIR else ""
 	_name_shown_at = Time.get_ticks_msec() / 1000.0

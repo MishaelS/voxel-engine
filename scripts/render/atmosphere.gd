@@ -34,7 +34,6 @@ var sky_darkness := 0.0
 var snapshot := false
 
 var _clouds: Clouds
-var _water := Blocks.id_of("water")
 var _overlay: ColorRect
 var _sky: ShaderMaterial
 
@@ -91,7 +90,7 @@ func _process(_delta: float) -> void:
 	sky_darkness = sun.sky_darkness() * _night_factor() if sun and classic else 0.0
 	BlockMaterials.set_parameter("sky_darkness", sky_darkness)
 	var eye := player.eye_position() if player else Vector3.ZERO
-	underwater = world != null and world.get_block(Vector3i(eye.floor())) == _water
+	underwater = world != null and Blocks.liquid_table[world.get_block(Vector3i(eye.floor()))] == 1
 	_update_fog(to_sun)
 	_update_clouds(to_sun)
 	_update_overlay(eye)

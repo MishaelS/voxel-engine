@@ -73,6 +73,9 @@ func _ready() -> void:
 	source.origin = player
 	source.output = add_message
 	_build_ui()
+	if player:
+		(player as Player).message.connect(func(text: String) -> void:
+			add_message(text, CommandSource.MessageKind.INFO))
 	add_message(Lang.t("Press T to chat, / to enter a command (Tab completes, /help lists commands)"), CommandSource.MessageKind.INFO)
 
 

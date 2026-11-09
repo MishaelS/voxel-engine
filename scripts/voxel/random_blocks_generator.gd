@@ -19,14 +19,18 @@ func generate_blocks(cx: int, cz: int) -> PackedByteArray:
 		return blocks
 	var rng := column_rng(cx, cz, 0)
 	var floor_id := Blocks.id_of("stone")
-	var last_id := Blocks.count() - 1
+	# Every full block of the catalog (no flowing water, bed halves, ...).
+	var choices := PackedInt32Array()
+	for block in Blocks.types:
+		if block.id != Blocks.AIR and block.in_catalog and block.height >= 1.0:
+			choices.append(block.id)
 	for y in ChunkData.SIZE:
 		for z in ChunkData.SIZE:
 			for x in ChunkData.SIZE:
 				if y == 0:
 					blocks[index(x, y, z)] = floor_id
 				elif rng.randf() < density:
-					blocks[index(x, y, z)] = rng.randi_range(1, last_id)
+					blocks[index(x, y, z)] = choices[rng.randi_range(0, choices.size() - 1)]
 	return blocks
 
 

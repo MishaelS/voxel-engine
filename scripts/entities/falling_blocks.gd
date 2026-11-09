@@ -31,11 +31,9 @@ var _ids := PackedInt32Array()
 
 var _renderers := {}   # block id -> MultiMeshInstance3D
 static var _meshes := {} # block id -> Mesh (shared, built once)
-var _water := -1
 
 
 func _ready() -> void:
-	_water = Blocks.id_of("water")
 	TickLoop.add_listener(_tick, TickLoop.Phase.ENTITIES)
 
 
@@ -117,7 +115,7 @@ func _land(index: int, cell: Vector3i) -> void:
 
 
 func _is_solid(block_id: int) -> bool:
-	return block_id != Blocks.AIR and block_id != _water
+	return block_id != Blocks.AIR and Blocks.liquid_table[block_id] == 0
 
 
 ## Swap-remove: O(1), order does not matter.
