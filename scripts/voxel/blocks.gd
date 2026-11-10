@@ -228,6 +228,8 @@ static func _register_all() -> bool:
 static func _register_music() -> void:
 	register(BlockType.cube("note_block", 74).set_hardness(0.8).set_tool("axe"))
 	register(BlockType.column("jukebox", 75, 74).set_hardness(2.0).set_tool("axe"))
+	# TNT (PrimedTnt): breaks at once; breaking, fire or an explosion light it.
+	register(BlockType.column("tnt", 9, 8, 10).set_hardness(0.0))
 
 
 # --- Dungeons (stage 6) --------------------------------------------------------------
@@ -616,6 +618,8 @@ static func _set_flammability() -> void:
 			block.set_flammable(30, 60)
 		elif n in ["tall_grass", "fern", "dead_bush", "dandelion", "rose"]:
 			block.set_flammable(60, 100)
+		elif n == "tnt":
+			block.set_flammable(15, 100)
 
 
 ## The sound material of a block (BlockType.sound), from its kind.

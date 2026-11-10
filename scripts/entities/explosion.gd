@@ -37,15 +37,21 @@ static func explode(world: VoxelWorld, center: Vector3, power: float, source: Va
 			player.damage(int((f * f + f) / 2.0 * 8.0 * power + 1.0))
 			player.velocity += (middle - center).normalized() * f
 	for entity in world.entities.near(center, reach):
-		if entity == source:
+		if entity == source or entity is PrimedTnt:
+			if entity is PrimedTnt and entity != source:
+				entity.velocity += (entity.center() - center).normalized() * 0.5
 			continue
 		var f := 1.0 - entity.center().distance_to(center) / reach
 		if f > 0.0:
 			entity.damage(int((f * f + f) / 2.0 * 8.0 * power + 1.0), center)
 			entity.velocity += (entity.center() - center).normalized() * f
+	var tnt := Blocks.id_of("tnt")
 	for cell: Vector3i in destroyed:
 		var id: int = destroyed[cell]
 		if world.get_block(cell) != id:
+			continue
+		if id == tnt:
+			PrimedTnt.light(world, cell, true) # a chain reaction, on a short fuse
 			continue
 		if randf() < 0.3:
 			for drop: Array in Blocks.drops_of(id, world.rng, true):

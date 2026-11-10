@@ -128,6 +128,8 @@ func _apply_size() -> void:
 	half_width = float(model.get("width", 0.6)) / 2.0
 	height = float(model.get("height", 1.0))
 	max_health = spec.health
+	if mob_type == "wolf" and tamed:
+		max_health = 20
 	var scale := float(model.get("scale", 1.0)) / 16.0
 	if mob_type == "slime":
 		half_width *= size
@@ -364,7 +366,7 @@ func _squid_tick() -> void:
 func _burn_in_daylight() -> void:
 	var atmosphere := Atmosphere.find(world.get_tree())
 	var daylight := atmosphere.daylight if atmosphere else 1.0
-	if daylight > 0.5 and not in_water and world.get_light(Vector3i((center() + Vector3(0, height * 0.4, 0)).floor())) >= SkyLight.MAX:
+	if daylight > 0.5 and not is_wet() and world.get_light(Vector3i((center() + Vector3(0, height * 0.4, 0)).floor())) >= SkyLight.MAX:
 		fire_ticks = maxi(fire_ticks, 160)
 
 
@@ -453,6 +455,9 @@ func interact(player: Player, item_id: int) -> bool:
 					tamed = true
 					angry = false
 					target = null
+					max_health = 20 # tame wolves have 20 health, like Beta
+					health = max_health
+					_update_wool()
 					world.particles.hearts(center() + Vector3(0, height * 0.5, 0))
 				else:
 					world.particles.smoke(center(), 4)
@@ -475,6 +480,11 @@ func _update_wool() -> void:
 	for part: Dictionary in _model.spec.parts:
 		if part.get("saddle", false):
 			(_model.instances[part.name] as MeshInstance3D).visible = saddled
+		if part.get("collar", false):
+			# A red collar on tame wolves.
+			var collar: MeshInstance3D = _model.instances[part.name]
+			collar.visible = tamed
+			collar.set_instance_shader_parameter("tint", Color(0.85, 0.15, 0.15))
 	if mob_type != "sheep":
 		return
 	# The fleece: the model's parts marked "wool" (body, head and legs).
@@ -569,7 +579,11 @@ func _process(delta: float) -> void:
 			"tentacle":
 				node.rotation.x = sin(Time.get_ticks_msec() / 300.0) * 0.3
 			"tail":
-				node.rotation.x = 0.6 + (0.3 if tamed else 0.0) - (0.4 if sitting else 0.0)
+				# Wild wolves hold the tail low; tame ones high, lower when hurt
+				# (the classic health gauge).
+				node.rotation.x = (0.55 - (max_health - health) * 0.02) * PI if tamed else PI / 5.0
+				if sitting:
+					node.rotation.x = PI / 4.0
 			"head":
 				_turn_head(node)
 			_:

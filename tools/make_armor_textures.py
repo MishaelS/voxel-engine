@@ -52,6 +52,23 @@ def save(img, path):
         Image.fromarray(img).save(path)
 
 
+def bubbles(out_dir):
+    """The air bubbles shown under water: full and popping (9 x 9)."""
+    os.makedirs(out_dir, exist_ok=True)
+    full = np.zeros((9, 9, 4), np.uint8)
+    for y in range(9):
+        for x in range(9):
+            d = ((x - 4) ** 2 + (y - 4) ** 2) ** 0.5
+            if d <= 4.2:
+                full[y, x] = (40, 70, 160, 255) if d > 3.2 else (130, 180, 250, 255)
+    full[2:4, 2:4] = (240, 250, 255, 255)
+    save(full, os.path.join(out_dir, "bubble0.png"))
+    pop = np.zeros((9, 9, 4), np.uint8)
+    for x, y in ((1, 1), (7, 1), (1, 7), (7, 7), (4, 0), (0, 4), (8, 4), (4, 8), (3, 3), (5, 5), (5, 3), (3, 5)):
+        pop[y, x] = (130, 180, 250, 255)
+    save(pop, os.path.join(out_dir, "bubble1.png"))
+
+
 def icons(out_dir):
     os.makedirs(out_dir, exist_ok=True)
     outline = (30, 30, 30, 255)
@@ -175,5 +192,6 @@ def player(out_dir):
 if __name__ == "__main__":
     root = sys.argv[1]
     icons(os.path.join(root, "gui", "armor"))
+    bubbles(os.path.join(root, "gui", "bubble"))
     armor(os.path.join(root, "mobs"))
     player(os.path.join(root, "mobs"))

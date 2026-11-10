@@ -192,7 +192,10 @@ func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 			Sounds.play_block("hit", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
 	if break_progress >= 1.0:
 		var sheared := Items.name_of(tool) == "shears" and Blocks.get_type(id).name.ends_with("_leaves")
-		world.destroy_block(pos, not sheared, can_harvest)
+		if Blocks.get_type(id).name == "tnt":
+			PrimedTnt.light(world, pos) # Beta: hitting TNT lights it
+		else:
+			world.destroy_block(pos, not sheared, can_harvest)
 		if sheared:
 			world.items.drop_from_block(pos, Blocks.id_of(Blocks.get_type(id).name), 1)
 		player.block_broken()
@@ -517,6 +520,12 @@ func _shoot_bow() -> void:
 
 
 func _strike_flint() -> void:
+	if target.get("hit", false) and Blocks.get_type(target.block).name == "tnt":
+		player.swing()
+		PrimedTnt.light(world, target.pos)
+		if not player.is_creative():
+			player.inventory.wear(player.selected_slot)
+		return
 	var cell: Variant = _place_cell()
 	if cell == null:
 		return

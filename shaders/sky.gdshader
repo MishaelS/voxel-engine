@@ -10,6 +10,11 @@ shader_type sky;
 uniform vec3 sun_direction = vec3(0.4, 0.8, 0.4);
 // Details video settings.
 uniform bool show_stars = true;
+// Weather (0..1): rain turns the sky gray, a storm darker (the classic mix).
+uniform float rain = 0.0;
+uniform float thunder = 0.0;
+// A lightning flash lights the sky up (0..1).
+uniform float flash = 0.0;
 uniform bool show_sun_moon = true;
 uniform bool star_twinkle = true;
 
@@ -146,5 +151,9 @@ void sky() {
 		}
 	}
 
+	float gray = dot(color, vec3(0.3, 0.59, 0.11));
+	color = mix(color, vec3(gray * 0.6), rain * 0.75);
+	color = mix(color, vec3(gray * 0.2), thunder * 0.75);
+	color = mix(color, vec3(0.85, 0.85, 1.0), flash * 0.6);
 	COLOR = color;
 }

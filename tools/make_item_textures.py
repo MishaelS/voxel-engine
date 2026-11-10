@@ -5,6 +5,8 @@
   clock.
 - assets/textures/misc/map_background.png: the parchment a map is drawn
   on in hand;
+- assets/textures/environment/rain.png and snow.png: the falling rain
+  streaks and snowflakes the weather draws (64 x 64, repeating);
 - assets/textures/art/paintings.png: our own paintings (little landscapes,
   256 x 256, 16 pixels per block) at the places PAINTINGS lists (the same
   table as scripts/entities/painting.gd); the cell at the top right is
@@ -16,6 +18,7 @@ Needs Pillow and numpy.
 """
 import os
 import sys
+import zlib
 
 import numpy as np
 from PIL import Image
@@ -96,7 +99,7 @@ PAINTINGS = {
 
 
 def scene(w, h, spec):
-    srng = np.random.default_rng(abs(hash(str(sorted(spec.items())))) % (2 ** 32))
+    srng = np.random.default_rng(zlib.crc32(repr(sorted(spec.items())).encode()))  # the same every run
     img = np.zeros((h, w, 3), float)
     top, bottom = [np.array(c, float) for c in spec["sky"]]
     for y in range(h):
@@ -238,8 +241,24 @@ def paintings(root):
     save(img, os.path.join(root, "art", "paintings.png"))
 
 
+def weather(root):
+    rain = np.zeros((64, 64, 4), np.uint8)
+    for _ in range(28):
+        x, y, length = rng.integers(0, 64), rng.integers(0, 64), rng.integers(3, 7)
+        for k in range(length):
+            rain[(y + k) % 64, x] = (160, 180, 235, 70 + 110 * k // length)
+    save(rain, os.path.join(root, "environment", "rain.png"))
+    snow = np.zeros((64, 64, 4), np.uint8)
+    for _ in range(60):
+        x, y = rng.integers(0, 63), rng.integers(0, 63)
+        size = 2 if rng.random() < 0.4 else 1
+        snow[y:y + size, x:x + size] = (250, 250, 255, 255)
+    save(snow, os.path.join(root, "environment", "snow.png"))
+
+
 if __name__ == "__main__":
     root = sys.argv[1]
     dial(root)
     map_background(root)
     paintings(root)
+    weather(root)

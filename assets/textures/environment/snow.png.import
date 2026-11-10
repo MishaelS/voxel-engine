@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://84iewh2v7x0m"
-path="res://.godot/imported/wolf.png-5c5a3144b1b82e9ca19492730d97fe5b.ctex"
+uid="uid://jv0tqa4xuih5"
+path="res://.godot/imported/snow.png-235990374afe3c61061dd0a845c49663.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/mobs/wolf.png"
-dest_files=["res://.godot/imported/wolf.png-5c5a3144b1b82e9ca19492730d97fe5b.ctex"]
+source_file="res://assets/textures/environment/snow.png"
+dest_files=["res://.godot/imported/snow.png-235990374afe3c61061dd0a845c49663.ctex"]
 
 [params]
 

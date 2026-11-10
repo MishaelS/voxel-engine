@@ -55,6 +55,11 @@ static func scheduled_tick(world: VoxelWorld, pos: Vector3i) -> void:
 		age = mini(age + rng.randi_range(0, 2) / 2, MAX_AGE)
 		world.set_block(pos, fire_id(age), false)
 	world.schedule_tick(pos, TICK_DELAY + rng.randi_range(0, 9))
+	# Rain puts out fire it falls on (or next to), like the game.
+	for offset: Vector3i in [Vector3i.ZERO, Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]:
+		if WeatherEffects.rains_at(world, pos + offset):
+			world.set_block(pos, Blocks.AIR)
+			return
 	var below := world.get_block(pos + Vector3i.DOWN)
 	if not can_burn_at(world, pos):
 		if Blocks.is_opaque_table[below] == 0 or age > 3:
@@ -87,6 +92,9 @@ static func _try_burn(world: VoxelWorld, pos: Vector3i, odds: int, age: int) -> 
 	var id := world.get_block(pos)
 	var burn := Blocks.get_type(id).fire_burn
 	if burn <= 0 or world.rng.randi_range(0, odds - 1) >= burn:
+		return
+	if Blocks.get_type(id).name == "tnt":
+		PrimedTnt.light(world, pos) # TNT catches fire: lit
 		return
 	if world.rng.randi_range(0, age + 9) < 5:
 		world.set_block(pos, fire_id(0))

@@ -58,6 +58,12 @@ func type_name() -> String:
 	return "entity"
 
 
+## In water or out in the rain (puts out burning, like the game's isWet).
+func is_wet() -> bool:
+	return in_water or WeatherEffects.rains_at(world, Vector3i(floori(_x), floori(_y), floori(_z))) \
+		or WeatherEffects.rains_at(world, Vector3i(floori(_x), floori(_y + height), floori(_z)))
+
+
 ## The box attacks and arrows hit (its body by default).
 func hit_box() -> AABB:
 	return AABB(feet() - Vector3(half_width, 0, half_width), Vector3(half_width * 2, height, half_width * 2))
@@ -182,7 +188,7 @@ func _burn() -> void:
 	if not in_lava and EntityPhysics.touches_fire(world, _x, _y, _z, half_width, height):
 		damage(1)
 		fire_ticks = maxi(fire_ticks, 160)
-	if in_water:
+	if is_wet():
 		fire_ticks = 0
 	if fire_ticks > 0:
 		fire_ticks -= 1

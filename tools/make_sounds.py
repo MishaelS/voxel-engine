@@ -14,7 +14,8 @@ Groups (each with a few variants, picked at random):
   mob/<mob>/sayN, hurtN, deathN (pig, cow, sheep, chicken, wolf, zombie,
   skeleton, spider, creeper, slime), mob/creeper/fuse, mob/slime/bigN,
   smallN, random/explodeN, bow, bowhit, break,
-  note/harp, bass, bd, snare, hat (note blocks; the game changes the pitch)
+  note/harp, bass, bd, snare, hat (note blocks; the game changes the pitch),
+  ambient/rainN, ambient/thunderN, random/fuse
 Materials: stone, wood, gravel, grass, sand, cloth, snow.
 
 Usage: python3 tools/make_sounds.py assets/sounds
@@ -263,6 +264,7 @@ def mobs(root):
           highpass(noise(0.25), 1500) * env(0.25, 0.001, 0.04)
           + 0.6 * np.sin(2 * np.pi * 900 * t(0.25)) * env(0.25, 0.001, 0.02))
     notes(root)
+    weather(root)
 
 
 
@@ -279,6 +281,22 @@ def notes(root):
     write(os.path.join(root, "note", "snare.wav"), (highpass(noise(0.4), 1200) + 0.4 * np.sin(2 * np.pi * 190 * x)) * env(0.4, 0.001, 0.07))
     x = t(0.15)
     write(os.path.join(root, "note", "hat.wav"), highpass(noise(0.15), 5000) * env(0.15, 0.001, 0.02))
+
+
+
+def weather(root):
+    """Rain pattering (many tiny drops), thunder (a crack, then a long low
+    rumble) and a lit fuse's hiss."""
+    for k in range(1, 5):
+        drops = grains(1.2, 900, grain=0.003, cutoff=6000) + 0.5 * lowpass(noise(1.2), 1500)
+        write(os.path.join(root, "ambient", f"rain{k}.wav"), drops * np.minimum(t(1.2) / 0.1, 1.0) * np.minimum((1.2 - t(1.2)) / 0.3, 1.0))
+    for k in range(1, 4):
+        x = t(5.0)
+        crack = highpass(noise(5.0), 800) * np.exp(-x / 0.08)
+        rumble = lowpass(noise(5.0), 120) * (np.minimum(x / 0.3, 1.0) * np.exp(-x / 1.6))
+        rumble *= 1 + 0.6 * np.sin(2 * np.pi * rng.uniform(1.5, 3.0) * x)
+        write(os.path.join(root, "ambient", f"thunder{k}.wav"), 0.5 * crack + rumble * 2.5)
+    write(os.path.join(root, "random", "fuse.wav"), highpass(noise(1.5), 2500) * np.minimum(t(1.5) / 0.05, 1.0) * np.minimum((1.5 - t(1.5)) / 0.2, 1.0))
 
 
 if __name__ == "__main__":

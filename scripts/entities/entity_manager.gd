@@ -49,6 +49,8 @@ func create(type: String) -> Entity:
 		return Arrow.new()
 	if type == "painting":
 		return Painting.new()
+	if type == "tnt":
+		return PrimedTnt.new()
 	var script: Script = TYPES.get(type)
 	return script.new() if script else null
 

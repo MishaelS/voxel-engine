@@ -61,6 +61,8 @@ const SAFE_FALL := 3.0
 ## Below this height the void hurts (4 per half second), even in creative.
 ## How far behind the eyes the third-person camera is (blocks).
 const THIRD_PERSON_DISTANCE := 4.0
+## Ticks of air under water (15 seconds).
+const MAX_AIR := 300
 const VOID_Y := -64.0
 ## Ticks asleep before the night is skipped (the classic 100).
 const SLEEP_TICKS := 100
@@ -113,6 +115,8 @@ var food := FoodStats.new()
 ## Ticks since death (the death animation).
 var death_ticks := 0
 var _armor_remainder := 0
+## Air left under water (ticks), like the classic game: 300 = full.
+var air := MAX_AIR
 var _invulnerable := 0
 var _last_damage := 0
 var sprinting := false
@@ -729,8 +733,8 @@ func _burn() -> void:
 		# Walking in fire: 1 damage and 8 seconds of burning (the classic game).
 		damage(1)
 		fire_ticks = maxi(fire_ticks, 160)
-	if in_water:
-		fire_ticks = 0
+	if in_water or (world and WeatherEffects.rains_at(world, Vector3i(floori(_x), floori(_y + HEIGHT), floori(_z)))):
+		fire_ticks = 0 # water and rain put the flames out
 	if fire_ticks > 0:
 		fire_ticks -= 1
 		if fire_ticks % 20 == 0 and not in_lava:
@@ -835,6 +839,40 @@ func _tick_riding() -> void:
 	in_water = _touches_liquid_at(_x, _y, _z, "water")
 
 
+## Drowning and suffocating like Beta 1.7.3: with the eyes under water the
+## air runs out (a tick at a time), then every second costs 2 health and
+## bubbles rise; out of the water the air is back at once. The head inside
+## a solid block hurts 1 at a time.
+func _update_air() -> void:
+	if is_creative() or world == null:
+		air = MAX_AIR
+		return
+	if eyes_in_water():
+		air -= 1
+		if air == -20:
+			air = 0
+			for i in 8:
+				world.particles.bubble(eye_position() + Vector3(randf() - 0.5, randf() - 0.5, randf() - 0.5) * 0.6)
+			damage(2)
+	else:
+		air = MAX_AIR
+	var head := world.get_block(Vector3i(eye_position().floor()))
+	if head != Blocks.AIR and Blocks.is_opaque_table[head] == 1 and Blocks.collides_table[head] == 1 \
+			and Blocks.shape_table[head] == BlockType.Shape.CUBE and not sleeping:
+		damage(1)
+
+
+## Whether the eyes are under water (below its surface in the eye's block).
+func eyes_in_water() -> bool:
+	var eye := eye_position()
+	var id := world.get_block(Vector3i(eye.floor())) if world else Blocks.AIR
+	if Blocks.liquid_table[id] == 0 or Blocks.family_of(id) != "water":
+		return false
+	var level := Blocks.liquid_level_table[id]
+	var surface := floorf(eye.y) + (1.0 if level == 0 or level >= 8 else 1.0 - (level + 1) / 9.0)
+	return eye.y < surface - 1.0 / 9.0
+
+
 ## Pushed away from a hit (mobs, arrows), like the classic knockback.
 func knockback(from: Vector3) -> void:
 	var direction := Vector2(_x - from.x, _z - from.z)
@@ -889,6 +927,7 @@ func _die() -> void:
 func _update_health() -> void:
 	if _y < VOID_Y:
 		damage(4, true)
+	_update_air()
 	if not is_creative():
 		if world == null or world.hunger:
 			food.tick(self, world == null or world.natural_regeneration)

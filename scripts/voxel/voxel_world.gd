@@ -78,6 +78,8 @@ var natural_regeneration := true
 var hunger := true
 ## Maps drawn so far: number -> {x, z (center), colors} (see Maps).
 var maps := {}
+## Rain, snow and thunder (Weather).
+var weather := Weather.new()
 ## Jukeboxes playing: position -> AudioStreamPlayer3D (MusicBehavior).
 var record_players := {}
 var next_map_id := 0
@@ -232,6 +234,10 @@ func _ready() -> void:
 	particles.name = "Particles"
 	particles.world = self
 	add_child(particles)
+	var weather_effects := WeatherEffects.new()
+	weather_effects.name = "WeatherEffects"
+	weather_effects.world = self
+	add_child(weather_effects)
 	entities = EntityManager.new()
 	entities.name = "Entities"
 	entities.world = self
@@ -1064,6 +1070,8 @@ func generation_jobs_count() -> int:
 
 func _tick(_tick_index: int) -> void:
 	clock.tick()
+	weather.tick()
+	WeatherEffects.world_tick(self)
 	_run_scheduled_ticks()
 	_run_random_ticks()
 	_tick_block_entities()
@@ -1420,7 +1428,7 @@ func save_state() -> Dictionary:
 		saved_block_entities[pos] = entity
 	return {"game_time": clock.game_time, "day_time": clock.day_time, "rules": rules,
 		"block_entities": saved_block_entities, "items": items.save_state(), "entities": entities.save_state(),
-		"maps": maps, "next_map_id": next_map_id}
+		"maps": maps, "next_map_id": next_map_id, "weather": weather.save_state()}
 
 
 func _restore_state() -> void:
@@ -1439,6 +1447,7 @@ func _restore_state() -> void:
 	items.load_state(world_state.get("items", []))
 	entities.load_state(world_state.get("entities", []))
 	maps = world_state.get("maps", {})
+	weather.load_state(world_state.get("weather", {}))
 	next_map_id = world_state.get("next_map_id", 0)
 	clock.day_time = world_state.get("day_time", start_day_time)
 	var rules: Dictionary = world_state.get("rules", {})

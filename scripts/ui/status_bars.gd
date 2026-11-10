@@ -26,6 +26,8 @@ var _food_empty: Texture2D
 var _armor_full: Texture2D
 var _armor_half: Texture2D
 var _armor_empty: Texture2D
+var _bubble: Texture2D
+var _bubble_pop: Texture2D
 var _heart_jitter := PackedInt32Array()
 var _food_jitter := PackedInt32Array()
 var _shown := ""
@@ -42,6 +44,8 @@ func _ready() -> void:
 	_armor_full = UiTheme.gui_texture("armor/armor0.png")
 	_armor_half = UiTheme.gui_texture("armor/armor1.png")
 	_armor_empty = UiTheme.gui_texture("armor/armor2.png")
+	_bubble = UiTheme.gui_texture("bubble/bubble0.png")
+	_bubble_pop = UiTheme.gui_texture("bubble/bubble1.png")
 	# Over the hotbar, 40 pixels above the bottom (the classic place).
 	anchor_left = 0.5
 	anchor_right = 0.5
@@ -65,8 +69,8 @@ func _process(_delta: float) -> void:
 		_heart_jitter[i] = randi() % 2 if low else 0
 		_food_jitter[i] = (randi() % 2 if randf() < 0.15 else 0) if hungry else 0
 	# Redraw only when something visible changed.
-	var state := "%d %d %s %s %s %s %d" % [player.health, player.food.food, _blinking(), _heart_jitter, _food_jitter, _hunger(),
-		player.armor_value()]
+	var state := "%d %d %s %s %s %s %d %s" % [player.health, player.food.food, _blinking(), _heart_jitter, _food_jitter, _hunger(),
+		player.armor_value(), _bubbles()]
 	if state != _shown:
 		_shown = state
 		queue_redraw()
@@ -93,12 +97,26 @@ func _draw() -> void:
 			var position := Vector2(i * STEP, -10 * P)
 			draw_texture(_armor_empty, position)
 			_draw_level(armor - i * 2, position, _armor_full, _armor_half, Color.WHITE)
+	# Air bubbles above the food bar under water, like the classic game.
+	var bubbles := _bubbles()
+	for i in bubbles.x + bubbles.y:
+		var position := Vector2(WIDTH - ICON - i * STEP, -10 * P)
+		draw_texture(_bubble if i < bubbles.x else _bubble_pop, position)
 	if not _hunger():
 		return
 	for i in ICONS:
 		var position := Vector2(WIDTH - ICON - i * STEP, _food_jitter[i] * P)
 		draw_texture(_food_empty, position)
 		_draw_level(player.food.food - i * 2, position, _food_full, _food_half, Color.WHITE)
+
+
+## [full, popping] bubbles while under water (none otherwise).
+func _bubbles() -> Vector2i:
+	if player.dead or not player.eyes_in_water():
+		return Vector2i.ZERO
+	var full := ceili((player.air - 2) * 10.0 / Player.MAX_AIR)
+	var popping := ceili(player.air * 10.0 / Player.MAX_AIR) - full
+	return Vector2i(maxi(full, 0), maxi(popping, 0))
 
 
 ## Full icon for 2+ points left, half for 1.

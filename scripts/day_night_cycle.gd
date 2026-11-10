@@ -89,9 +89,13 @@ func sun_direction() -> Vector3:
 	return Vector3(-sin(angle), cos(angle), 0.0)
 
 
-## Brightness of the sky, 0 (night) .. 1 (day), the classic formula.
+## Brightness of the sky, 0 (night) .. 1 (day), the classic formula; rain
+## and storms dim it (each by up to 5/16, like the game).
 func sky_brightness() -> float:
-	return clampf(cos(celestial_angle() * TAU) * 2.0 + 0.5, 0.0, 1.0)
+	var brightness := clampf(cos(celestial_angle() * TAU) * 2.0 + 0.5, 0.0, 1.0)
+	if world and world.weather:
+		brightness *= (1.0 - world.weather.rain_strength * 5.0 / 16.0) * (1.0 - world.weather.thunder_strength * 5.0 / 16.0)
+	return brightness
 
 
 ## Night like the classic game's bed check: the sky has lost 4 or more

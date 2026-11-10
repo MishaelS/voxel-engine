@@ -36,6 +36,8 @@ var isometric := false
 ## Light levels sky light loses now (Classic pack at night), for the block
 ## in hand.
 var sky_darkness := 0.0
+## A lightning flash (0..1), set by LightningBolt, fading by itself.
+var lightning_flash := 0.0
 var snapshot := false
 
 var _clouds: Clouds
@@ -86,7 +88,8 @@ static func find(tree: SceneTree) -> Atmosphere:
 	return tree.get_first_node_in_group("atmosphere") as Atmosphere
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	lightning_flash = maxf(lightning_flash - delta * 4.0, 0.0)
 	if player and player.camera and _clouds.camera == null:
 		_clouds.camera = player.camera
 	var to_sun := sun.sun_direction() if sun else Vector3.UP
@@ -95,6 +98,7 @@ func _process(_delta: float) -> void:
 	# game's way); Dynamic Lighting has real moonlight instead.
 	var classic := ShaderPacks.current != null and ShaderPacks.current.base == ShaderPack.Base.CLASSIC
 	sky_darkness = sun.sky_darkness() * _night_factor() if sun and classic else 0.0
+	sky_darkness *= 1.0 - lightning_flash # a lightning flash lights the world up
 	BlockMaterials.set_parameter("sky_darkness", sky_darkness)
 	var eye := player.eye_position() if player else Vector3.ZERO
 	var eye_block := world.get_block(Vector3i(eye.floor())) if world else Blocks.AIR
@@ -104,6 +108,10 @@ func _process(_delta: float) -> void:
 	_update_clouds(to_sun)
 	_update_overlay(eye)
 	if _sky:
+		var weather := world.weather if world else null
+		_sky.set_shader_parameter("rain", weather.rain_strength if weather else 0.0)
+		_sky.set_shader_parameter("thunder", weather.thunder_strength if weather else 0.0)
+		_sky.set_shader_parameter("flash", lightning_flash)
 		_sky.set_shader_parameter("show_stars", Settings.get_value("stars"))
 		_sky.set_shader_parameter("show_sun_moon", Settings.get_value("sun_moon"))
 		_sky.set_shader_parameter("star_twinkle", Settings.get_value("star_twinkle"))
@@ -120,7 +128,19 @@ func horizon_color(to_sun: Vector3, view: Vector3) -> Color:
 	var flat_sun := Vector2(to_sun.x, to_sun.z)
 	if flat_view.length() > 1e-4 and flat_sun.length() > 1e-4:
 		toward_sun = maxf(flat_view.normalized().dot(flat_sun.normalized()), 0.0)
-	return horizon.lerp(_sky_color("sunset_color", Color(1.0, 0.42, 0.12)), low_sun * toward_sun * toward_sun * 0.6)
+	horizon = horizon.lerp(_sky_color("sunset_color", Color(1.0, 0.42, 0.12)), low_sun * toward_sun * toward_sun * 0.6)
+	return _weathered(horizon)
+
+
+## Colors grayed by rain and storms, like the game's sky and fog.
+func _weathered(color: Color) -> Color:
+	var weather := world.weather if world else null
+	if weather == null:
+		return color
+	var gray := color.r * 0.3 + color.g * 0.59 + color.b * 0.11
+	color = color.lerp(Color(gray * 0.6, gray * 0.6, gray * 0.6), weather.rain_strength * 0.75)
+	color = color.lerp(Color(gray * 0.2, gray * 0.2, gray * 0.2), weather.thunder_strength * 0.75)
+	return color
 
 
 func _update_fog(to_sun: Vector3) -> void:
@@ -161,7 +181,7 @@ func _update_clouds(to_sun: Vector3) -> void:
 	var color := Color(0.12, 0.13, 0.18).lerp(Color.WHITE, daylight)
 	var low_sun := 1.0 - smoothstep(0.0, 0.35, absf(to_sun.y))
 	color = color.lerp(color * Color(1.0, 0.75, 0.6), low_sun * 0.6)
-	_clouds.set_color(color)
+	_clouds.set_color(_weathered(color))
 
 
 func _update_overlay(eye: Vector3) -> void:

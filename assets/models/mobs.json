@@ -1995,19 +1995,20 @@
     ],
     "from": [
      -3,
-     9,
-     6
+     7.5,
+     5
     ],
     "pivot": [
-     0,
-     12,
-     6
+     -1,
+     10.5,
+     7
     ],
     "uv": [
      0,
      0
     ],
-    "role": "head"
+    "role": "head",
+    "texture": "pale_wolf"
    },
    {
     "name": "ear_r",
@@ -2018,19 +2019,21 @@
     ],
     "from": [
      -3,
-     15,
-     7
-    ],
-    "pivot": [
-     0,
-     12,
+     13.5,
      6
     ],
-    "uv": [
-     52,
-     0
+    "pivot": [
+     -1,
+     10.5,
+     7
     ],
-    "role": "head"
+    "uv": [
+     16,
+     14
+    ],
+    "role": "",
+    "texture": "pale_wolf",
+    "parent": "head"
    },
    {
     "name": "ear_l",
@@ -2041,19 +2044,21 @@
     ],
     "from": [
      1,
-     15,
-     7
-    ],
-    "pivot": [
-     0,
-     12,
+     13.5,
      6
     ],
-    "uv": [
-     52,
-     0
+    "pivot": [
+     -1,
+     10.5,
+     7
     ],
-    "role": "head"
+    "uv": [
+     16,
+     14
+    ],
+    "role": "",
+    "texture": "pale_wolf",
+    "parent": "head"
    },
    {
     "name": "snout",
@@ -2064,19 +2069,50 @@
     ],
     "from": [
      -1.5,
-     9,
-     10
+     7.5,
+     8
     ],
     "pivot": [
-     0,
-     12,
-     6
+     -1,
+     10.5,
+     7
     ],
     "uv": [
      0,
      10
     ],
-    "role": "head"
+    "role": "",
+    "texture": "pale_wolf",
+    "parent": "head"
+   },
+   {
+    "name": "body",
+    "size": [
+     6,
+     9,
+     6
+    ],
+    "from": [
+     -3,
+     3,
+     -5
+    ],
+    "pivot": [
+     0,
+     10,
+     -2
+    ],
+    "uv": [
+     18,
+     14
+    ],
+    "role": "",
+    "texture": "pale_wolf",
+    "rotate": [
+     90,
+     0,
+     0
+    ]
    },
    {
     "name": "mane",
@@ -2088,41 +2124,147 @@
     "from": [
      -4,
      7,
-     0
+     -6
     ],
     "pivot": [
-     0,
+     -1,
      10,
-     0
+     -2
     ],
     "uv": [
      21,
      0
     ],
-    "role": ""
+    "role": "",
+    "texture": "pale_wolf",
+    "rotate": [
+     90,
+     0,
+     0
+    ]
    },
    {
-    "name": "body",
+    "name": "collar",
     "size": [
+     8,
      6,
-     6,
-     9
+     7
     ],
     "from": [
-     -3,
+     -4,
      7,
+     -6
+    ],
+    "pivot": [
+     -1,
+     10,
+     -2
+    ],
+    "uv": [
+     21,
+     0
+    ],
+    "role": "",
+    "texture": "wolf_collar",
+    "parent": "mane",
+    "inflate": 0.05,
+    "collar": true
+   },
+   {
+    "name": "leg_fr",
+    "size": [
+     2,
+     8,
+     2
+    ],
+    "from": [
+     -2.5,
+     0,
+     3
+    ],
+    "pivot": [
+     -2.5,
+     8,
+     4
+    ],
+    "uv": [
+     0,
+     18
+    ],
+    "role": "leg_a",
+    "texture": "pale_wolf"
+   },
+   {
+    "name": "leg_fl",
+    "size": [
+     2,
+     8,
+     2
+    ],
+    "from": [
+     0.5,
+     0,
+     3
+    ],
+    "pivot": [
+     0.5,
+     8,
+     4
+    ],
+    "uv": [
+     0,
+     18
+    ],
+    "role": "leg_b",
+    "texture": "pale_wolf"
+   },
+   {
+    "name": "leg_br",
+    "size": [
+     2,
+     8,
+     2
+    ],
+    "from": [
+     -2.5,
+     0,
      -8
     ],
     "pivot": [
-     0,
-     10,
-     0
+     -2.5,
+     8,
+     -7
     ],
     "uv": [
-     18,
-     14
+     0,
+     18
     ],
-    "role": ""
+    "role": "leg_b",
+    "texture": "pale_wolf"
+   },
+   {
+    "name": "leg_bl",
+    "size": [
+     2,
+     8,
+     2
+    ],
+    "from": [
+     0.5,
+     0,
+     -8
+    ],
+    "pivot": [
+     0.5,
+     8,
+     -7
+    ],
+    "uv": [
+     0,
+     18
+    ],
+    "role": "leg_a",
+    "texture": "pale_wolf"
    },
    {
     "name": "tail",
@@ -2133,111 +2275,20 @@
     ],
     "from": [
      -1,
-     3,
+     4,
      -9
     ],
     "pivot": [
-     0,
-     11,
+     -1,
+     12,
      -8
     ],
     "uv": [
      9,
      18
     ],
-    "role": "tail"
-   },
-   {
-    "name": "leg_fr",
-    "size": [
-     2,
-     8,
-     2
-    ],
-    "from": [
-     -3,
-     0,
-     3
-    ],
-    "pivot": [
-     -2,
-     8,
-     4
-    ],
-    "uv": [
-     0,
-     18
-    ],
-    "role": "leg_a"
-   },
-   {
-    "name": "leg_fl",
-    "size": [
-     2,
-     8,
-     2
-    ],
-    "from": [
-     1,
-     0,
-     3
-    ],
-    "pivot": [
-     2,
-     8,
-     4
-    ],
-    "uv": [
-     0,
-     18
-    ],
-    "role": "leg_b"
-   },
-   {
-    "name": "leg_br",
-    "size": [
-     2,
-     8,
-     2
-    ],
-    "from": [
-     -3,
-     0,
-     -7
-    ],
-    "pivot": [
-     -2,
-     8,
-     -6
-    ],
-    "uv": [
-     0,
-     18
-    ],
-    "role": "leg_b"
-   },
-   {
-    "name": "leg_bl",
-    "size": [
-     2,
-     8,
-     2
-    ],
-    "from": [
-     1,
-     0,
-     -7
-    ],
-    "pivot": [
-     2,
-     8,
-     -6
-    ],
-    "uv": [
-     0,
-     18
-    ],
-    "role": "leg_a"
+    "role": "tail",
+    "texture": "pale_wolf"
    }
   ]
  },

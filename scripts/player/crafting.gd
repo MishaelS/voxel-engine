@@ -84,6 +84,7 @@ static func _build_recipes() -> Array:
 		{"pattern": ["B"], "keys": {"B": "bone"}, "result": "bone_meal", "count": 3},
 		{"pattern": [" I ", "IRI", " I "], "keys": {"I": "iron_ingot", "R": "redstone"}, "result": "compass", "count": 1},
 		{"pattern": ["PPP", "PRP", "PPP"], "keys": {"P": PLANKS, "R": "redstone"}, "result": "note_block", "count": 1},
+		{"pattern": ["GSG", "SGS", "GSG"], "keys": {"G": "gunpowder", "S": "sand"}, "result": "tnt", "count": 1},
 		{"pattern": ["PPP", "PDP", "PPP"], "keys": {"P": PLANKS, "D": "diamond"}, "result": "jukebox", "count": 1},
 		{"pattern": ["SSS", "SWS", "SSS"], "keys": {"S": "stick", "W": WOOL}, "result": "painting", "count": 1},
 		{"pattern": ["  S", " SW", "S W"], "keys": {"S": "stick", "W": "string"}, "result": "fishing_rod", "count": 1},

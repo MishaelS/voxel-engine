@@ -123,6 +123,18 @@ func explosion(center: Vector3, power: float) -> void:
 		_add(center, Vector3.ZERO, Color(-2, 0, 0, power * 0.3), Color(1.0, 0.95, 0.8, 0.8), 3, 0.0, true)
 
 
+## An air bubble rising (drowning).
+func bubble(point: Vector3) -> void:
+	_add(point, Vector3(0, 0.05, 0), Color(-2, 0, 0, 0.06), Color(0.75, 0.85, 1.0, 0.9), _rng.randi_range(8, 20), -0.002, false)
+
+
+## Rain hitting the ground: a tiny droplet bouncing up (a ripple on water).
+func rain_splash(point: Vector3, on_water: bool) -> void:
+	var velocity := Vector3(_rng.randf_range(-0.02, 0.02), _rng.randf_range(0.03, 0.06), _rng.randf_range(-0.02, 0.02))
+	_add(point, velocity if not on_water else velocity * 0.3, Color(-2, 0, 0, 0.04), Color(0.6, 0.7, 1.0, 0.8),
+		_rng.randi_range(4, 8), 0.04, false)
+
+
 ## A splash on water (a fish biting): droplets thrown up.
 func splash(point: Vector3) -> void:
 	for i in 12:

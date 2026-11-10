@@ -15,6 +15,7 @@ static func _create() -> CommandDispatcher:
 	var d := CommandDispatcher.new()
 	HelpCommand.register(d)
 	TimeCommand.register(d)
+	WeatherCommand.register(d)
 	TickCommand.register(d)
 	GameRuleCommand.register(d)
 	SetBlockCommand.register(d)
