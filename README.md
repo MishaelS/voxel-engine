@@ -100,6 +100,7 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/voxel/blocks.gd` - block registry: all block types and their atlas tiles (with facings, flowing water levels, bed halves)
 * `scripts/items/` - item registry (tools, ingots, food, buckets, the bed) and the 3D shapes of flat items in hand
 * `scripts/player/crafting.gd`, `scripts/player/smelting.gd` - crafting and furnace recipes
+* `scripts/voxel/chest_model.gd` - the chest model (single and large) from `assets/textures/chest-atlas.png`
 * `scripts/entities/item_entities.gd`, `scripts/entities/block_particles.gd` - dropped items and particles
 * `scripts/voxel/behaviors/` - block behaviors: flowing water and lava, falling sand, grass, plants, leaf decay
 * `scripts/voxel/block_type.gd` - block type description (faces, overlay, tint, render layer)

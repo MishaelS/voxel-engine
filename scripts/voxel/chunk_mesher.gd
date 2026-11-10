@@ -419,6 +419,8 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 	var collides := Blocks.collides_table
 	var corner_heights := PackedFloat32Array([1.0, 1.0, 1.0, 1.0])
 	var shapes := Blocks.shape_table
+	var chest_parts := Blocks.chest_part_table
+	var facings := Blocks.facing_table
 	var has_colors := grass.size() == 256 and foliage.size() == 256
 
 	var vertices := PackedVector3Array()
@@ -435,6 +437,22 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 		if has_colors and biome_tint[id] != 0:
 			var column := (i % P - 1) + 16 * ((i / P) % P - 1)
 			tint = grass[column] if biome_tint[id] == 1 else foliage[column]
+		if shapes[id] == BlockType.Shape.CHEST:
+			# The chest model: lit by the light in the cell, shaded by side.
+			var chest_color := Color(1, 1, 1, float(light[i]) / SkyLight.MAX)
+			for quad: Array in ChestModel.quads(chest_parts[id], maxi(facings[id], 0)):
+				var corners: PackedVector3Array = quad[0]
+				var quad_uvs: PackedVector2Array = quad[2]
+				var chest_layer := float(quad[3]) + 0.75
+				var start := vertices.size()
+				for c in 4:
+					vertices.append(origin + corners[c])
+					normals.append(quad[1])
+					uvs.append(quad_uvs[c])
+					layers.append(Vector2(chest_layer, -1.0))
+					colors.append(chest_color)
+				indices.append_array(PackedInt32Array([start, start + 1, start + 2, start, start + 2, start + 3]))
+			continue
 		if shapes[id] == BlockType.Shape.CROSS:
 			# Two crossed squares, both sides, lit by the light in the cell
 			# (no face shading or AO, like the classic game's plants).

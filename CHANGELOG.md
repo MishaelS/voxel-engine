@@ -14,6 +14,14 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Chest model and large chests like the modern game (`ChestModel`, `ChestBehavior`): chests are drawn as the game's chest model (a base, a lid and a latch, 14/16 high) with textures from `assets/textures/chest-atlas.png` (the game's chest texture layout, unfolded boxes); its faces become extra layers of the block tile array. A chest placed next to a single chest facing the same way joins it into a large chest (two halves with one long lid and the latch at the seam); opening it shows both halves' 27 slots as one 54-slot window (container4.png, "Large Chest"). Breaking one half leaves a single chest; each half keeps its own items.
+
+### Removed
+- The hand-drawn chest tiles in the block atlas and `tools/make_chest_tiles.py` (replaced by the chest model).
+
+## [0.0.2] - 2026-11-10
+
+### Added
 - Saplings (oak, birch, spruce) like the classic game: dropped by leaves, planted on grass or dirt; with enough light (9+) they grow into a tree of their kind after a while (1 in 14 random ticks, `SaplingBehavior`), when there is room.
 - Plants like the classic game: tall grass and ferns (colored by the climate), dandelions, roses and dead bushes, drawn as two crossed squares. Generated per column like Beta 1.7.3: patches of grass by biome (plains and rainforests 10, forests 2, taiga, shrubland, savanna and swamps 1; rainforests mostly ferns), two patches of dandelions and sometimes roses everywhere, dead bushes in deserts. They break at once, tall grass and ferns sometimes drop seeds, they break when their ground goes, placed blocks and flowing liquids replace them (water washes them away, lava burns them) and they are placed only on grass / dirt (dead bushes on sand). Inventory icons show their picture.
 - Leaf decay like the classic game (`LeafBehavior`): tree leaves need a log within 4 blocks through leaves; when something next to them changes they check again after 1-10 s and fall apart without one, dropping what they give (oak leaves sometimes an apple). A cut tree loses its crown bit by bit. Leaves placed by the player never decay (`*_leaves_placed` variants).
@@ -220,5 +228,6 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/MishaelS/voxel-engine/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/MishaelS/voxel-engine/releases/tag/v0.0.1

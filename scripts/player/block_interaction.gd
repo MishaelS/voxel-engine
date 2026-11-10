@@ -221,7 +221,15 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 	match family:
 		"crafting_table":
 			_screen().open_crafting_table()
-		"chest", "furnace", "furnace_lit":
+		"chest", "chest_left", "chest_right":
+			var other: Variant = ChestBehavior.partner(world, pos)
+			if other == null:
+				_screen().open_container(world.block_entity(pos))
+			elif Blocks.chest_part_table[id] == ChestModel.Part.LEFT:
+				_screen().open_large_chest(world.block_entity(pos), world.block_entity(other))
+			else:
+				_screen().open_large_chest(world.block_entity(other), world.block_entity(pos))
+		"furnace", "furnace_lit":
 			_screen().open_container(world.block_entity(pos))
 		"bed_foot", "bed_head":
 			var head := pos
@@ -272,7 +280,10 @@ func _place_block(id: int) -> void:
 		id = Blocks.id_of(block.placed_as) # placed leaves never decay
 	if world.get_block(pos) != Blocks.AIR:
 		world.destroy_block(pos, true, true, false) # a plant or liquid in the way
-	world.set_block(pos, id)
+	if block.shape == BlockType.Shape.CHEST:
+		ChestBehavior.place(world, pos, Blocks.facing_table[id]) # may join a large chest
+	else:
+		world.set_block(pos, id)
 	player.swing()
 	if not player.is_creative():
 		player.inventory.take(player.selected_slot)

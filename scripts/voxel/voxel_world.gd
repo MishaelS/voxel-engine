@@ -813,7 +813,7 @@ func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true, e
 ## "chest" / "furnace" for blocks with a block entity, else "".
 static func _entity_type(id: int) -> String:
 	var family := Blocks.family_of(id)
-	if family == "chest":
+	if family.begins_with("chest"):
 		return "chest"
 	if family == "furnace" or family == "furnace_lit":
 		return "furnace"

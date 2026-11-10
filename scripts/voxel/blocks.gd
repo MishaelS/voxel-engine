@@ -69,6 +69,8 @@ static var facing_table := PackedInt32Array()
 static var shape_table := PackedByteArray()
 ## 1 for blocks that placing or flowing liquids replace (plants).
 static var replaceable_table := PackedByteArray()
+## Chest part per block (ChestModel.Part; only for Shape.CHEST).
+static var chest_part_table := PackedByteArray()
 ## family -> [ids by facing] (or [id] for blocks without facing).
 static var _families := {}
 
@@ -183,6 +185,9 @@ static func _register_all() -> bool:
 			.set_random_tick(Callable(SaplingBehavior, "random_tick"))
 		block.replaceable = false # placing a block next to it doesn't remove it
 		register(block)
+	for half in ["chest_left", "chest_right"]:
+		for facing in 4:
+			register(_chest(facing, half))
 	return true
 
 
@@ -225,8 +230,19 @@ static func _furnace(family: String, front: int, facing: int) -> BlockType:
 	return block
 
 
-static func _chest(facing: int) -> BlockType:
-	return _oriented("chest", facing, 27, 27, 189, 42).set_hardness(2.5).set_tool("axe")
+## A chest (the chest model, 14/16 high) or one half of a large chest
+## ("chest_left" / "chest_right" families, ChestModel.Part).
+static func _chest(facing: int, family: String = "chest") -> BlockType:
+	var planks := ChestModel.particle_layer()
+	var block := _oriented(family, facing, planks, planks, planks, planks).set_hardness(2.5).set_tool("axe") \
+		.set_height(0.875).set_on_update(Callable(ChestBehavior, "on_update"))
+	block.shape = BlockType.Shape.CHEST
+	block.chest_part = {"chest": ChestModel.Part.SINGLE, "chest_left": ChestModel.Part.LEFT,
+		"chest_right": ChestModel.Part.RIGHT}[family]
+	if family != "chest":
+		block.item = "chest"
+		block.in_catalog = false
+	return block
 
 
 ## Water or lava: still (level 0, the source) or flowing (1..7 lower and
@@ -320,6 +336,7 @@ static func register(block: BlockType) -> int:
 	facing_table.append(block.facing)
 	shape_table.append(block.shape)
 	replaceable_table.append(1 if block.replaceable else 0)
+	chest_part_table.append(block.chest_part)
 	var family := block.family if block.family != "" else block.name
 	if not _families.has(family):
 		_families[family] = []

@@ -5,7 +5,8 @@ extends Control
 ##   crafting grid, creative (container4.png) with a scrollable catalog of
 ##   every block and item;
 ## - Crafting table (container1.png): a 3x3 crafting grid;
-## - Chest (container3.png): its 27 slots;
+## - Chest (container3.png): its 27 slots; large chest (container4.png): the
+##   two halves' 27 slots each, the left half on top;
 ## - Furnace (container2.png): input, fuel and output with the fire and
 ##   the cooking arrow.
 ## Each shows the player's inventory and hotbar below.
@@ -23,7 +24,7 @@ extends Control
 ## Closing returns what is held and what is in the crafting grid to the
 ## inventory (what does not fit is thrown out).
 
-enum Mode { INVENTORY, CRAFTING_TABLE, CHEST, FURNACE }
+enum Mode { INVENTORY, CRAFTING_TABLE, CHEST, FURNACE, LARGE_CHEST }
 enum Kind { INVENTORY, CRAFT, RESULT, CATALOG, ARMOR, CONTAINER, OUTPUT }
 
 const P := UiTheme.PIXEL
@@ -55,6 +56,8 @@ var _scroll := 0
 ## The chest's or furnace's block entity (VoxelWorld.block_entity).
 var _entity := {}
 var _container: Inventory
+## Every container inventory shown (both halves of a large chest).
+var _containers: Array[Inventory] = []
 var _flame: Control
 var _arrow: Control
 
@@ -91,8 +94,21 @@ func open_container(entity: Dictionary) -> void:
 		return
 	_entity = entity
 	_container = entity.inventory
+	_containers = [_container]
 	_container.changed.connect(_refresh)
 	_open_mode(Mode.FURNACE if entity.type == "furnace" else Mode.CHEST)
+
+
+## A large chest: the block entities of its left and right halves.
+func open_large_chest(left: Dictionary, right: Dictionary) -> void:
+	if left.is_empty() or right.is_empty():
+		return
+	_entity = left
+	_container = left.inventory
+	_containers = [left.inventory, right.inventory]
+	for inventory in _containers:
+		inventory.changed.connect(_refresh)
+	_open_mode(Mode.LARGE_CHEST)
 
 
 func _open_mode(mode: Mode) -> void:
@@ -121,8 +137,10 @@ func close() -> void:
 	for i in _craft.size():
 		_give(_craft.id_at(i), _craft.count_at(i), _craft.damage_at(i))
 	_craft.clear()
-	if _container and _container.changed.is_connected(_refresh):
-		_container.changed.disconnect(_refresh)
+	for inventory in _containers:
+		if inventory.changed.is_connected(_refresh):
+			inventory.changed.disconnect(_refresh)
+	_containers.clear()
 	_container = null
 	_entity = {}
 	_open = false
@@ -196,6 +214,8 @@ func _build() -> void:
 		texture = "container/container2.png"
 	elif _mode == Mode.CHEST:
 		texture = "container/container3.png"
+	elif _mode == Mode.LARGE_CHEST:
+		texture = "container/container4.png"
 	_window = TextureRect.new()
 	_window.texture = UiTheme.gui_texture(texture)
 	_window.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -239,7 +259,15 @@ func _build() -> void:
 			_title("Chest", Vector2(8, 6))
 			_title("Inventory", Vector2(8, 73))
 			for i in VoxelWorld.CHEST_SIZE:
-				_add_slot(Kind.CONTAINER, i, Vector2i(8 + (i % 9) * 18, 18 + (i / 9) * 18))
+				_add_slot(Kind.CONTAINER, i, Vector2i(8 + (i % 9) * 18, 18 + (i / 9) * 18), _container)
+		Mode.LARGE_CHEST:
+			main_y = 140
+			hotbar_y = 198
+			_title("Large Chest", Vector2(8, 6))
+			_title("Inventory", Vector2(8, 128))
+			for i in VoxelWorld.CHEST_SIZE * 2:
+				_add_slot(Kind.CONTAINER, i % VoxelWorld.CHEST_SIZE, Vector2i(8 + (i % 9) * 18, 18 + (i / 9) * 18),
+					_containers[i / VoxelWorld.CHEST_SIZE])
 		Mode.FURNACE:
 			_title("Furnace", Vector2(60, 6))
 			_title("Inventory", Vector2(8, 72))
@@ -290,11 +318,11 @@ func _title(text: String, pos: Vector2) -> void:
 	_window.add_child(label)
 
 
-func _add_slot(kind: Kind, index: int, pos: Vector2i) -> void:
+func _add_slot(kind: Kind, index: int, pos: Vector2i, inventory: Inventory = null) -> void:
 	var view := ItemSlotView.new()
 	view.position = Vector2(pos) * P
 	_window.add_child(view)
-	_slots.append({"kind": kind, "index": index, "pos": pos, "view": view})
+	_slots.append({"kind": kind, "index": index, "pos": pos, "view": view, "inventory": inventory})
 
 
 ## A progress picture (furnace fire / arrow) shown through a clipping box.
@@ -335,6 +363,8 @@ func _update_furnace_progress() -> void:
 
 ## The inventory behind a slot, or null (result, catalog, armor).
 func _inventory_of(slot: Dictionary) -> Inventory:
+	if slot.inventory != null:
+		return slot.inventory
 	match slot.kind:
 		Kind.INVENTORY:
 			return player.inventory
@@ -561,8 +591,9 @@ func _quick_move(slot: Dictionary) -> void:
 	var left: int = content[1]
 	if slot.kind == Kind.INVENTORY:
 		match _mode:
-			Mode.CHEST:
-				left = _insert(_container, id, left, content[2], 0, _container.size())
+			Mode.CHEST, Mode.LARGE_CHEST:
+				for inventory in _containers:
+					left = _insert(inventory, id, left, content[2], 0, inventory.size())
 			Mode.FURNACE:
 				if Smelting.result_of(id) != Blocks.AIR:
 					left = _insert(_container, id, left, content[2], 0, 1)

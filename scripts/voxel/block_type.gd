@@ -88,8 +88,10 @@ var liquid_level := -1
 ## east (-1 = not oriented); `family` groups the facings and states.
 var facing := -1
 var family := ""
-## Shape: CUBE, or CROSS (two crossed squares: tall grass, flowers).
-enum Shape { CUBE, CROSS }
+## Shape: CUBE, CROSS (two crossed squares: tall grass, flowers) or CHEST
+## (the chest model, ChestModel; `chest_part`: single or a large chest's half).
+enum Shape { CUBE, CROSS, CHEST }
+var chest_part := 0
 var shape: int = Shape.CUBE
 ## Placing a block or pouring a liquid into it simply replaces it (plants).
 var replaceable := false
