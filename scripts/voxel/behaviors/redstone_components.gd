@@ -18,7 +18,7 @@ extends RefCounted
 ## Levers, buttons and torches drop when what holds them goes.
 
 const SOURCES := ["redstone_torch", "redstone_wall_torch", "unlit_redstone_torch", "unlit_redstone_wall_torch",
-	"lever", "stone_button", "stone_pressure_plate", "wooden_pressure_plate"]
+	"lever", "stone_button", "stone_pressure_plate", "wooden_pressure_plate", "detector_rail"]
 const TORCH_DELAY := 2
 const BUTTON_TICKS := 20
 const PLATE_TICKS := 20
@@ -99,6 +99,8 @@ static func weak(_world: VoxelWorld, _pos: Vector3i, id: int, toward: Vector3i) 
 		"repeater":
 			var info := repeater_info(id)
 			return info[2] and toward == Blocks.FACING_DIRECTIONS[info[0]]
+		"detector_rail":
+			return RailBehavior.is_on(id)
 	return false
 
 
@@ -115,6 +117,8 @@ static func strong(world: VoxelWorld, pos: Vector3i, id: int, toward: Vector3i) 
 			return info[0] and toward == info[1]
 		"stone_pressure_plate", "wooden_pressure_plate":
 			return plate_pressed(id) and toward == Vector3i.DOWN
+		"detector_rail":
+			return RailBehavior.is_on(id) and toward == Vector3i.DOWN
 		"repeater":
 			return weak(world, pos, id, toward)
 	return false

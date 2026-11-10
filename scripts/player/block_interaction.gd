@@ -234,7 +234,7 @@ func _attack(entity: Entity) -> void:
 
 ## RMB: the targeted block's own use first (unless sneaking), then the item.
 func _use() -> void:
-	if target_entity is Mob and (target_entity as Mob).interact(player, player.held_block()):
+	if target_entity and target_entity.has_method("interact") and target_entity.call("interact", player, player.held_block()):
 		player.swing()
 		return
 	var hit: bool = target.get("hit", false)
@@ -280,6 +280,18 @@ func _use() -> void:
 			_shoot_bow()
 		"fishing_rod":
 			_fish()
+		"minecart", "chest_minecart", "furnace_minecart":
+			if hit and RailBehavior.is_rail(target.block):
+				var cart := Minecart.create(item.name)
+				world.entities.spawn(cart, Vector3(target.pos) + Vector3(0.5, 0.0, 0.5))
+				player.swing()
+				if not player.is_creative():
+					player.inventory.take(player.selected_slot)
+		"boat":
+			if Boat.place(world, player):
+				player.swing()
+				if not player.is_creative():
+					player.inventory.take(player.selected_slot)
 		"painting":
 			if hit and Painting.hang(world, target.pos, target.normal):
 				player.swing()
@@ -428,7 +440,11 @@ func _place_block(id: int) -> void:
 		id = Blocks.id_of(block.placed_as) # placed leaves never decay
 	if world.get_block(pos) != Blocks.AIR:
 		world.destroy_block(pos, true, true, false) # a plant or liquid in the way
-	if ChestBehavior.is_chest(id):
+	if RailBehavior.is_rail(id):
+		if not Redstone.is_solid(world.get_block(pos + Vector3i.DOWN)):
+			return
+		RailBehavior.place(world, pos, Blocks.family_of(id)) # joins the rails around
+	elif ChestBehavior.is_chest(id):
 		ChestBehavior.place(world, pos, Blocks.facing_table[id]) # may join a large chest
 	else:
 		world.set_block(pos, id)

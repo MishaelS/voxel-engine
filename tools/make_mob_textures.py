@@ -1,4 +1,5 @@
-"""Draws the mob textures (assets/textures/mobs/*.png, 64 x 64) from the
+"""Draws the mob textures (assets/textures/mobs/*.png, 64 x 64, or the model's
+"texture_size": the minecart and the boat) from the
 model definitions (assets/models/mobs.json): each part's box is unfolded
 like the game's skins (top and bottom squares, then the strip -X, front +Z,
 +X, back -Z) and painted with its colors, a little noise and, on the
@@ -35,6 +36,8 @@ PALETTES = {
     "slime": {"outer": (120, 200, 110), "inner": (90, 170, 80), "eye": (30, 50, 30), "mouth": (30, 50, 30)},
     "squid": {"*": (40, 70, 110), "tentacle": (36, 60, 96)},
     "pig_saddle": {"*": (110, 70, 40), "saddle_strap": (80, 50, 30)},
+    "minecart": {"*": (128, 130, 136), "bottom": (100, 102, 108)},
+    "boat": {"*": (164, 126, 78), "bottom": (140, 104, 62)},
     "wolf": {"*": (210, 206, 200), "snout": (230, 226, 220), "ear": (180, 176, 170), "tail": (196, 192, 186)},
 }
 
@@ -168,7 +171,8 @@ def main(models_path, out_dir, redraw=()):
             path = os.path.join(out_dir, texture + ".png")
             if texture not in PALETTES or (os.path.exists(path) and texture not in redraw):
                 continue
-            img = np.zeros((64, 64, 4), np.uint8)
+            width, height = model.get("texture_size", [64, 64])
+            img = np.zeros((height, width, 4), np.uint8)
             paint(models, mob, model["parts"], img, texture)
             Image.fromarray(img).save(os.path.join(out_dir, texture + ".png"))
             print("wrote", texture)

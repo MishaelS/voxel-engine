@@ -219,8 +219,53 @@ static func _register_all() -> bool:
 	_register_dungeons()
 	_register_music()
 	_register_redstone()
+	_register_rails()
 	_set_flammability()
 	return true
+
+
+# --- Rails (stage 11) ------------------------------------------------------------------
+
+## Rails, powered rails and detector rails (RailBehavior) (appended: ids
+## stay stable).
+static func _register_rails() -> void:
+	for shape in 10:
+		register(_rail("rail", 128, 112, shape, false))
+	for family: Array in [["powered_rail", 163, 179], ["detector_rail", 195, 195]]:
+		for shape in 6:
+			for on in [false, true]:
+				register(_rail(family[0], family[2] if on else family[1], 0, shape, on))
+
+
+## A rail: a flat picture on the ground (turned for east-west and curves), or
+## a ramp up to the next block for slopes.
+static func _rail(family: String, tile: int, curve_tile: int, shape: int, on: bool) -> BlockType:
+	var index := shape if family == "rail" else shape * 2 + (1 if on else 0)
+	var block := BlockType.cube(family if index == 0 else "%s_%d" % [family, index], tile).set_layer(Layer.CUTOUT) \
+		.set_collides(false).set_hardness(0.7).set_light_opacity(0).set_height(0.125) \
+		.set_on_update(Callable(RailBehavior, "on_update")).set_selection(AABB(Vector3.ZERO, Vector3(16, 2, 16)))
+	block.family = family
+	block.item = family
+	block.in_catalog = index == 0
+	block.flat_item = true
+	block.shape = BlockType.Shape.MODEL
+	if family == "detector_rail":
+		block.scheduled_tick = Callable(RailBehavior, "detector_tick")
+	var rising := RailBehavior.rising(shape)
+	if rising != Vector3i.ZERO:
+		# Written rising toward north (-Z), turned to its direction.
+		var facing := (Blocks.FACING_DIRECTIONS.find(rising) + 2) % 4
+		block.model = BlockModel.register([{"from": Vector3(0, 0, 16 - 16 * sqrt(2.0)), "to": Vector3(16, 1, 16),
+			"faces": {BlockModel.UP: {"layer": tile, "uv": Rect2(0, 0, 16, 16)}},
+			"rotation": {"axis": "x", "angle": 45.0, "origin": Vector3(8, 0, 16)}}], facing)
+		block.set_selection(AABB(Vector3.ZERO, Vector3(16, 8, 16)))
+	elif shape >= 6:
+		block.model = BlockModel.register([{"from": Vector3(0, 0, 0), "to": Vector3(16, 1, 16),
+			"faces": {BlockModel.UP: {"layer": curve_tile, "uv_turn": [0, 1, 2, 3][shape - 6]}}}])
+	else:
+		block.model = BlockModel.register([{"from": Vector3(0, 0, 0), "to": Vector3(16, 1, 16),
+			"faces": {BlockModel.UP: {"layer": tile, "uv_turn": shape}}}])
+	return block
 
 
 # --- Redstone (stage 10) -------------------------------------------------------------

@@ -106,6 +106,10 @@ static func _register_all() -> bool:
 	register(ItemType.make("map", 60).stack(1))
 	register(ItemType.make("fishing_rod", 69).set_durability(64))
 	register(ItemType.make("painting", 26))
+	register(ItemType.make("minecart", 135).stack(1))
+	register(ItemType.make("chest_minecart", 151).stack(1))
+	register(ItemType.make("furnace_minecart", 167).stack(1))
+	register(ItemType.make("boat", 136).stack(1))
 	return true
 
 

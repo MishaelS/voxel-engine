@@ -808,7 +808,14 @@ func _through_armor(amount: int) -> int:
 	return scaled / 25
 
 
-## Gets on a saddled pig, like the classic game.
+## Opens a container's window (a chest minecart's chest).
+func open_container(entity: Dictionary) -> void:
+	var screens := get_tree().root.find_children("*", "InventoryScreen", true, false)
+	if not screens.is_empty():
+		(screens[0] as InventoryScreen).open_container(entity)
+
+
+## Gets on a saddled pig, a minecart or a boat, like the classic game.
 func mount(creature: Entity) -> void:
 	vehicle = creature
 	velocity = Vector3.ZERO
@@ -829,6 +836,9 @@ func _tick_riding() -> void:
 		velocity = Vector3.ZERO
 		_fall_distance = 0.0
 		return
+	if vehicle.has_method("steer"):
+		var forward := 0.0 if GameInput.is_blocked() else Input.get_action_strength("move_forward") - Input.get_action_strength("move_back")
+		vehicle.call("steer", forward, look_direction())
 	var seat := vehicle.feet() + Vector3(0, vehicle.height * 0.75 - 0.2, 0)
 	_x = seat.x
 	_y = seat.y

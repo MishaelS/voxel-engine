@@ -51,6 +51,10 @@ func create(type: String) -> Entity:
 		return Painting.new()
 	if type == "tnt":
 		return PrimedTnt.new()
+	if type in ["minecart", "chest_minecart", "furnace_minecart"]:
+		return Minecart.create(type)
+	if type == "boat":
+		return Boat.new()
 	var script: Script = TYPES.get(type)
 	return script.new() if script else null
 
