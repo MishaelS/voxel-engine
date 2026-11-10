@@ -112,6 +112,8 @@ func tick() -> void:
 	in_water = EntityPhysics.touches_liquid(world, _x, _y, _z, half_width, height, "water")
 	in_lava = EntityPhysics.touches_liquid(world, _x, _y, _z, half_width, height, "lava")
 	_burn()
+	if world and on_ground:
+		RedstoneComponents.step_on(world, Vector3i(floori(_x), floori(_y + 0.01), floori(_z)))
 	_ai_tick()
 	_physics()
 	if _y < Player.VOID_Y:

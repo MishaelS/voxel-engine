@@ -928,6 +928,9 @@ func _update_health() -> void:
 	if _y < VOID_Y:
 		damage(4, true)
 	_update_air()
+	if world and on_ground and not flying:
+		RedstoneComponents.step_on(world, Vector3i(floori(_x), floori(_y + 0.01), floori(_z)))
+		RedstoneOre.touch(world, Vector3i(floori(_x), floori(_y - 0.1), floori(_z)))
 	if not is_creative():
 		if world == null or world.hunger:
 			food.tick(self, world == null or world.natural_regeneration)

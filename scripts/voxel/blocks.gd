@@ -218,8 +218,341 @@ static func _register_all() -> bool:
 	_register_farming()
 	_register_dungeons()
 	_register_music()
+	_register_redstone()
 	_set_flammability()
 	return true
+
+
+# --- Redstone (stage 10) -------------------------------------------------------------
+
+## Pistons are written facing up and tilted into place (Redstone.DIRS order).
+const PISTON_TURNS := [["x", 180.0], ["x", 0.0], ["x", -90.0], ["x", 90.0], ["z", 90.0], ["z", -90.0]]
+
+
+## Wire, torches, levers, buttons, plates, repeaters, pistons, dispensers and
+## glowing redstone ore (appended: ids stay stable). See Redstone.
+static func _register_redstone() -> void:
+	# Wire: 16 power levels x 81 shapes (Redstone.wire_shape).
+	for power in 16:
+		for shape in Redstone.SHAPES:
+			register(_redstone_wire(power, shape))
+	# Torches: lit and unlit, on the floor and on walls.
+	for lit in [true, false]:
+		register(_redstone_torch(-1, lit))
+		for facing in 4:
+			register(_redstone_torch(facing, lit))
+	# Levers: on the floor along x / z, on walls; off and on.
+	for place in 6:
+		for on in [false, true]:
+			register(_lever(place, on))
+	for facing in 4:
+		for pressed in [false, true]:
+			register(_button(facing, pressed))
+	for kind: Array in [["stone_pressure_plate", 1], ["wooden_pressure_plate", 4]]:
+		for pressed in [false, true]:
+			register(_pressure_plate(kind[0], kind[1], pressed))
+	for facing in 4:
+		for delay in range(1, 5):
+			for powered in [false, true]:
+				register(_repeater(facing, delay, powered))
+	for sticky in [false, true]:
+		for dir in 6:
+			for extended in [false, true]:
+				register(_piston(dir, extended, sticky))
+	for dir in 6:
+		for sticky in [false, true]:
+			register(_piston_head(dir, sticky))
+	for facing in 4:
+		register(_oriented("dispenser", facing, 62, 62, 46, 45).set_hardness(3.5).set_tool("pickaxe", 0)
+			.set_on_update(Callable(DispenserBehavior, "on_update"))
+			.set_scheduled_tick(Callable(DispenserBehavior, "scheduled_tick")))
+	var lit_ore := BlockType.cube("lit_redstone_ore", 51).set_hardness(3.0).set_tool("pickaxe", 2) \
+		.set_drops([{"item": "redstone", "min": 4, "max": 5}]).set_light_emission(9) \
+		.set_random_tick(Callable(RedstoneOre, "random_tick")).set_display_tick(Callable(RedstoneOre, "display_tick")) \
+		.hidden_from_catalog()
+	lit_ore.item = "redstone_ore"
+	register(lit_ore)
+	# Doors, trapdoors, TNT and note blocks react to power too.
+	for block in types:
+		var family := family_of(block.id)
+		if family in ["trapdoor", "trapdoor_open", "note_block", "tnt"] or DoorBehavior.is_door(block.id):
+			if block.on_update.is_valid() and block.on_update != Callable(Redstone, "consumer_update"):
+				Redstone.inner_updates[family] = block.on_update
+			block.on_update = Callable(Redstone, "consumer_update")
+
+
+## Wire color by power, like the game's.
+static func _wire_color(power: int) -> Color:
+	var f := power / 15.0
+	var r := f * 0.6 + 0.4 if power > 0 else 0.3
+	return Color(r, maxf(f * f * 0.7 - 0.5, 0.0), maxf(f * f * 0.6 - 0.7, 0.0))
+
+
+static func _redstone_wire(power: int, shape: int) -> BlockType:
+	var index := power * Redstone.SHAPES + shape
+	var block := BlockType.cube("redstone_wire" if index == 0 else "redstone_wire_%d" % index, 164) \
+		.set_layer(Layer.CUTOUT).set_collides(false).set_hardness(0.0).set_light_opacity(0).set_height(0.0625) \
+		.set_drops([{"item": "redstone"}]).set_tint(_wire_color(power)) \
+		.set_on_update(Callable(Redstone, "on_wire_update")).set_selection(AABB(Vector3.ZERO, Vector3(16, 1, 16)))
+	block.family = "redstone_wire"
+	block.item = "redstone"
+	block.in_catalog = false
+	block.shape = BlockType.Shape.MODEL
+	var sides: Array[int] = []
+	var rest := shape
+	for i in 4:
+		sides.append(rest % 3)
+		rest /= 3
+	# HORIZONTAL order: south (+Z), west (-X), north (-Z), east (+X).
+	var south := sides[0] != 0
+	var west := sides[1] != 0
+	var north := sides[2] != 0
+	var east := sides[3] != 0
+	var boxes := []
+	if not (south or west or north or east):
+		boxes.append({"from": Vector3(0, 0, 0), "to": Vector3(16, 0.25, 16), "faces": {BlockModel.UP: {"layer": 164}}})
+	elif not (west or east):
+		boxes.append({"from": Vector3(0, 0, 0), "to": Vector3(16, 0.25, 16), "faces": {BlockModel.UP: {"layer": 165, "uv_turn": 1}}})
+	elif not (south or north):
+		boxes.append({"from": Vector3(0, 0, 0), "to": Vector3(16, 0.25, 16), "faces": {BlockModel.UP: {"layer": 165}}})
+	else:
+		var from := Vector3(0.0 if west else 5.0, 0, 0.0 if north else 5.0)
+		var to := Vector3(16.0 if east else 11.0, 0.25, 16.0 if south else 11.0)
+		boxes.append({"from": from, "to": to, "faces": {BlockModel.UP: {"layer": 164}}})
+	# Up the side of a block: a line on its face.
+	var walls := [
+		[Vector3(0, 0, 15.75), Vector3(16, 16, 16), BlockModel.NORTH],
+		[Vector3(0, 0, 0), Vector3(0.25, 16, 16), BlockModel.EAST],
+		[Vector3(0, 0, 0), Vector3(16, 16, 0.25), BlockModel.SOUTH],
+		[Vector3(15.75, 0, 0), Vector3(16, 16, 16), BlockModel.WEST],
+	]
+	for i in 4:
+		if sides[i] == 2:
+			var wall: Array = walls[i]
+			boxes.append({"from": wall[0], "to": wall[1], "faces": {wall[2]: {"layer": 165, "uv": Rect2(0, 0, 16, 16), "uv_turn": 1}}})
+	block.model = BlockModel.register(boxes)
+	return block
+
+
+static func _redstone_torch(facing: int, lit: bool) -> BlockType:
+	var on_wall := facing >= 0
+	var family := ("" if lit else "unlit_") + ("redstone_wall_torch" if on_wall else "redstone_torch")
+	var tile := 99 if lit else 115
+	var block := BlockType.cube(family if facing <= 0 else "%s_%s" % [family, FACING_NAMES[facing]], tile) \
+		.set_layer(Layer.CUTOUT).set_collides(false).set_hardness(0.0).set_light_opacity(0) \
+		.set_light_emission(7 if lit else 0).set_height(0.625) \
+		.set_on_update(Callable(RedstoneComponents, "on_torch_update")) \
+		.set_scheduled_tick(Callable(RedstoneComponents, "torch_tick"))
+	if lit:
+		block.display_tick = Callable(RedstoneComponents, "torch_display_tick")
+	block.flat_item = true
+	block.shape = BlockType.Shape.MODEL
+	block.family = family
+	block.item = "redstone_torch"
+	block.in_catalog = family == "redstone_torch"
+	var faces := {
+		BlockModel.UP: {"layer": tile, "uv": Rect2(7, 6, 2, 2)},
+		BlockModel.DOWN: {"layer": tile, "uv": Rect2(7, 13, 2, 2)},
+	}
+	for side in [BlockModel.EAST, BlockModel.WEST, BlockModel.SOUTH, BlockModel.NORTH]:
+		faces[side] = {"layer": tile, "uv": Rect2(7, 6, 2, 10)}
+	if on_wall:
+		block.facing = facing
+		block.model = BlockModel.register([{"from": Vector3(7, 3.5, -1), "to": Vector3(9, 13.5, 1), "faces": faces,
+			"rotation": {"axis": "x", "angle": 22.5, "origin": Vector3(8, 3.5, 0)}}], facing)
+	else:
+		block.model = BlockModel.register([{"from": Vector3(7, 0, 7), "to": Vector3(9, 10, 9), "faces": faces}])
+	return block
+
+
+static func _all_faces(tile: int) -> Dictionary:
+	var faces := {}
+	for face in 6:
+		faces[face] = {"layer": tile}
+	return faces
+
+
+## A lever (`place`: 0 floor along x, 1 floor along z, 2.. on a wall facing
+## place - 2): a cobblestone base and a stick leaning one way or the other.
+static func _lever(place: int, on: bool) -> BlockType:
+	var index := place * 2 + (1 if on else 0)
+	var block := BlockType.cube("lever" if index == 0 else "lever_%d" % index, 16).set_layer(Layer.CUTOUT) \
+		.set_collides(false).set_hardness(0.5).set_light_opacity(0) \
+		.set_on_update(Callable(RedstoneComponents, "on_attached_update"))
+	block.family = "lever"
+	block.item = "lever"
+	block.in_catalog = index == 0
+	block.flat_item = false
+	block.shape = BlockType.Shape.MODEL
+	var stick := {
+		BlockModel.UP: {"layer": 96, "uv": Rect2(7, 6, 2, 2)}, BlockModel.DOWN: {"layer": 96, "uv": Rect2(7, 14, 2, 2)},
+		BlockModel.EAST: {"layer": 96, "uv": Rect2(7, 6, 2, 10)}, BlockModel.WEST: {"layer": 96, "uv": Rect2(7, 6, 2, 10)},
+		BlockModel.SOUTH: {"layer": 96, "uv": Rect2(7, 6, 2, 10)}, BlockModel.NORTH: {"layer": 96, "uv": Rect2(7, 6, 2, 10)},
+	}
+	var tilt := -40.0 if on else 40.0
+	if place < 2:
+		var along_x := place == 0
+		var base := {"from": Vector3(4, 0, 5) if along_x else Vector3(5, 0, 4),
+			"to": Vector3(12, 3, 11) if along_x else Vector3(11, 3, 12), "faces": _all_faces(16)}
+		var lever := {"from": Vector3(7, 1, 7), "to": Vector3(9, 11, 9), "faces": stick,
+			"rotation": {"axis": "z" if along_x else "x", "angle": tilt, "origin": Vector3(8, 1, 8)}}
+		block.model = BlockModel.register([base, lever])
+		block.set_selection(AABB(Vector3(4, 0, 4), Vector3(8, 10, 8)))
+	else:
+		var base := {"from": Vector3(5, 4, 0), "to": Vector3(11, 12, 3), "faces": _all_faces(16)}
+		var lever := {"from": Vector3(7, 8, 1), "to": Vector3(9, 18, 3), "faces": stick,
+			"rotation": {"axis": "x", "angle": 90.0 + tilt, "origin": Vector3(8, 8, 2)}}
+		block.facing = place - 2
+		block.model = BlockModel.register([base, lever], place - 2)
+		block.set_selection(_facing_box(AABB(Vector3(4, 3, 0), Vector3(8, 10, 8)), place - 2))
+	return block
+
+
+## A box (pixels) turned around the block's middle like a facing.
+static func _facing_box(box: AABB, facing: int) -> AABB:
+	var basis := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
+	var middle := Vector3(8, 8, 8)
+	var result := AABB(basis * (box.position - middle) + middle, Vector3.ZERO)
+	for i in 8:
+		result = result.expand(basis * (box.get_endpoint(i) - middle) + middle)
+	return result
+
+
+static func _button(facing: int, pressed: bool) -> BlockType:
+	var index := facing * 2 + (1 if pressed else 0)
+	var block := BlockType.cube("stone_button" if index == 0 else "stone_button_%d" % index, 1).set_layer(Layer.CUTOUT) \
+		.set_collides(false).set_hardness(0.5).set_light_opacity(0) \
+		.set_on_update(Callable(RedstoneComponents, "on_attached_update")) \
+		.set_scheduled_tick(Callable(RedstoneComponents, "button_tick"))
+	block.family = "stone_button"
+	block.item = "stone_button"
+	block.in_catalog = index == 0
+	block.facing = facing
+	block.shape = BlockType.Shape.MODEL
+	var depth := 1.0 if pressed else 2.0
+	block.model = BlockModel.register([{"from": Vector3(5, 6, 0), "to": Vector3(11, 10, depth), "faces": _all_faces(1)}], facing)
+	block.set_selection(_facing_box(AABB(Vector3(5, 6, 0), Vector3(6, 4, depth)), facing))
+	return block
+
+
+static func _pressure_plate(family: String, tile: int, pressed: bool) -> BlockType:
+	var block := BlockType.cube(family if not pressed else family + "_pressed", tile).set_layer(Layer.CUTOUT) \
+		.set_collides(false).set_hardness(0.5).set_light_opacity(0).set_height(0.0625) \
+		.set_on_update(Callable(RedstoneComponents, "on_plate_update")) \
+		.set_scheduled_tick(Callable(RedstoneComponents, "plate_tick"))
+	block.family = family
+	block.item = family
+	block.in_catalog = not pressed
+	block.shape = BlockType.Shape.MODEL
+	if tile == 4:
+		block.set_tool("axe")
+	else:
+		block.set_tool("pickaxe", 0)
+	var height := 0.5 if pressed else 1.0
+	block.model = BlockModel.register([{"from": Vector3(1, 0, 1), "to": Vector3(15, height, 15), "faces": _all_faces(tile)}])
+	block.set_selection(AABB(Vector3(1, 0, 1), Vector3(14, height, 14)))
+	return block
+
+
+## A repeater facing its output (+Z when written): a slab with the redstone
+## channel, a fixed torch near the output and a torch further back the
+## longer the delay.
+static func _repeater(facing: int, delay: int, powered: bool) -> BlockType:
+	var index := ((facing * 4 + delay - 1) * 2) + (1 if powered else 0)
+	var top := 147 if powered else 131
+	var torch := 99 if powered else 115
+	var block := BlockType.cube("repeater" if index == 0 else "repeater_%d" % index, top).set_layer(Layer.CUTOUT) \
+		.set_hardness(0.0).set_light_opacity(0).set_height(0.125) \
+		.set_on_update(Callable(RedstoneComponents, "on_repeater_update")) \
+		.set_scheduled_tick(Callable(RedstoneComponents, "repeater_tick")) \
+		.set_collision([AABB(Vector3.ZERO, Vector3(16, 2, 16))]).set_selection(AABB(Vector3.ZERO, Vector3(16, 2, 16)))
+	block.family = "repeater"
+	block.item = "repeater"
+	block.in_catalog = index == 0
+	block.facing = facing
+	block.shape = BlockType.Shape.MODEL
+	var torch_faces := {BlockModel.UP: {"layer": torch, "uv": Rect2(7, 6, 2, 2)}}
+	for side in [BlockModel.EAST, BlockModel.WEST, BlockModel.SOUTH, BlockModel.NORTH]:
+		torch_faces[side] = {"layer": torch, "uv": Rect2(7, 6, 2, 5)}
+	var slab := {BlockModel.UP: {"layer": top}, BlockModel.DOWN: {"layer": 6}}
+	for side in [BlockModel.EAST, BlockModel.WEST, BlockModel.SOUTH, BlockModel.NORTH]:
+		slab[side] = {"layer": 5}
+	var back := 8.0 - (delay - 1) * 2.0
+	block.model = BlockModel.register([
+		{"from": Vector3(0, 0, 0), "to": Vector3(16, 2, 16), "faces": slab},
+		{"from": Vector3(7, 2, 11), "to": Vector3(9, 7, 13), "faces": torch_faces},
+		{"from": Vector3(7, 2, back - 1), "to": Vector3(9, 7, back + 1), "faces": torch_faces},
+	], facing)
+	return block
+
+
+## Boxes (pixels) of a piston part pointing up, tilted to `dir`.
+static func _piston_boxes(boxes: Array, dir: int) -> Array:
+	var turn: Array = PISTON_TURNS[dir]
+	if turn[1] == 0.0:
+		return boxes
+	for box: Dictionary in boxes:
+		box["rotation"] = {"axis": turn[0], "angle": turn[1], "origin": Vector3(8, 8, 8)}
+	return boxes
+
+
+## A box (pixels) pointing up, turned to `dir` like _piston_boxes.
+static func _piston_box(box: AABB, dir: int) -> AABB:
+	var turn: Array = PISTON_TURNS[dir]
+	var basis := Basis(Vector3.RIGHT if turn[0] == "x" else Vector3.BACK, deg_to_rad(turn[1]))
+	var middle := Vector3(8, 8, 8)
+	var result := AABB(basis * (box.position - middle) + middle, Vector3.ZERO)
+	for i in 8:
+		result = result.expand(basis * (box.get_endpoint(i) - middle) + middle)
+	return result
+
+
+static func _piston(dir: int, extended: bool, sticky: bool) -> BlockType:
+	var family := "sticky_piston" if sticky else "piston"
+	var index := dir * 2 + (1 if extended else 0)
+	var front := 106 if sticky else 107
+	var block := BlockType.cube(family if index == 0 else "%s_%d" % [family, index], 108).set_hardness(0.5) \
+		.set_on_update(Callable(PistonBehavior, "on_update")) \
+		.set_scheduled_tick(Callable(PistonBehavior, "scheduled_tick"))
+	block.family = family
+	block.item = family
+	block.in_catalog = index == 2 # the one facing north, like an item
+	block.shape = BlockType.Shape.MODEL
+	var sides := {BlockModel.DOWN: {"layer": 109}}
+	for side in [BlockModel.EAST, BlockModel.WEST, BlockModel.SOUTH, BlockModel.NORTH]:
+		sides[side] = {"layer": 108}
+	if extended:
+		sides[BlockModel.UP] = {"layer": 110}
+		block.model = BlockModel.register(_piston_boxes([{"from": Vector3(0, 0, 0), "to": Vector3(16, 12, 16), "faces": sides}], dir))
+		var box := _piston_box(AABB(Vector3.ZERO, Vector3(16, 12, 16)), dir)
+		block.set_collision([box]).set_selection(box)
+	else:
+		sides[BlockModel.UP] = {"layer": front}
+		block.model = BlockModel.register(_piston_boxes([{"from": Vector3(0, 0, 0), "to": Vector3(16, 16, 16), "faces": sides}], dir))
+	return block
+
+
+static func _piston_head(dir: int, sticky: bool) -> BlockType:
+	var index := dir * 2 + (1 if sticky else 0)
+	var front := 106 if sticky else 107
+	var block := BlockType.cube("piston_head" if index == 0 else "piston_head_%d" % index, 108).set_hardness(0.5) \
+		.set_light_opacity(0).set_drop("none").set_on_update(Callable(PistonBehavior, "on_head_update")).hidden_from_catalog()
+	block.family = "piston_head"
+	block.shape = BlockType.Shape.MODEL
+	var plate := {BlockModel.UP: {"layer": front}, BlockModel.DOWN: {"layer": 107}}
+	for side in [BlockModel.EAST, BlockModel.WEST, BlockModel.SOUTH, BlockModel.NORTH]:
+		plate[side] = {"layer": 108}
+	var arm := {}
+	for side in [BlockModel.EAST, BlockModel.WEST, BlockModel.SOUTH, BlockModel.NORTH]:
+		arm[side] = {"layer": 108, "uv": Rect2(0, 0, 16, 4), "uv_turn": 1}
+	block.model = BlockModel.register(_piston_boxes([
+		{"from": Vector3(0, 12, 0), "to": Vector3(16, 16, 16), "faces": plate},
+		{"from": Vector3(6, -4, 6), "to": Vector3(10, 12, 10), "faces": arm},
+	], dir))
+	var plate_box := _piston_box(AABB(Vector3(0, 12, 0), Vector3(16, 4, 16)), dir)
+	var arm_box := _piston_box(AABB(Vector3(6, 0, 6), Vector3(4, 12, 4)), dir)
+	block.set_collision([plate_box, arm_box]).set_selection(plate_box.merge(arm_box))
+	return block
 
 
 # --- Music (stage 8) -----------------------------------------------------------------

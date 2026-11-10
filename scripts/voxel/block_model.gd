@@ -9,7 +9,7 @@ extends RefCounted
 ## {face: {...}}} with faces in BlockType order (+Y, -Y, +X, -X, +Z, -Z).
 ## A face is {"layer": tile array layer, optionally "uv": Rect2 (pixels in
 ## the tile; by default the box's own extent, like the game), "flip_v": the
-## texture upside down, "mirror_u": mirrored left-right}. Faces left out
+## texture upside down, "mirror_u": mirrored left-right, "uv_turn": turned that many quarter turns}. Faces left out
 ## are not drawn (hidden ones, like the inside of a chest's seam).
 ## A box may be tilted: "rotation": {"axis": "x" or "z", "angle": degrees,
 ## "origin": Vector3 (pixels)} (the wall torch leans 22.5 degrees).
@@ -67,7 +67,7 @@ static func _build(boxes: Array, degrees: float) -> Array:
 			var rect: Rect2 = spec.get("uv", _auto_uv(face, box.from, box.to))
 			var uvs := PackedVector2Array()
 			for c in 4:
-				var corner_uv := Vector2(ChunkMesher.CORNER_UVS[c])
+				var corner_uv := Vector2(ChunkMesher.CORNER_UVS[(c + int(spec.get("uv_turn", 0))) % 4])
 				if spec.get("mirror_u", false):
 					corner_uv.x = 1.0 - corner_uv.x
 				if spec.get("flip_v", false):

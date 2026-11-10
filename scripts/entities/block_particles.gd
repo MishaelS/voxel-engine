@@ -123,6 +123,14 @@ func explosion(center: Vector3, power: float) -> void:
 		_add(center, Vector3.ZERO, Color(-2, 0, 0, power * 0.3), Color(1.0, 0.95, 0.8, 0.8), 3, 0.0, true)
 
 
+## Redstone dust glowing (wire, torches, lit ore): a red speck, brighter
+## with more power, like the game's "reddust".
+func redstone(point: Vector3, power: int) -> void:
+	var f := power / 15.0
+	var color := Color(f * 0.6 + 0.4, maxf(f * f * 0.7 - 0.5, 0.0), maxf(f * f * 0.6 - 0.7, 0.0), 1.0)
+	_add(point, Vector3(0, 0.005, 0), Color(-2, 0, 0, 0.05), color, _rng.randi_range(10, 20), 0.0, true)
+
+
 ## An air bubble rising (drowning).
 func bubble(point: Vector3) -> void:
 	_add(point, Vector3(0, 0.05, 0), Color(-2, 0, 0, 0.06), Color(0.75, 0.85, 1.0, 0.9), _rng.randi_range(8, 20), -0.002, false)

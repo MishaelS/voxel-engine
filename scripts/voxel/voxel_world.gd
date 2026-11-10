@@ -78,6 +78,8 @@ var natural_regeneration := true
 var hunger := true
 ## Maps drawn so far: number -> {x, z (center), colors} (see Maps).
 var maps := {}
+## The last power state of things that react to its changes (Redstone.edge).
+var redstone_power := {}
 ## Rain, snow and thunder (Weather).
 var weather := Weather.new()
 ## Jukeboxes playing: position -> AudioStreamPlayer3D (MusicBehavior).
@@ -913,6 +915,7 @@ func start_falling(pos: Vector3i) -> void:
 
 const CHEST_SIZE := 27
 const FURNACE_SIZE := 3
+const DISPENSER_SIZE := 9
 
 
 ## Breaks a block like the classic game: bits fly (particles), it drops what
@@ -926,6 +929,8 @@ func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true, e
 		DungeonBehavior.open_chest(self, pos) # its loot spills out
 	if Blocks.family_of(id) == "jukebox":
 		MusicBehavior.eject(self, pos) # the disc pops out
+	if Blocks.family_of(id) == "piston_head":
+		PistonBehavior.head_broken(self, pos, id) # the piston goes with it
 	if effects:
 		particles.break_block(pos, id)
 		Sounds.play_block("break", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
@@ -958,7 +963,7 @@ static func _entity_type(id: int) -> String:
 		return "furnace"
 	if family == "sign" or family == "wall_sign":
 		return "sign"
-	if family == "jukebox" or family == "note_block":
+	if family == "jukebox" or family == "note_block" or family == "dispenser":
 		return family
 	return ""
 
@@ -989,6 +994,9 @@ func block_entity(pos: Vector3i) -> Dictionary:
 	if not _block_entities.has(pos) or _block_entities[pos].type != type:
 		if type == "sign":
 			_block_entities[pos] = {"type": "sign", "lines": ["", "", "", ""]}
+			return _block_entities[pos]
+		if type == "dispenser":
+			_block_entities[pos] = {"type": type, "inventory": Inventory.new(DISPENSER_SIZE)}
 			return _block_entities[pos]
 		if type == "jukebox" or type == "note_block":
 			_block_entities[pos] = {"type": type, "record": 0} if type == "jukebox" else {"type": type, "note": 0}
@@ -1440,7 +1448,7 @@ func _restore_state() -> void:
 	for pos: Vector3i in saved_block_entities:
 		var entity: Dictionary = saved_block_entities[pos].duplicate()
 		if entity.has("inventory"):
-			var inventory := Inventory.new(CHEST_SIZE if entity.type == "chest" else FURNACE_SIZE)
+			var inventory := Inventory.new({"chest": CHEST_SIZE, "dispenser": DISPENSER_SIZE}.get(entity.type, FURNACE_SIZE))
 			inventory.load_state(entity.inventory)
 			entity.inventory = inventory
 		_block_entities[pos] = entity

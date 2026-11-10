@@ -175,6 +175,8 @@ func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 		_stop_breaking()
 		return
 	if pos != _breaking_pos:
+		RedstoneOre.touch(world, pos)
+		id = world.get_block(pos)
 		_breaking_pos = pos
 		break_progress = 0.0
 		_tick_time = 0.0
@@ -296,6 +298,14 @@ func _use() -> void:
 
 ## Crafting table, chest, furnace and bed react to RMB. Returns true if used.
 func _use_block(pos: Vector3i, id: int) -> bool:
+	if RedstoneComponents.use(world, pos, id):
+		return true
+	if Blocks.family_of(id) == "dispenser":
+		_screen().open_container(world.block_entity(pos))
+		return true
+	if Blocks.get_type(id).name == "redstone_ore":
+		RedstoneOre.touch(world, pos)
+		return false
 	if Blocks.family_of(id) == "dungeon_chest":
 		DungeonBehavior.open_chest(world, pos)
 		id = world.get_block(pos)
@@ -405,6 +415,15 @@ func _place_block(id: int) -> void:
 		if side.y != 0 or side == Vector3i.ZERO or not TorchBehavior.can_hold(world, pos - side):
 			return
 		id = Blocks.variant(family, Blocks.FACING_DIRECTIONS.find(side))
+	# Redstone parts and pistons pick their state from where they go.
+	var clicked: Vector3i = target.normal if target.get("hit", false) and Blocks.replaceable_table[target.block] == 0 else Vector3i.UP
+	var redstone := RedstoneComponents.placement(world, family, pos, clicked, player.look_direction())
+	if redstone == -1:
+		return
+	if redstone >= 0:
+		id = redstone
+	if family == "piston" or family == "sticky_piston":
+		id = PistonBehavior.base_id(PistonBehavior.facing_for(player.look_direction()), false, family == "sticky_piston")
 	if block.placed_as != "":
 		id = Blocks.id_of(block.placed_as) # placed leaves never decay
 	if world.get_block(pos) != Blocks.AIR:

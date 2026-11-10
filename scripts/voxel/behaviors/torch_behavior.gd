@@ -21,7 +21,8 @@ static func support_of(world: VoxelWorld, pos: Vector3i) -> Vector3i:
 
 
 ## Families held by the wall behind them (the others stand on the block below).
-const WALL_FAMILIES := ["wall_torch", "ladder", "trapdoor", "trapdoor_open", "wall_sign"]
+const WALL_FAMILIES := ["wall_torch", "ladder", "trapdoor", "trapdoor_open", "wall_sign",
+	"redstone_wall_torch", "unlit_redstone_wall_torch"]
 
 
 ## Snow layers melt away without a solid block below.

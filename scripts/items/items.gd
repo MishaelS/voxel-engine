@@ -39,7 +39,7 @@ static func _register_all() -> bool:
 	register(ItemType.make("iron_ingot", 23))
 	register(ItemType.make("gold_ingot", 39))
 	register(ItemType.make("diamond", 55))
-	register(ItemType.make("redstone", 56))
+	register(ItemType.make("redstone", 56).set_places("redstone_wire"))
 	register(ItemType.make("flint", 6))
 	register(ItemType.make("snowball", 14).stack(16))
 	register(ItemType.make("apple", 10).set_food(4, 0.3, 4))

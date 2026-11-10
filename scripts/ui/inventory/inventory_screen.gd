@@ -7,6 +7,7 @@ extends Control
 ## - Crafting table (container1.png): a 3x3 crafting grid;
 ## - Chest (container3.png): its 27 slots; large chest (container4.png): the
 ##   two halves' 27 slots each, the left half on top;
+## - Dispenser (container/dispenser.png): its 9 slots in a 3x3 square;
 ## - Furnace (container2.png): input, fuel and output with the fire and
 ##   the cooking arrow.
 ## Each shows the player's inventory and hotbar below.
@@ -24,7 +25,7 @@ extends Control
 ## Closing returns what is held and what is in the crafting grid to the
 ## inventory (what does not fit is thrown out).
 
-enum Mode { INVENTORY, CRAFTING_TABLE, CHEST, FURNACE, LARGE_CHEST }
+enum Mode { INVENTORY, CRAFTING_TABLE, CHEST, FURNACE, LARGE_CHEST, DISPENSER }
 enum Kind { INVENTORY, CRAFT, RESULT, CATALOG, ARMOR, CONTAINER, OUTPUT }
 
 const P := UiTheme.PIXEL
@@ -96,7 +97,7 @@ func open_container(entity: Dictionary) -> void:
 	_container = entity.inventory
 	_containers = [_container]
 	_container.changed.connect(_refresh)
-	_open_mode(Mode.FURNACE if entity.type == "furnace" else Mode.CHEST)
+	_open_mode({"furnace": Mode.FURNACE, "dispenser": Mode.DISPENSER}.get(entity.type, Mode.CHEST))
 
 
 ## A large chest: the block entities of its left and right halves.
@@ -216,6 +217,8 @@ func _build() -> void:
 		texture = "container/container2.png"
 	elif _mode == Mode.CHEST:
 		texture = "container/container3.png"
+	elif _mode == Mode.DISPENSER:
+		texture = "container/dispenser.png"
 	elif _mode == Mode.LARGE_CHEST:
 		texture = "container/container4.png"
 	_window = TextureRect.new()
@@ -262,6 +265,13 @@ func _build() -> void:
 			_title("Inventory", Vector2(8, 73))
 			for i in VoxelWorld.CHEST_SIZE:
 				_add_slot(Kind.CONTAINER, i, Vector2i(8 + (i % 9) * 18, 18 + (i / 9) * 18), _container)
+		Mode.DISPENSER:
+			main_y = 85 # drawn from the chest's window
+			hotbar_y = 143
+			_title("Dispenser", Vector2(60, 6))
+			_title("Inventory", Vector2(8, 73))
+			for i in 9:
+				_add_slot(Kind.CONTAINER, i, Vector2i(62 + (i % 3) * 18, 17 + (i / 3) * 18), _container)
 		Mode.LARGE_CHEST:
 			main_y = 140
 			hotbar_y = 198
@@ -607,7 +617,7 @@ func _quick_move(slot: Dictionary) -> void:
 	var left: int = content[1]
 	if slot.kind == Kind.INVENTORY:
 		match _mode:
-			Mode.CHEST, Mode.LARGE_CHEST:
+			Mode.CHEST, Mode.LARGE_CHEST, Mode.DISPENSER:
 				for inventory in _containers:
 					left = _insert(inventory, id, left, content[2], 0, inventory.size())
 			Mode.FURNACE:

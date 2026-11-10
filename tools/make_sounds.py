@@ -15,7 +15,7 @@ Groups (each with a few variants, picked at random):
   skeleton, spider, creeper, slime), mob/creeper/fuse, mob/slime/bigN,
   smallN, random/explodeN, bow, bowhit, break,
   note/harp, bass, bd, snare, hat (note blocks; the game changes the pitch),
-  ambient/rainN, ambient/thunderN, random/fuse
+  ambient/rainN, ambient/thunderN, random/fuse, random/piston_out, piston_in
 Materials: stone, wood, gravel, grass, sand, cloth, snow.
 
 Usage: python3 tools/make_sounds.py assets/sounds
@@ -265,6 +265,7 @@ def mobs(root):
           + 0.6 * np.sin(2 * np.pi * 900 * t(0.25)) * env(0.25, 0.001, 0.02))
     notes(root)
     weather(root)
+    pistons(root)
 
 
 
@@ -297,6 +298,17 @@ def weather(root):
         rumble *= 1 + 0.6 * np.sin(2 * np.pi * rng.uniform(1.5, 3.0) * x)
         write(os.path.join(root, "ambient", f"thunder{k}.wav"), 0.5 * crack + rumble * 2.5)
     write(os.path.join(root, "random", "fuse.wav"), highpass(noise(1.5), 2500) * np.minimum(t(1.5) / 0.05, 1.0) * np.minimum((1.5 - t(1.5)) / 0.2, 1.0))
+
+
+
+def pistons(root):
+    """A piston: a quick wooden knock with a sliding scrape (out), lower (in)."""
+    for name, f in (("piston_out", 1.0), ("piston_in", 0.8)):
+        x = t(0.3)
+        knock = MATERIALS["wood"](1.2)
+        knock = np.pad(knock, (0, max(len(x) - len(knock), 0)))[: len(x)] * f
+        scrape = lowpass(noise(0.3), 1500) * env(0.3, 0.01, 0.08)
+        write(os.path.join(root, "random", name + ".wav"), knock + 0.6 * scrape)
 
 
 if __name__ == "__main__":

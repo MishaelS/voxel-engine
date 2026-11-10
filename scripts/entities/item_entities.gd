@@ -37,6 +37,14 @@ func _exit_tree() -> void:
 	TickLoop.remove_listener(_tick)
 
 
+## Whether a dropped item lies inside `box` (wooden pressure plates).
+func any_in(box: AABB) -> bool:
+	for item in _items:
+		if item.picked < 0 and box.has_point(item.pos):
+			return true
+	return false
+
+
 func count() -> int:
 	return _items.size()
 
@@ -137,6 +145,8 @@ func _tick(tick_index: int) -> void:
 			_physics(item)
 			item.delay = maxi(item.delay - 1, 0)
 			_try_pickup(item)
+			if world and item.ground:
+				RedstoneComponents.step_on(world, Vector3i((item.pos as Vector3).floor()), true) # wooden plates
 		i += 1
 	if tick_index % 10 == 0:
 		_merge()
