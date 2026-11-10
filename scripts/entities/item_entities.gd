@@ -170,7 +170,7 @@ func _physics(item: Dictionary) -> void:
 				on_ground = true
 				# Rest on the block's top (beds are lower).
 				var cell := Vector3i(floori(position.x), floori(next.y - HALF), floori(position.z))
-				var top := cell.y + Blocks.height_table[world.get_block(cell)]
+				var top := cell.y + Blocks.top_at(world.get_block(cell), position.x - cell.x, position.z - cell.z)
 				if top <= position.y - HALF + 1e-3:
 					position.y = top + HALF
 			velocity[axis] = 0.0
@@ -192,7 +192,7 @@ func _box_blocked(center: Vector3) -> bool:
 		var point: Vector3 = center + corner * (HALF - 0.001)
 		var cell := Vector3i(point.floor())
 		var id := world.get_block(cell)
-		if Blocks.collides_table[id] == 1 and point.y - cell.y < Blocks.height_table[id]:
+		if Blocks.blocks_point(id, point - Vector3(cell)):
 			return true
 	return false
 

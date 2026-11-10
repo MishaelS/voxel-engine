@@ -485,14 +485,32 @@ func _tick() -> void:
 			acceleration = WALK_ACCELERATION * (SPRINT_FACTOR if sprinting else 1.0) \
 				* 0.16277136 / (friction * friction * friction)
 		_move_relative(strafe, forward, acceleration)
+		# Ladders like the classic game: slow sideways, slow fall (none while
+		# sneaking), walking into the ladder climbs it.
+		var climbing := not flying and _on_ladder()
+		if climbing:
+			velocity.x = clampf(velocity.x, -0.15, 0.15)
+			velocity.z = clampf(velocity.z, -0.15, 0.15)
+			velocity.y = maxf(velocity.y, -0.15)
+			if sneaking and velocity.y < 0.0:
+				velocity.y = 0.0
+			_fall_distance = 0.0
 		var vertical := velocity.y
 		_move(velocity)
+		if climbing and horizontal_collision:
+			velocity.y = 0.2
 		if flying:
 			velocity.y = vertical * 0.6
 		else:
 			velocity.y = (velocity.y - GRAVITY) * AIR_DRAG
 		velocity.x *= friction
 		velocity.z *= friction
+		if _in_web():
+			# Cobwebs hold you: almost no movement (the classic game).
+			velocity.x *= 0.25
+			velocity.y *= 0.05
+			velocity.z *= 0.25
+			_fall_distance = 0.0
 
 	if flying and on_ground:
 		flying = false # landed
@@ -591,7 +609,7 @@ func _sweep(x: float, y: float, z: float, dx: float, dy: float, dz: float) -> Pa
 	return EntityPhysics.sweep(world, x, y, z, HALF_WIDTH, HEIGHT, dx, dy, dz)
 
 
-func _solid_blocks(min_x: float, min_y: float, min_z: float, max_x: float, max_y: float, max_z: float) -> Array[Vector4]:
+func _solid_blocks(min_x: float, min_y: float, min_z: float, max_x: float, max_y: float, max_z: float) -> Array[AABB]:
 	return EntityPhysics.solid_boxes(world, min_x, min_y, min_z, max_x, max_y, max_z)
 
 
@@ -618,6 +636,20 @@ func _touches_liquid_at(x: float, y: float, z: float, family: String) -> bool:
 				var id := world.get_block(Vector3i(bx, by, bz))
 				if liquid[id] == 1 and Blocks.family_of(id) == family:
 					return true
+	return false
+
+
+## On a ladder: the block at the feet is climbable.
+func _on_ladder() -> bool:
+	return world != null and Blocks.get_type(world.get_block(Vector3i(floori(_x), floori(_y), floori(_z)))).climbable
+
+
+func _in_web() -> bool:
+	if world == null:
+		return false
+	for y in [floori(_y + 0.1), floori(_y + 1.0)]:
+		if Blocks.get_type(world.get_block(Vector3i(floori(_x), y, floori(_z)))).name == "cobweb":
+			return true
 	return false
 
 

@@ -31,7 +31,14 @@ static var _models: Array = [] # index -> Array of quads
 
 ## Registers a model (its boxes turned for `facing`) and returns its index.
 static func register(boxes: Array, facing: int = 0) -> int:
-	_models.append(_build(boxes, facing))
+	_models.append(_build(boxes, FACING_TURNS[facing]))
+	return _models.size() - 1
+
+
+## Registers a model turned by any angle (degrees, like facing turns:
+## floor signs come in 16 directions).
+static func register_turned(boxes: Array, degrees: float) -> int:
+	_models.append(_build(boxes, degrees))
 	return _models.size() - 1
 
 
@@ -41,8 +48,8 @@ static func quads(index: int) -> Array:
 	return _models[index]
 
 
-static func _build(boxes: Array, facing: int) -> Array:
-	var rotation := Basis(Vector3.UP, deg_to_rad(FACING_TURNS[facing]))
+static func _build(boxes: Array, degrees: float) -> Array:
+	var rotation := Basis(Vector3.UP, deg_to_rad(degrees))
 	var middle := Vector3(0.5, 0.0, 0.5)
 	var result := []
 	for box: Dictionary in boxes:

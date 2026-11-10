@@ -73,6 +73,9 @@ static var replaceable_table := PackedByteArray()
 static var model_table := PackedInt32Array()
 ## Chest part per block (ChestModel.Part; chests only).
 static var chest_part_table := PackedByteArray()
+## Collision boxes per block (Array[AABB], block units) and the outline box.
+static var collision_table: Array = []
+static var selection_table: Array[AABB] = []
 ## 1 if the block has display effects (BlockType.display_tick).
 static var display_table := PackedByteArray()
 ## Light given off per block (BlockType.light_emission) and the ids that glow.
@@ -209,8 +212,240 @@ static func _register_all() -> bool:
 			.set_light_emission(15))
 	for age in FireBehavior.MAX_AGE + 1:
 		register(_fire(age))
+	_register_building_blocks()
 	_set_flammability()
 	return true
+
+
+# --- Building blocks (stage 3) ------------------------------------------------------
+
+const STAIR_MATERIALS := [["cobblestone", 16], ["oak", 4], ["birch", 214], ["spruce", 198]]
+## Slabs: [name, top tile, side tile, bottom tile].
+const SLAB_MATERIALS := [["stone", 6, 5, 6], ["sandstone", 176, 192, 208], ["wooden", 4, 4, 4], ["cobblestone", 16, 16, 16]]
+const FENCE_DIRECTIONS: Array[Vector3i] = [Vector3i(0, 0, 1), Vector3i(-1, 0, 0), Vector3i(0, 0, -1), Vector3i(1, 0, 0)]
+
+
+## Stairs, slabs, fences, ladders, doors, trapdoors, signs, bricks, clay,
+## bookshelves, mossy cobblestone, sponge, cobwebs, snow layers (appended:
+## ids stay stable).
+static func _register_building_blocks() -> void:
+	for material: Array in STAIR_MATERIALS:
+		for facing in 4:
+			register(_stairs(material[0], material[1], facing))
+	for material: Array in SLAB_MATERIALS:
+		register(BlockType.column(material[0] + "_slab", material[1], material[2], material[3]).set_height(0.5) \
+			.set_hardness(2.0 if material[0] != "wooden" else 2.0).set_tool("pickaxe" if material[0] != "wooden" else "axe",
+				0 if material[0] != "wooden" else -1))
+	for material: Array in SLAB_MATERIALS:
+		register(BlockType.column("double_" + material[0] + "_slab", material[1], material[2], material[3]) \
+			.set_hardness(2.0).set_tool("pickaxe" if material[0] != "wooden" else "axe", 0 if material[0] != "wooden" else -1) \
+			.set_drops([{"item": material[0] + "_slab", "min": 2, "max": 2}]).hidden_from_catalog())
+	for mask in 16:
+		register(_fence(mask))
+	for facing in 4:
+		register(_ladder(facing))
+	for kind: Array in [["wooden", 81, 97], ["iron", 82, 98]]:
+		for half in ["lower", "upper"]:
+			for state in ["closed", "open"]:
+				for facing in 4:
+					register(_door(kind[0], kind[1] if half == "upper" else kind[2], half, state == "open", facing))
+	for state in ["closed", "open"]:
+		for facing in 4:
+			register(_trapdoor(state == "open", facing))
+	for rotation in 16:
+		register(_sign(rotation, -1))
+	for facing in 4:
+		register(_sign(-1, facing))
+	register(BlockType.cube("bricks", 7).set_hardness(2.0).set_tool("pickaxe", 0))
+	register(BlockType.cube("clay", 72).set_hardness(0.6).set_tool("shovel") \
+		.set_drops([{"item": "clay_ball", "min": 4, "max": 4}]))
+	register(BlockType.column("bookshelf", 4, 35).set_hardness(1.5).set_tool("axe") \
+		.set_drops([{"item": "book", "min": 3, "max": 3}]))
+	register(BlockType.cube("mossy_cobblestone", 36).set_hardness(2.0).set_tool("pickaxe", 0))
+	register(BlockType.cube("sponge", 48).set_hardness(0.6))
+	var web := BlockType.cube("cobweb", 11).as_plant().set_hardness(4.0).set_tool("sword", 0) \
+		.set_drops([{"item": "string"}])
+	web.replaceable = false
+	web.height = 1.0
+	web.on_update = Callable()
+	register(web)
+	var snow_layer := BlockType.cube("snow_layer", 66).set_height(0.125).set_collides(false).set_hardness(0.1) \
+		.set_tool("shovel", 0).set_drops([{"item": "snowball"}]).set_on_update(Callable(TorchBehavior, "on_update_layer"))
+	snow_layer.replaceable = true
+	register(snow_layer)
+
+
+static func _stairs(material: String, tile: int, facing: int) -> BlockType:
+	var family := material + "_stairs"
+	var block := BlockType.cube(family if facing == 0 else "%s_%s" % [family, FACING_NAMES[facing]], tile) \
+		.set_hardness(2.0).set_tool("pickaxe" if material == "cobblestone" else "axe", 0 if material == "cobblestone" else -1) \
+		.set_height(0.999).set_light_opacity(0)
+	# Like Beta, stairs give back their material.
+	block.drops = [{"item": "cobblestone" if material == "cobblestone" else material + "_planks"}]
+	block.family = family
+	block.facing = facing
+	if facing != 0:
+		block.item = family
+		block.in_catalog = false
+	# Facing south: the low step in front (+Z), the high part behind.
+	var faces := {}
+	for face in 6:
+		faces[face] = {"layer": tile}
+	var boxes := [
+		{"from": Vector3(0, 0, 0), "to": Vector3(16, 8, 16), "faces": faces},
+		{"from": Vector3(0, 8, 0), "to": Vector3(16, 16, 8), "faces": faces},
+	]
+	block.shape = BlockType.Shape.MODEL
+	block.model = BlockModel.register(boxes, facing)
+	var turn := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
+	for box: Array in [[Vector3(0, 0, 0), Vector3(16, 8, 16)], [Vector3(0, 8, 0), Vector3(16, 16, 8)]]:
+		block.collision_boxes.append(_turned_box(box[0] / 16.0, box[1] / 16.0, turn))
+	block.selection_box = AABB(Vector3.ZERO, Vector3.ONE)
+	return block
+
+
+## A box (block units) turned around the block's vertical middle.
+static func _turned_box(from: Vector3, to: Vector3, turn: Basis) -> AABB:
+	var middle := Vector3(0.5, 0.0, 0.5)
+	var a := turn * (from - middle) + middle
+	var b := turn * (to - middle) + middle
+	return AABB(a.min(b), (a - b).abs())
+
+
+## A fence post with rails to the fences around (`mask` bits: south, west,
+## north, east). Collides 1.5 blocks high like the game.
+static func _fence(mask: int) -> BlockType:
+	var block := BlockType.cube("fence" if mask == 0 else "fence_%d" % mask, 4).set_hardness(2.0).set_tool("axe") \
+		.set_height(0.999).set_light_opacity(0).set_on_update(Callable(FenceBehavior, "on_update")) \
+		.set_collision([AABB(Vector3.ZERO, Vector3(16, 24, 16))]).set_selection(AABB(Vector3.ZERO, Vector3(16, 16, 16)))
+	block.family = "fence"
+	if mask != 0:
+		block.item = "fence"
+		block.in_catalog = false
+	var faces := {}
+	for face in 6:
+		faces[face] = {"layer": 4}
+	var boxes := [{"from": Vector3(6, 0, 6), "to": Vector3(10, 16, 10), "faces": faces}]
+	for d in 4:
+		if mask & (1 << d) == 0:
+			continue
+		for rail: Vector2 in [Vector2(12, 15), Vector2(6, 9)]:
+			var from := Vector3(7, rail.x, 10)
+			var to := Vector3(9, rail.y, 16)
+			match d:
+				1: # west
+					from = Vector3(0, rail.x, 7)
+					to = Vector3(6, rail.y, 9)
+				2: # north
+					from = Vector3(7, rail.x, 0)
+					to = Vector3(9, rail.y, 6)
+				3: # east
+					from = Vector3(10, rail.x, 7)
+					to = Vector3(16, rail.y, 9)
+			boxes.append({"from": from, "to": to, "faces": faces})
+	block.shape = BlockType.Shape.MODEL
+	block.model = BlockModel.register(boxes)
+	return block
+
+
+## A ladder on the wall behind it (facing away from the wall): one flat
+## picture, climbable, 2/16 thick.
+static func _ladder(facing: int) -> BlockType:
+	var block := BlockType.cube("ladder" if facing == 0 else "ladder_" + FACING_NAMES[facing], 83) \
+		.set_layer(Layer.CUTOUT).set_hardness(0.4).set_tool("axe").set_height(0.999).set_light_opacity(0) \
+		.set_on_update(Callable(TorchBehavior, "on_update"))
+	block.family = "ladder"
+	block.facing = facing
+	block.climbable = true
+	if facing != 0:
+		block.item = "ladder"
+		block.in_catalog = false
+	block.shape = BlockType.Shape.MODEL
+	block.model = BlockModel.register([{"from": Vector3(0, 0, 0.8), "to": Vector3(16, 16, 0.8),
+		"faces": {BlockModel.SOUTH: {"layer": 83}}}], facing)
+	var turn := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
+	block.collision_boxes.append(_turned_box(Vector3(0, 0, 0), Vector3(1, 1, 0.125), turn))
+	return block
+
+
+## Half of a door (DoorBehavior): the panel 3/16 thick along the far side
+## (facing south: the south edge), or swung open along the west edge.
+static func _door(kind: String, tile: int, half: String, open: bool, facing: int) -> BlockType:
+	var family := "%s_door_%s_%s" % [kind, half, "open" if open else "closed"]
+	var block := BlockType.cube(family if facing == 0 else "%s_%s" % [family, FACING_NAMES[facing]], tile) \
+		.set_layer(Layer.CUTOUT).set_hardness(3.0 if kind == "wooden" else 5.0) \
+		.set_tool("axe" if kind == "wooden" else "pickaxe", -1 if kind == "wooden" else 0) \
+		.set_height(0.999).set_light_opacity(0).set_on_update(Callable(DoorBehavior, "on_update")).hidden_from_catalog()
+	block.family = family
+	block.facing = facing
+	block.item = kind + "_door"
+	block.drops = [{"item": kind + "_door"}] if half == "lower" else [{}]
+	var from := Vector3(0, 0, 13) if not open else Vector3(0, 0, 0)
+	var to := Vector3(16, 16, 16) if not open else Vector3(3, 16, 16)
+	var faces := {}
+	for face in 6:
+		faces[face] = {"layer": tile}
+	block.shape = BlockType.Shape.MODEL
+	block.model = BlockModel.register([{"from": from, "to": to, "faces": faces}], facing)
+	var turn := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
+	block.collision_boxes.append(_turned_box(from / 16.0, to / 16.0, turn))
+	return block
+
+
+## A trapdoor hinged on the wall behind it (facing away from the wall):
+## lying flat at the bottom, or standing up against the wall when open.
+static func _trapdoor(open: bool, facing: int) -> BlockType:
+	var family := "trapdoor_open" if open else "trapdoor"
+	var block := BlockType.cube(family if facing == 0 else "%s_%s" % [family, FACING_NAMES[facing]], 84) \
+		.set_layer(Layer.CUTOUT).set_hardness(3.0).set_tool("axe").set_height(0.999).set_light_opacity(0) \
+		.set_on_update(Callable(TorchBehavior, "on_update"))
+	block.family = family
+	block.facing = facing
+	if open or facing != 0:
+		block.item = "trapdoor"
+		block.in_catalog = false
+	var from := Vector3(0, 0, 0)
+	var to := Vector3(16, 3, 16) if not open else Vector3(16, 16, 3)
+	var faces := {}
+	for face in 6:
+		faces[face] = {"layer": 84}
+	block.shape = BlockType.Shape.MODEL
+	block.model = BlockModel.register([{"from": from, "to": to, "faces": faces}], facing)
+	var turn := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
+	block.collision_boxes.append(_turned_box(from / 16.0, to / 16.0, turn))
+	return block
+
+
+## A sign: on the floor (`rotation` 0..15, every 22.5 degrees, facing the
+## player who placed it) or on a wall (`facing`). The text is in its block
+## entity (SignBehavior). No collision.
+static func _sign(rotation: int, facing: int) -> BlockType:
+	var on_wall := facing >= 0
+	var block_name := ("sign" if rotation == 0 else "sign_%d" % rotation) if not on_wall \
+		else ("wall_sign" if facing == 0 else "wall_sign_" + FACING_NAMES[facing])
+	var block := BlockType.cube(block_name, 4).set_collides(false).set_hardness(1.0).set_tool("axe") \
+		.set_height(0.999).set_light_opacity(0).set_item("sign").hidden_from_catalog()
+	block.family = "wall_sign" if on_wall else "sign"
+	block.facing = facing
+	if not on_wall:
+		block.on_update = Callable(SignBehavior, "on_update")
+	else:
+		block.on_update = Callable(TorchBehavior, "on_update")
+	var faces := {}
+	for face in 6:
+		faces[face] = {"layer": 4}
+	block.shape = BlockType.Shape.MODEL
+	if on_wall:
+		block.model = BlockModel.register([{"from": Vector3(0, 4.5, 0), "to": Vector3(16, 12.5, 1.33), "faces": faces}], facing)
+		var turn := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
+		block.selection_box = _turned_box(Vector3(0, 4.5, 0) / 16.0, Vector3(16, 12.5, 1.33) / 16.0, turn)
+	else:
+		block.model = BlockModel.register_turned([
+			{"from": Vector3(0, 8, 7.33), "to": Vector3(16, 16, 8.67), "faces": faces},
+			{"from": Vector3(7.33, 0, 7.33), "to": Vector3(8.67, 8, 8.67), "faces": faces},
+		], -rotation * 22.5)
+		block.selection_box = AABB(Vector3(0.25, 0, 0.25), Vector3(0.5, 1, 0.5))
+	return block
 
 
 ## A torch: on the floor (facing -1) or on a wall (facing away from it,
@@ -425,7 +660,8 @@ static func register(block: BlockType) -> int:
 	types.append(block)
 	_ids_by_name[block.name] = id
 
-	is_opaque_table.append(1 if block.layer == Layer.OPAQUE and id != AIR and block.height >= 1.0 and not block.liquid else 0)
+	is_opaque_table.append(1 if block.layer == Layer.OPAQUE and id != AIR and block.height >= 1.0 and not block.liquid \
+		and block.shape == BlockType.Shape.CUBE else 0)
 	if block.emissive:
 		block.overlays = PackedInt32Array([-2, -2, -2, -2, -2, -2]) # full bright (block shaders)
 	layer_table.append(block.layer)
@@ -449,6 +685,19 @@ static func register(block: BlockType) -> int:
 	chest_part_table.append(block.chest_part)
 	model_table.append(block.model)
 	display_table.append(1 if block.display_tick.is_valid() else 0)
+	if block.collision_boxes.is_empty() and block.collides:
+		block.collision_boxes.append(AABB(Vector3.ZERO, Vector3(1, block.height, 1)))
+	if not block.collides:
+		block.collision_boxes.clear()
+	collision_table.append(block.collision_boxes)
+	if block.selection_box.size == Vector3.ZERO:
+		var bounds := AABB(Vector3.ZERO, Vector3(1, block.height, 1))
+		if not block.collision_boxes.is_empty():
+			bounds = block.collision_boxes[0]
+			for box in block.collision_boxes:
+				bounds = bounds.merge(box)
+		block.selection_box = bounds
+	selection_table.append(block.selection_box)
 	light_emission_table.append(block.light_emission)
 	if block.light_emission > 0:
 		glowing_ids.append(id)
@@ -466,6 +715,24 @@ static func register(block: BlockType) -> int:
 	cull_group_table.append(block.cull_group if block.cull_group >= 0 else id)
 	biome_tint_table.append(block.biome_tint)
 	return id
+
+
+## True if a point inside a block (0..1 local coordinates) is inside one of
+## its collision boxes.
+static func blocks_point(id: int, local: Vector3) -> bool:
+	for box: AABB in collision_table[id]:
+		if box.has_point(local):
+			return true
+	return false
+
+
+## The top of the block's collision under a point (0..1 x / z), or -1.
+static func top_at(id: int, local_x: float, local_z: float) -> float:
+	var top := -1.0
+	for box: AABB in collision_table[id]:
+		if local_x >= box.position.x and local_x <= box.end.x and local_z >= box.position.z and local_z <= box.end.z:
+			top = maxf(top, box.end.y)
+	return top
 
 
 static func id_of(block_name: String) -> int:

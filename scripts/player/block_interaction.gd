@@ -72,8 +72,10 @@ func _process(delta: float) -> void:
 	_outline.visible = hit and not player.sleeping
 	if hit:
 		_outline.global_position = Vector3(target.pos)
-		var height := Blocks.height_table[target.block]
-		_outline.scale = Vector3(1.0, height, 1.0)
+		# The outline follows the block's shape (slabs, torches, doors).
+		var box: AABB = Blocks.selection_table[target.block]
+		_outline.global_position = Vector3(target.pos) + box.position
+		_outline.scale = box.size
 
 	var ticks := delta / TICK
 	_break_delay = maxf(_break_delay - ticks, 0.0)
@@ -219,6 +221,10 @@ func _use() -> void:
 			_place_bed()
 		"flint_and_steel":
 			_strike_flint()
+		"wooden_door", "iron_door":
+			_place_door(item.name.trim_suffix("_door"))
+		"sign":
+			_place_sign()
 
 
 ## Crafting table, chest, furnace and bed react to RMB. Returns true if used.
@@ -238,12 +244,18 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 				_screen().open_large_chest(world.block_entity(other), world.block_entity(pos))
 		"furnace", "furnace_lit":
 			_screen().open_container(world.block_entity(pos))
+		"trapdoor", "trapdoor_open":
+			var open := family == "trapdoor"
+			world.set_block(pos, Blocks.variant("trapdoor_open" if open else "trapdoor", Blocks.facing_table[id]))
+			Sounds.play("door/" + ("open" if open else "close"), Vector3(pos) + Vector3(0.5, 0.5, 0.5), 1.0, randf() * 0.1 + 0.9)
 		"bed_foot", "bed_head":
 			var head := pos
 			if family == "bed_foot":
 				head += Blocks.FACING_DIRECTIONS[Blocks.facing_table[id]]
 			player.sleep_in(head)
 		_:
+			if DoorBehavior.is_door(id) and DoorBehavior.parts(id)[0] == "wooden":
+				return DoorBehavior.toggle(world, pos)
 			return false
 	return true
 
@@ -295,6 +307,21 @@ func _place_block(id: int) -> void:
 			if not TorchBehavior.can_hold(world, pos - normal):
 				return
 			id = Blocks.variant("wall_torch", Blocks.FACING_DIRECTIONS.find(normal))
+	if family.ends_with("_slab") and not family.begins_with("double_") and target.normal == Vector3i.UP \
+			and Blocks.family_of(target.block) == family:
+		# A slab on the same slab: a double slab.
+		world.set_block(target.pos, Blocks.id_of("double_" + family))
+		Sounds.play_block("place", id, Vector3(target.pos) + Vector3(0.5, 0.5, 0.5))
+		player.swing()
+		if not player.is_creative():
+			player.inventory.take(player.selected_slot)
+		return
+	if family == "ladder" or family == "trapdoor":
+		# On the side of the clicked block, held by it.
+		var side: Vector3i = target.normal
+		if side.y != 0 or side == Vector3i.ZERO or not TorchBehavior.can_hold(world, pos - side):
+			return
+		id = Blocks.variant(family, Blocks.FACING_DIRECTIONS.find(side))
 	if block.placed_as != "":
 		id = Blocks.id_of(block.placed_as) # placed leaves never decay
 	if world.get_block(pos) != Blocks.AIR:
@@ -332,6 +359,53 @@ func _place_bed() -> void:
 	player.swing()
 	if not player.is_creative():
 		player.inventory.take(player.selected_slot)
+
+
+## A door stands on the clicked top face, its panel on the far side.
+func _place_door(kind: String) -> void:
+	if not target.get("hit", false) or target.normal != Vector3i.UP:
+		return
+	var pos: Vector3i = target.pos + Vector3i.UP
+	var facing := (Blocks.facing_toward(player.look_direction()) + 2) % 4
+	if player.intersects_block(pos) or player.intersects_block(pos + Vector3i.UP):
+		return
+	if DoorBehavior.place(world, pos, kind, facing):
+		Sounds.play_block("place", world.get_block(pos), Vector3(pos) + Vector3(0.5, 0.5, 0.5))
+		player.swing()
+		if not player.is_creative():
+			player.inventory.take(player.selected_slot)
+
+
+## A sign post on a floor (facing the player, 16 directions) or a sign on
+## the clicked wall; then its text is written.
+func _place_sign() -> void:
+	var cell: Variant = _place_cell()
+	if cell == null:
+		return
+	var pos: Vector3i = cell
+	var normal: Vector3i = target.normal
+	var id := Blocks.AIR
+	if normal == Vector3i.UP:
+		if not TorchBehavior.can_hold(world, pos + Vector3i.DOWN):
+			return
+		# Toward the player, rounded to 1/16 of a turn.
+		var look := player.look_direction()
+		var angle := atan2(-look.x, -look.z) # where the sign's front points (toward the player)
+		var rotation := posmod(roundi(-angle / deg_to_rad(22.5)), 16)
+		id = Blocks.family_ids("sign")[rotation]
+	elif normal != Vector3i.DOWN and normal != Vector3i.ZERO:
+		if not TorchBehavior.can_hold(world, pos - normal):
+			return
+		id = Blocks.variant("wall_sign", Blocks.FACING_DIRECTIONS.find(normal))
+	else:
+		return
+	world.set_block(pos, id)
+	world.block_entity(pos)
+	Sounds.play_block("place", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
+	player.swing()
+	if not player.is_creative():
+		player.inventory.take(player.selected_slot)
+	_screen().get_parent().add_child(SignEditScreen.new(world, pos))
 
 
 ## Flint and steel lights a fire next to the clicked face (it wears out).

@@ -65,6 +65,8 @@ var items: ItemEntities
 var particles: BlockParticles
 ## Mobs and other moving things (Entity).
 var entities: EntityManager
+## The text on signs.
+var sign_texts: SignTexts
 ## The active world generator.
 var world_generator: WorldGenerator
 ## keepInventory game rule: the player keeps the items on death.
@@ -226,6 +228,10 @@ func _ready() -> void:
 	entities.name = "Entities"
 	entities.world = self
 	add_child(entities)
+	sign_texts = SignTexts.new()
+	sign_texts.name = "SignTexts"
+	sign_texts.world = self
+	add_child(sign_texts)
 	generate()
 	TickLoop.add_listener(_tick, TickLoop.Phase.WORLD)
 
@@ -276,6 +282,7 @@ func generate() -> void:
 	falling_blocks.clear()
 	items.clear()
 	entities.clear()
+	sign_texts.clear()
 	_block_entities.clear()
 	_scheduled.clear()
 	_scheduled_count = 0
@@ -842,7 +849,9 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 		return
 	data.set_block(local.x, local.y, local.z, id)
 	if _block_entities.has(pos) and _block_entities[pos].type != _entity_type(id):
-		_block_entities.erase(pos) # the chest / furnace is gone
+		if _block_entities[pos].type == "sign":
+			sign_texts.remove(pos)
+		_block_entities.erase(pos) # the chest / furnace / sign is gone
 	_modified[Vector2i(coord.x, coord.z)] = true
 	_mark_dirty_around(coord, local)
 	_update_heightmap(pos, id)
@@ -906,7 +915,7 @@ func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true, e
 		for entry: Array in Blocks.drops_of(id, rng, can_harvest):
 			items.drop_from_block(pos, entry[0], entry[1])
 	var entity: Dictionary = _block_entities.get(pos, {})
-	if not entity.is_empty():
+	if not entity.is_empty() and entity.has("inventory"):
 		var inventory: Inventory = entity.inventory
 		for slot in inventory.size():
 			if inventory.count_at(slot) > 0:
@@ -929,7 +938,27 @@ static func _entity_type(id: int) -> String:
 		return "chest"
 	if family == "furnace" or family == "furnace_lit":
 		return "furnace"
+	if family == "sign" or family == "wall_sign":
+		return "sign"
 	return ""
+
+
+## The block entities of signs: position -> {"type": "sign", "lines"}.
+func sign_entities() -> Dictionary:
+	var result := {}
+	for pos: Vector3i in _block_entities:
+		if _block_entities[pos].type == "sign":
+			result[pos] = _block_entities[pos]
+	return result
+
+
+## Writes a sign's text (SignEditScreen).
+func set_sign_text(pos: Vector3i, lines: Array) -> void:
+	var entity := block_entity(pos)
+	if entity.is_empty() or entity.type != "sign":
+		return
+	entity.lines = lines
+	sign_texts.update(pos, lines)
 
 
 ## The block entity at `pos` (made when missing), or {} if the block has none.
@@ -938,6 +967,9 @@ func block_entity(pos: Vector3i) -> Dictionary:
 	if type == "":
 		return {}
 	if not _block_entities.has(pos) or _block_entities[pos].type != type:
+		if type == "sign":
+			_block_entities[pos] = {"type": "sign", "lines": ["", "", "", ""]}
+			return _block_entities[pos]
 		var entity := {"type": type, "inventory": Inventory.new(CHEST_SIZE if type == "chest" else FURNACE_SIZE)}
 		if type == "furnace":
 			entity.merge({"burn": 0, "burn_total": 0, "cook": 0})
@@ -1366,7 +1398,8 @@ func save_state() -> Dictionary:
 	var saved_block_entities := {}
 	for pos: Vector3i in _block_entities:
 		var entity: Dictionary = _block_entities[pos].duplicate()
-		entity.inventory = (entity.inventory as Inventory).save_state()
+		if entity.has("inventory"):
+			entity.inventory = (entity.inventory as Inventory).save_state()
 		saved_block_entities[pos] = entity
 	return {"game_time": clock.game_time, "day_time": clock.day_time, "rules": rules,
 		"block_entities": saved_block_entities, "items": items.save_state(), "entities": entities.save_state()}
@@ -1380,9 +1413,10 @@ func _restore_state() -> void:
 	var saved_block_entities: Dictionary = world_state.get("block_entities", {})
 	for pos: Vector3i in saved_block_entities:
 		var entity: Dictionary = saved_block_entities[pos].duplicate()
-		var inventory := Inventory.new(CHEST_SIZE if entity.type == "chest" else FURNACE_SIZE)
-		inventory.load_state(entity.inventory)
-		entity.inventory = inventory
+		if entity.has("inventory"):
+			var inventory := Inventory.new(CHEST_SIZE if entity.type == "chest" else FURNACE_SIZE)
+			inventory.load_state(entity.inventory)
+			entity.inventory = inventory
 		_block_entities[pos] = entity
 	items.load_state(world_state.get("items", []))
 	entities.load_state(world_state.get("entities", []))

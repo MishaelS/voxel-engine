@@ -141,6 +141,11 @@ def main(root):
     creak = np.sin(2 * np.pi * (220 + 120 * np.sin(2 * np.pi * 3 * x)) * x) * (0.5 + 0.5 * np.sign(np.sin(2 * np.pi * 37 * x)))
     write(os.path.join(root, "chest", "open.wav"), lowpass(creak + 0.4 * noise(0.45), 1800) * env(0.45, 0.05, 0.25))
     write(os.path.join(root, "chest", "close.wav"), MATERIALS["wood"](1.6))
+    # Door: a wooden creak opening, a knock closing.
+    x = t(0.5)
+    creak = np.sin(2 * np.pi * (160 + 90 * np.sin(2 * np.pi * 2.3 * x)) * x) * (0.5 + 0.5 * np.sign(np.sin(2 * np.pi * 29 * x)))
+    write(os.path.join(root, "door", "open.wav"), lowpass(creak + 0.3 * noise(0.5), 1500) * env(0.5, 0.04, 0.3))
+    write(os.path.join(root, "door", "close.wav"), MATERIALS["wood"](1.8))
     # Flowing water: a soft babble; lava: a low bubbling; lava pop: a blip.
     x = t(1.5)
     babble = lowpass(noise(1.5), 900) * (0.6 + 0.4 * np.sin(2 * np.pi * 3.1 * x) * np.sin(2 * np.pi * 1.7 * x))

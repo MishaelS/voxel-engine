@@ -4,6 +4,8 @@ extends RefCounted
 ## from it), they need a solid block to hold them: on the block below, or
 ## the wall behind. Without it they fall off (and drop). A small flame and
 ## smoke come out of the tip (display ticks).
+## The same holding rule serves everything hung on a wall (ladders,
+## trapdoors, wall signs) and snow layers on the ground.
 
 ## Where the torch's flame is, from the block's corner (floor torch).
 const FLOOR_TIP := Vector3(0.5, 0.7, 0.5)
@@ -13,9 +15,19 @@ const FLOOR_TIP := Vector3(0.5, 0.7, 0.5)
 static func support_of(world: VoxelWorld, pos: Vector3i) -> Vector3i:
 	var id := world.get_block(pos)
 	var facing := Blocks.facing_table[id]
-	if Blocks.family_of(id) == "wall_torch":
+	if Blocks.family_of(id) in WALL_FAMILIES:
 		return pos - Blocks.FACING_DIRECTIONS[facing]
 	return pos + Vector3i.DOWN
+
+
+## Families held by the wall behind them (the others stand on the block below).
+const WALL_FAMILIES := ["wall_torch", "ladder", "trapdoor", "trapdoor_open", "wall_sign"]
+
+
+## Snow layers melt away without a solid block below.
+static func on_update_layer(world: VoxelWorld, pos: Vector3i) -> void:
+	if not can_hold(world, pos + Vector3i.DOWN):
+		world.destroy_block(pos, false, true)
 
 
 ## A block a torch can stand on or hang from: a full opaque block.

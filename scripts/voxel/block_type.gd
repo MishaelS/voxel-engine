@@ -130,6 +130,13 @@ var fire_spread := 0
 var fire_burn := 0
 ## Picture-like items (torches): flat icon, flat in hand and dropped.
 var flat_item := false
+## Boxes entities collide with (block units, 0..1; empty = derived: a full
+## block, lowered to `height`, if it collides) and the box outlined when
+## targeted (empty AABB = the collision boxes' bounds, or the full block).
+var collision_boxes: Array[AABB] = []
+var selection_box := AABB()
+## Entities climb it (ladders).
+var climbable := false
 
 
 ## Same texture on every face.
@@ -293,6 +300,19 @@ func set_random_tick(handler: Callable) -> BlockType:
 
 func set_scheduled_tick(handler: Callable) -> BlockType:
 	scheduled_tick = handler
+	return self
+
+
+## Collision boxes in pixels (0..16), like the game's block shapes.
+func set_collision(boxes_in_pixels: Array) -> BlockType:
+	collision_boxes.clear()
+	for box: AABB in boxes_in_pixels:
+		collision_boxes.append(AABB(box.position / 16.0, box.size / 16.0))
+	return self
+
+
+func set_selection(box_in_pixels: AABB) -> BlockType:
+	selection_box = AABB(box_in_pixels.position / 16.0, box_in_pixels.size / 16.0)
 	return self
 
 

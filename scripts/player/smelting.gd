@@ -9,7 +9,7 @@ const RECIPES := {
 	"cobblestone": "stone", "sand": "glass",
 	"oak_log": "charcoal", "birch_log": "charcoal", "spruce_log": "charcoal",
 	"iron_ore": "iron_ingot", "gold_ore": "gold_ingot", "diamond_ore": "diamond",
-	"coal_ore": "coal", "redstone_ore": "redstone",
+	"coal_ore": "coal", "redstone_ore": "redstone", "clay_ball": "brick",
 }
 
 

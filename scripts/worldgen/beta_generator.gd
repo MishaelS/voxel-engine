@@ -249,6 +249,7 @@ func generate_blocks(cx: int, cz: int) -> PackedInt32Array:
 	_place_ores(blocks, rng, top)
 	_place_trees(blocks, cx, cz, biomes, rng)
 	_place_plants(blocks, biomes, column_rng(cx, cz, 300))
+	_place_clay(blocks, column_rng(cx, cz, 400))
 	_freeze(blocks, biomes)
 	return blocks
 
@@ -793,7 +794,31 @@ func _pine(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: int,
 		blocks[index(x, y + dy, z)] = _id["spruce_log"]
 
 
-## Ice on the sea surface of cold biomes.
+## Clay like the classic game: a few small patches on the sand and dirt at
+## the bottom of shallow water.
+func _place_clay(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
+	var clay: int = _id["clay"]
+	for patch in 3:
+		var x0 := rng.randi_range(2, 13)
+		var z0 := rng.randi_range(2, 13)
+		var y := _surface_y(blocks, x0, z0)
+		while y > 0 and blocks[index(x0, y, z0)] == _water:
+			y -= 1
+		if y >= SEA_LEVEL - 1 or blocks[index(x0, y + 1, z0)] != _water:
+			continue
+		var radius := rng.randi_range(1, 2)
+		for x in range(x0 - radius, x0 + radius + 1):
+			for z in range(z0 - radius, z0 + radius + 1):
+				if (x - x0) * (x - x0) + (z - z0) * (z - z0) > radius * radius + 1:
+					continue
+				for dy in range(-1, 1):
+					var i := index(x, y + dy, z)
+					var here := blocks[i]
+					if here == _id["sand"] or here == _id["dirt"] or here == _id["gravel"]:
+						blocks[i] = clay
+
+
+## Ice on the sea surface of cold biomes; snow lying on the land and trees.
 func _freeze(blocks: PackedInt32Array, biomes: PackedByteArray) -> void:
 	var water: int = _id["water"]
 	var ice: int = _id["ice"]
@@ -804,3 +829,9 @@ func _freeze(blocks: PackedInt32Array, biomes: PackedByteArray) -> void:
 				var i := index(x, y, z)
 				if blocks[i] == water and blocks[index(x, y + 1, z)] == Blocks.AIR:
 					blocks[i] = ice
+				# A snow layer on the highest block, if it can hold one.
+				var top := _surface_y(blocks, x, z)
+				if top > 0 and top < HEIGHT - 1:
+					var under := blocks[index(x, top, z)]
+					if Blocks.is_opaque_table[under] == 1 or Blocks.get_type(under).name.ends_with("_leaves"):
+						blocks[index(x, top + 1, z)] = _id["snow_layer"]

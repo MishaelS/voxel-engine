@@ -178,7 +178,7 @@ func _tick(_tick_index: int) -> void:
 func _solid(point: Vector3) -> bool:
 	var cell := Vector3i(point.floor())
 	var id := world.get_block(cell)
-	return Blocks.collides_table[id] == 1 and point.y - cell.y < Blocks.height_table[id]
+	return Blocks.blocks_point(id, point - Vector3(cell))
 
 
 func _process(_delta: float) -> void:

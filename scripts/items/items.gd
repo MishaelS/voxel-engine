@@ -58,6 +58,14 @@ static func _register_all() -> bool:
 	register(ItemType.make("lava_bucket", 76).stack(1).set_fuel(20000))
 	register(ItemType.make("glowstone_dust", 73))
 	register(ItemType.make("flint_and_steel", 5).set_durability(64))
+	register(ItemType.make("clay_ball", 57))
+	register(ItemType.make("brick", 22))
+	register(ItemType.make("paper", 58))
+	register(ItemType.make("book", 59))
+	register(ItemType.make("string", 8))
+	register(ItemType.make("wooden_door", 43).stack(1))
+	register(ItemType.make("iron_door", 44).stack(1))
+	register(ItemType.make("sign", 42).stack(1))
 	return true
 
 
@@ -167,6 +175,8 @@ static func break_speed(item_id: int, block_id: int) -> float:
 		return item.efficiency
 	if item.tool == "sword" and block.name.ends_with("_leaves"):
 		return 1.5
+	if item.tool == "sword" and block.name == "cobweb":
+		return 15.0
 	return 1.0
 
 

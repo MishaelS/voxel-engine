@@ -3,8 +3,8 @@ extends RefCounted
 ## Collision of entity boxes (the player, mobs, arrows...) with the block
 ## grid, like the classic game: a box (half width, height; the position is
 ## the middle of its bottom) moved axis by axis, Y first, then X, then Z,
-## clipped against every colliding block on the way. Blocks lower than a
-## full block (beds) collide at their height. 64-bit floats throughout:
+## clipped against every collision box on the way (BlockType.collision_boxes:
+## full blocks, beds, stairs, fences, door panels...). 64-bit floats throughout:
 ## Vector3 would round the clipped distances and let boxes sink into blocks.
 
 
@@ -21,47 +21,54 @@ static func sweep(world: VoxelWorld, x: float, y: float, z: float, half_width: f
 		minf(min_x, min_x + dx), minf(min_y, min_y + dy), minf(min_z, min_z + dz),
 		maxf(max_x, max_x + dx), maxf(max_y, max_y + dy), maxf(max_z, max_z + dz))
 	for b in boxes:
-		if max_x > b.x and min_x < b.x + 1 and max_z > b.z and min_z < b.z + 1:
-			if dy > 0.0 and max_y <= b.y:
-				dy = minf(dy, b.y - max_y)
-			elif dy < 0.0 and min_y >= b.y + b.w - 1e-7:
-				dy = maxf(dy, b.y + b.w - min_y)
+		var b_end := b.end
+		if max_x > b.position.x and min_x < b_end.x and max_z > b.position.z and min_z < b_end.z:
+			if dy > 0.0 and max_y <= b.position.y + 1e-7:
+				dy = minf(dy, b.position.y - max_y)
+			elif dy < 0.0 and min_y >= b_end.y - 1e-7:
+				dy = maxf(dy, b_end.y - min_y)
 	min_y += dy
 	max_y += dy
 	for b in boxes:
-		if max_y > b.y and min_y < b.y + b.w and max_z > b.z and min_z < b.z + 1:
-			if dx > 0.0 and max_x <= b.x:
-				dx = minf(dx, b.x - max_x)
-			elif dx < 0.0 and min_x >= b.x + 1:
-				dx = maxf(dx, b.x + 1 - min_x)
+		var b_end := b.end
+		if max_y > b.position.y and min_y < b_end.y and max_z > b.position.z and min_z < b_end.z:
+			if dx > 0.0 and max_x <= b.position.x + 1e-7:
+				dx = minf(dx, b.position.x - max_x)
+			elif dx < 0.0 and min_x >= b_end.x - 1e-7:
+				dx = maxf(dx, b_end.x - min_x)
 	min_x += dx
 	max_x += dx
 	for b in boxes:
-		if max_x > b.x and min_x < b.x + 1 and max_y > b.y and min_y < b.y + b.w:
-			if dz > 0.0 and max_z <= b.z:
-				dz = minf(dz, b.z - max_z)
-			elif dz < 0.0 and min_z >= b.z + 1:
-				dz = maxf(dz, b.z + 1 - min_z)
+		var b_end := b.end
+		if max_x > b.position.x and min_x < b_end.x and max_y > b.position.y and min_y < b_end.y:
+			if dz > 0.0 and max_z <= b.position.z + 1e-7:
+				dz = minf(dz, b.position.z - max_z)
+			elif dz < 0.0 and min_z >= b_end.z - 1e-7:
+				dz = maxf(dz, b_end.z - min_z)
 	return PackedFloat64Array([dx, dy, dz])
 
 
-## The colliding blocks touching the given box: (x, y, z, height of the
-## block's top above y; 1 for full blocks, 9/16 for beds).
+## The collision boxes (world space) of the blocks touching the given box:
+## full blocks, beds 9/16 high, stairs, fences 1.5 high, door panels...
 static func solid_boxes(world: VoxelWorld, min_x: float, min_y: float, min_z: float,
-		max_x: float, max_y: float, max_z: float) -> Array[Vector4]:
-	var result: Array[Vector4] = []
+		max_x: float, max_y: float, max_z: float) -> Array[AABB]:
+	var result: Array[AABB] = []
 	if world == null:
 		return result
-	var collides := Blocks.collides_table
-	var heights := Blocks.height_table
-	for y in range(floori(min_y), floori(max_y) + 1):
+	var table := Blocks.collision_table
+	# Fences reach 1.5 blocks up: look one block lower too.
+	for y in range(floori(min_y) - 1, floori(max_y) + 1):
 		if y < 0 or y >= WorldGenerator.HEIGHT:
 			continue
 		for z in range(floori(min_z), floori(max_z) + 1):
 			for x in range(floori(min_x), floori(max_x) + 1):
-				var id := world.get_block(Vector3i(x, y, z))
-				if collides[id] == 1 and min_y < y + heights[id]:
-					result.append(Vector4(x, y, z, heights[id]))
+				var boxes: Array = table[world.get_block(Vector3i(x, y, z))]
+				for box: AABB in boxes:
+					var world_box := AABB(box.position + Vector3(x, y, z), box.size)
+					if world_box.end.y > min_y and world_box.position.y < max_y \
+							and world_box.end.x > min_x and world_box.position.x < max_x \
+							and world_box.end.z > min_z and world_box.position.z < max_z:
+						result.append(world_box)
 	return result
 
 
