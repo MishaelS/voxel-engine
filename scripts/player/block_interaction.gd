@@ -198,6 +198,7 @@ func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 			PrimedTnt.light(world, pos) # Beta: hitting TNT lights it
 		else:
 			world.destroy_block(pos, not sheared, can_harvest)
+			Stats.add("mine." + Blocks.get_type(id).name)
 		if sheared:
 			world.items.drop_from_block(pos, Blocks.id_of(Blocks.get_type(id).name), 1)
 		player.block_broken()
@@ -225,6 +226,9 @@ func _attack(entity: Entity) -> void:
 	var tool := player.held_block()
 	if not entity.damage(Items.attack_damage(tool), player.global_position):
 		return
+	Stats.add("damage_dealt", Items.attack_damage(tool))
+	if entity is Mob and entity.is_dead():
+		Stats.killed(entity)
 	if entity is Mob:
 		(entity as Mob).hurt_by(player)
 	var item := Items.get_type(tool)
@@ -450,6 +454,7 @@ func _place_block(id: int) -> void:
 		world.set_block(pos, id)
 	Sounds.play_block("place", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
 	player.swing()
+	Stats.add("use." + Items.name_of(player.held_block()))
 	if not player.is_creative():
 		player.inventory.take(player.selected_slot)
 

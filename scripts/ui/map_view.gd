@@ -20,7 +20,7 @@ var _dirty := true
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_background = load("res://assets/textures/misc/map_background.png")
+	_background = TexturePacks.load_texture("res://assets/textures/misc/map_background.png")
 
 
 func _process(_delta: float) -> void:

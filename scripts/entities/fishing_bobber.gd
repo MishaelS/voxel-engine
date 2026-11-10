@@ -137,6 +137,7 @@ func reel_in() -> int:
 		world.items.spawn(Items.id_of("raw_fish"), 1, feet() + Vector3(0, 0.2, 0),
 			Vector3(to.x * 0.1, to.y * 0.1 + sqrt(to.length()) * 0.08, to.z * 0.1))
 		wear = 1
+		Stats.add("fish_caught")
 	elif on_ground:
 		wear = 2
 	_gone()

@@ -96,6 +96,8 @@ func tick() -> void:
 		target.damage(DAMAGE, start)
 		if target is Mob and shooter == player:
 			(target as Mob).angry = true
+			if target.is_dead():
+				Stats.killed(target, player.global_position)
 		removed = true
 		return
 	if block_hit.get("hit", false):

@@ -125,6 +125,15 @@ func push(screen: MenuScreen) -> void:
 	add_child(screen)
 
 
+## Shows `screen` in place of the current one (switching pages).
+func replace(screen: MenuScreen) -> void:
+	if not _stack.is_empty():
+		_stack.pop_back().queue_free()
+	screen.menu = self
+	_stack.append(screen)
+	add_child(screen)
+
+
 ## Closes the current screen; closing the last one resumes the game.
 func back() -> void:
 	if _stack.is_empty():

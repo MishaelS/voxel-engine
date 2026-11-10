@@ -58,7 +58,7 @@ static func clear() -> void:
 static func _flat_icon(id: int) -> Texture2D:
 	if _cache.has(id):
 		return _cache[id]
-	var atlas: Image = (load(Blocks.ATLAS_PATH) as Texture2D).get_image()
+	var atlas: Image = TexturePacks.load_texture(Blocks.ATLAS_PATH).get_image()
 	if atlas.is_compressed():
 		atlas.decompress()
 	var tile := Blocks.face_tiles[id * 6 + 2]

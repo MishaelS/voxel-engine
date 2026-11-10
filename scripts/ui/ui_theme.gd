@@ -125,7 +125,7 @@ static func release() -> void:
 
 ## A GUI texture scaled by PIXEL with nearest filtering.
 static func _scaled_texture(path: String) -> Texture2D:
-	var image: Image = (load(GUI + path) as Texture2D).get_image()
+	var image: Image = TexturePacks.load_texture(GUI + path).get_image()
 	if image.is_compressed():
 		image.decompress()
 	image.resize(image.get_width() * PIXEL, image.get_height() * PIXEL, Image.INTERPOLATE_NEAREST)

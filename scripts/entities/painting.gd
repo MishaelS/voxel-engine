@@ -107,7 +107,7 @@ func _ready() -> void:
 	if _material == null:
 		_material = ShaderMaterial.new()
 		_material.shader = preload("res://shaders/mob.gdshader")
-		_material.set_shader_parameter("skin", load(ATLAS))
+		_material.set_shader_parameter("skin", TexturePacks.load_texture(ATLAS))
 	_build()
 
 

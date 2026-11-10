@@ -26,6 +26,8 @@ func _ready() -> void:
 		get_tree().change_scene_to_file.call_deferred(TITLE_SCENE)
 		return
 	add_to_group("game")
+	Stats.add("games_played")
+	Stats.add("saves_loaded")
 	get_tree().auto_accept_quit = false # save first (NOTIFICATION_WM_CLOSE_REQUEST)
 	var loading := LoadingScreen.new()
 	loading.world = world
@@ -39,6 +41,7 @@ func _exit_tree() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		Stats.save()
 		save_game()
 		get_tree().quit()
 
@@ -48,6 +51,7 @@ func _process(delta: float) -> void:
 	if _autosave_timer >= AUTOSAVE_SECONDS:
 		_autosave_timer = 0.0
 		save_game()
+		Stats.save()
 
 
 func is_saved() -> bool:
@@ -67,6 +71,8 @@ func save_game() -> void:
 
 
 func quit_to_title() -> void:
+	Stats.add("leave_game")
+	Stats.save()
 	save_game()
 	get_tree().paused = false
 	GameInput.reset()

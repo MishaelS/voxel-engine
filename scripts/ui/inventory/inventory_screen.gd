@@ -118,6 +118,8 @@ func _open_mode(mode: Mode) -> void:
 	_open = true
 	_mode = mode
 	_creative = player.is_creative() and mode == Mode.INVENTORY
+	if mode == Mode.INVENTORY:
+		Stats.grant("openInventory")
 	_craft_width = 3 if mode == Mode.CRAFTING_TABLE else 2
 	_build()
 	visible = true
@@ -577,6 +579,7 @@ func _click_result(shift: bool) -> void:
 			_held_id = result.id
 			_held_count += result.count
 			_held_damage = 0
+		Stats.crafted(result.id, result.count)
 		for i in _craft_width * _craft_width:
 			if _craft.count_at(i) > 0:
 				# Milk buckets leave their buckets (the cake), like the game.
@@ -600,11 +603,14 @@ func _click_output(slot: Dictionary, shift: bool) -> void:
 	if count == 0:
 		return
 	if shift:
-		_put(slot, id, player.inventory.add(id, count))
+		var left := player.inventory.add(id, count)
+		Stats.smelted(id, count - left)
+		_put(slot, id, left)
 	elif _held_count == 0 or (_held_id == id and _held_count + count <= Items.max_stack(id)):
 		_held_id = id
 		_held_count += count
 		_held_damage = 0
+		Stats.smelted(id, count)
 		_put(slot, Blocks.AIR, 0)
 
 

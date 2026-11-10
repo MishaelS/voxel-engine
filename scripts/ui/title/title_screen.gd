@@ -55,7 +55,7 @@ func _ready() -> void:
 	_ui.add_child(UiTheme.blur_rect())
 
 	var shade := TextureRect.new()
-	shade.texture = load(UiTheme.GUI + "titleBlur.png")
+	shade.texture = TexturePacks.load_texture(UiTheme.GUI + "titleBlur.png")
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	shade.stretch_mode = TextureRect.STRETCH_SCALE
@@ -84,7 +84,7 @@ func _ready() -> void:
 	if not _intro_shown:
 		_intro_shown = true
 		_intro = TextureRect.new()
-		_intro.texture = load(UiTheme.GUI + "titleIntroLogo.png")
+		_intro.texture = TexturePacks.load_texture(UiTheme.GUI + "titleIntroLogo.png")
 		_intro.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		_intro.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		_intro.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -159,7 +159,7 @@ func _build_main() -> void:
 
 ## The logo image is large and smooth: scaled down once with a good filter.
 func _scaled_logo() -> Texture2D:
-	var image: Image = (load(UiTheme.GUI + "titleLogo.png") as Texture2D).get_image()
+	var image: Image = TexturePacks.load_texture(UiTheme.GUI + "titleLogo.png").get_image()
 	if image.is_compressed():
 		image.decompress()
 	var scale := float(LOGO_WIDTH) / image.get_width()

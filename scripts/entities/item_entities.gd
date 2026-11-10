@@ -232,6 +232,7 @@ func _try_pickup(item: Dictionary) -> void:
 		return
 	var taken := mini(room, item.count)
 	player.inventory.add(item.id, taken, item.damage)
+	Stats.picked_up(item.id)
 	# The classic pickup "pop", a little different every time.
 	Sounds.play("random/pop", null, 0.2, ((randf() - randf()) * 0.7 + 1.0) * 2.0)
 	item.count -= taken

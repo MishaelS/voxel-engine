@@ -24,7 +24,7 @@ static func atlas_path(id: int) -> String:
 ## The texture flat pictures are drawn from (the shared item atlas, so
 ## animated icons move in hand and on the ground too).
 static func atlas_texture(id: int) -> Texture2D:
-	return Items.icons_texture() if not Items.is_block(id) else load(Blocks.ATLAS_PATH)
+	return Items.icons_texture() if not Items.is_block(id) else TexturePacks.load_texture(Blocks.ATLAS_PATH)
 
 
 static func extruded(item_id: int, material: Material) -> ArrayMesh:

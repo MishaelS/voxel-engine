@@ -46,7 +46,7 @@ func _ready() -> void:
 static func _material(path: String, speed: float) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/weather.gdshader")
-	material.set_shader_parameter("streaks", load(path))
+	material.set_shader_parameter("streaks", TexturePacks.load_texture(path))
 	material.set_shader_parameter("speed", speed)
 	return material
 

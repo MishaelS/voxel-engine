@@ -29,7 +29,7 @@ func _ready() -> void:
 	var atlas := Items.icons_image()
 	_compass_base = _tile(atlas, COMPASS_TILE)
 	_clock_base = _tile(atlas, CLOCK_TILE)
-	_dial = (load(DIAL_PATH) as Texture2D).get_image()
+	_dial = TexturePacks.load_texture(DIAL_PATH).get_image()
 	if _dial.is_compressed():
 		_dial.decompress()
 	_dial.convert(Image.FORMAT_RGBA8)

@@ -64,6 +64,8 @@ func _register_all() -> void:
 	# Video Settings: the main list, laid out like the classic game (two
 	# columns: Graphics | Render Distance, Smooth Lighting | Max Framerate...).
 	define("video", Setting.choice("graphics", "Graphics", PackedStringArray(["Fast", "Fancy"]), 1))
+	# Texture packs (TexturePacks): picked on their own screen, used from the next start.
+	define("texture_packs", Setting.choice("texture_pack", "Texture Pack", TexturePacks.choices(), 0))
 	define("video", Setting.range_of("render_distance", "Render Distance", 2, 16, 6) \
 		.format_with(func(v: float) -> String: return Lang.t("%d chunks") % int(v)))
 	define("video", Setting.choice("smooth_lighting", "Smooth Lighting",

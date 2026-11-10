@@ -66,7 +66,7 @@ static func _v(a: Array) -> Vector3:
 
 ## A skin's size in pixels (64 x 64, or 64 x 32 for the classic ones).
 static func _skin_size(texture: String) -> Vector2:
-	var image := load(SKINS + texture + ".png") as Texture2D
+	var image := TexturePacks.load_texture(SKINS + texture + ".png")
 	return Vector2(image.get_size()) if image else Vector2(64, 64)
 
 
@@ -74,7 +74,7 @@ static func _material(texture: String) -> ShaderMaterial:
 	if not _materials.has(texture):
 		var material := ShaderMaterial.new()
 		material.shader = preload("res://shaders/mob.gdshader")
-		material.set_shader_parameter("skin", load(SKINS + texture + ".png"))
+		material.set_shader_parameter("skin", TexturePacks.load_texture(SKINS + texture + ".png"))
 		_materials[texture] = material
 	return _materials[texture]
 

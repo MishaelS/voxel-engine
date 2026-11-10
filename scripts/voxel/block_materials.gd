@@ -90,7 +90,7 @@ static func set_parameter(parameter: String, value: Variant) -> void:
 
 ## Slices the atlas into TILE_SIZE tiles; layer index = atlas tile index.
 static func build_tile_array(atlas_path: String) -> Texture2DArray:
-	var atlas: Image = load(atlas_path).get_image()
+	var atlas: Image = TexturePacks.load_texture(atlas_path).get_image()
 	if atlas.is_compressed():
 		atlas.decompress()
 	atlas.convert(Image.FORMAT_RGBA8)

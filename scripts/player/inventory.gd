@@ -123,6 +123,7 @@ func wear(slot: int, amount: int = 1) -> bool:
 		return false
 	damages[slot] += amount
 	if damages[slot] >= durability:
+		Stats.add("break." + Items.name_of(id_at(slot)))
 		set_slot(slot, Blocks.AIR, 0)
 		Sounds.play("random/break", null, 0.8, randf_range(0.8, 1.2))
 		return true

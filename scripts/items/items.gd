@@ -222,7 +222,7 @@ static var _icons_image: Image
 ## (compass, clock: ItemAnimations) change everywhere at once.
 static func icons_texture() -> ImageTexture:
 	if _icons_texture == null:
-		_icons_image = (load(ICONS_PATH) as Texture2D).get_image()
+		_icons_image = TexturePacks.load_texture(ICONS_PATH).get_image()
 		if _icons_image.is_compressed():
 			_icons_image.decompress()
 		_icons_image.convert(Image.FORMAT_RGBA8)

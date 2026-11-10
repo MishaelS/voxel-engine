@@ -87,7 +87,7 @@ static func _model_boxes(part: int) -> Array:
 
 ## The tile layers of the chest faces, as 16 x 16 images (for the tile array).
 static func tile_images() -> Array[Image]:
-	var atlas: Image = (load(ATLAS_PATH) as Texture2D).get_image()
+	var atlas: Image = TexturePacks.load_texture(ATLAS_PATH).get_image()
 	if atlas.is_compressed():
 		atlas.decompress()
 	atlas.convert(Image.FORMAT_RGBA8)

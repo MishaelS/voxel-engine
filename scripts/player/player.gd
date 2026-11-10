@@ -115,6 +115,7 @@ var food := FoodStats.new()
 ## Ticks since death (the death animation).
 var death_ticks := 0
 var _armor_remainder := 0
+var _mount_start := Vector3.ZERO
 ## Air left under water (ticks), like the classic game: 300 = full.
 var air := MAX_AIR
 var _invulnerable := 0
@@ -193,6 +194,7 @@ func _ready() -> void:
 	map_view = MapView.new()
 	map_view.player = self
 	layer.add_child(map_view)
+	layer.add_child(AchievementToast.new())
 	_sleep_fade = ColorRect.new()
 	_sleep_fade.color = Color(0.03, 0.03, 0.06, 0.0)
 	_sleep_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -265,6 +267,7 @@ func held_block() -> int:
 ## Throws items out in front of the player (Q, or out of the inventory window).
 func throw_items(id: int, count: int, damage: int = 0) -> void:
 	if world and id != Blocks.AIR and count > 0:
+		Stats.add("drops", count)
 		world.items.throw_from(eye_position(), look_direction(), id, count, damage)
 
 
@@ -454,6 +457,8 @@ func _update_camera(alpha: float, delta: float) -> void:
 # --- Tick: physics ----------------------------------------------------------------
 
 func _tick() -> void:
+	if not dead:
+		_count_movement()
 	_prev = Vector3(_x, _y, _z)
 	_prev_walked = _walked
 	_prev_bob = _bob
@@ -528,6 +533,7 @@ func _tick() -> void:
 	else:
 		if jumping and on_ground and not flying:
 			velocity.y = JUMP_VELOCITY
+			Stats.add("jumps")
 			_exhaust(FoodStats.SPRINT_JUMP if sprinting else FoodStats.JUMP)
 			if sprinting:
 				velocity.x -= sin(_yaw) * SPRINT_JUMP_BOOST
@@ -763,10 +769,14 @@ func damage(amount: int, always: bool = false) -> void:
 	if _invulnerable > INVULNERABLE_TICKS / 2:
 		if amount <= _last_damage:
 			return
-		health = maxi(health - _through_armor(amount - _last_damage), 0)
+		var taken := _through_armor(amount - _last_damage)
+		health = maxi(health - taken, 0)
+		Stats.add("damage_taken", taken)
 		_last_damage = amount
 	else:
-		health = maxi(health - _through_armor(amount), 0)
+		var taken := _through_armor(amount)
+		health = maxi(health - taken, 0)
+		Stats.add("damage_taken", taken)
 		_last_damage = amount
 		_invulnerable = INVULNERABLE_TICKS
 		hurt_ticks = HURT_TICKS
@@ -815,8 +825,35 @@ func open_container(entity: Dictionary) -> void:
 		(screens[0] as InventoryScreen).open_container(entity)
 
 
+## Statistics of the last tick's movement, in centimeters like the game:
+## walked, swum, climbed, fallen, flown or ridden; and "On A Rail".
+func _count_movement() -> void:
+	Stats.add("play_ticks")
+	var moved := Vector3(_x, _y, _z) - _prev
+	var flat := roundi(Vector2(moved.x, moved.z).length() * 100.0)
+	if vehicle:
+		var kind := vehicle.type_name()
+		var key := "minecart_cm" if kind.ends_with("minecart") else ("boat_cm" if kind == "boat" else "pig_cm")
+		Stats.add(key, roundi(moved.length() * 100.0))
+		if kind.ends_with("minecart") and Vector2(_x - _mount_start.x, _z - _mount_start.z).length() >= 1000.0:
+			Stats.grant("onARail")
+		if kind == "pig" and vehicle.velocity.y < -0.5:
+			Stats.grant("flyPig")
+	elif flying:
+		Stats.add("fly_cm", roundi(moved.length() * 100.0))
+	elif in_water:
+		Stats.add("swim_cm", roundi(moved.length() * 100.0))
+	elif moved.y > 0.0 and _on_ladder():
+		Stats.add("climb_cm", roundi(moved.y * 100.0))
+	elif on_ground:
+		Stats.add("walk_cm", flat)
+	if moved.y < 0.0 and not flying and not in_water:
+		Stats.add("fall_cm", roundi(-moved.y * 100.0))
+
+
 ## Gets on a saddled pig, a minecart or a boat, like the classic game.
 func mount(creature: Entity) -> void:
+	_mount_start = creature.feet()
 	vehicle = creature
 	velocity = Vector3.ZERO
 	sprinting = false
@@ -914,6 +951,7 @@ func respawn(position: Vector3) -> void:
 
 
 func _die() -> void:
+	Stats.add("deaths")
 	Sounds.play("damage/hurt", null, 1.0, 0.7)
 	dead = true
 	death_ticks = 0

@@ -69,4 +69,5 @@ func _update_labels() -> void:
 
 func _create() -> void:
 	var save := WorldSave.create(_name.text, WorldSave.seed_from_text(_seed.text), _type, _mode)
+	Stats.add("worlds_created")
 	on_play.call(save)

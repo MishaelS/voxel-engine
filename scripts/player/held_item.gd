@@ -5,7 +5,9 @@ extends Node3D
 ## - swing: a quick arc when breaking or placing (6 ticks);
 ## - equip: when the item in hand changes, the old one lowers out of view
 ##   and the new one rises;
-## - lit by the light at the player (sky light and time of day).
+## - lit by the light at the player (sky light and time of day);
+## - with nothing in hand, the player's right arm (their skin) shows instead,
+##   placed and swung exactly like the classic game's empty hand.
 ## It is a child of the camera and is drawn over the world.
 
 ## Ticks of one swing (a bit slower than the classic 6, smoother).
@@ -25,6 +27,16 @@ static var ITEM_IN_HAND := Transform3D(Basis.IDENTITY, Vector3(0, -0.3, 0)) \
 	* Transform3D(Basis(Vector3.BACK, deg_to_rad(335.0)), Vector3.ZERO) \
 	* Transform3D(Basis.IDENTITY, Vector3(-0.9375, -0.0625, 0.0)) \
 	* Transform3D(Basis.IDENTITY.scaled(Vector3(-1, 1, 1)), Vector3(1, 0, -1.0 / 16.0))
+
+## The empty hand, like the classic game's (ItemRenderer, no item): rests
+## at (0.64, -0.6, -0.72), turned 45 degrees; then the arm's own turns.
+static var ARM_IN_VIEW := Transform3D(Basis.IDENTITY, Vector3(-1, 3.6, 3.5)) \
+	* Transform3D(Basis(Vector3.BACK, deg_to_rad(120.0)), Vector3.ZERO) \
+	* Transform3D(Basis(Vector3.RIGHT, deg_to_rad(200.0)), Vector3.ZERO) \
+	* Transform3D(Basis(Vector3.UP, deg_to_rad(-135.0)), Vector3.ZERO) \
+	* Transform3D(Basis.IDENTITY, Vector3(5.6, 0, 0)) \
+	* Transform3D(Basis.IDENTITY, Vector3(-5, 2, 0) / 16.0) \
+	* Transform3D(Basis(Vector3.RIGHT, PI).scaled(Vector3.ONE / 16.0), Vector3.ZERO)
 
 var player: Player
 ## Hidden while another camera is used (isometric view, screenshots): the
@@ -52,7 +64,7 @@ func _ready() -> void:
 	_item_material.set_shader_parameter("items", Items.icons_texture())
 	_item_material.render_priority = 100
 	_plant_material.shader = _item_material.shader
-	_plant_material.set_shader_parameter("items", load(Blocks.ATLAS_PATH))
+	_plant_material.set_shader_parameter("items", TexturePacks.load_texture(Blocks.ATLAS_PATH))
 	_plant_material.render_priority = 100
 	_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_mesh_instance)
@@ -92,8 +104,12 @@ func _process(delta: float) -> void:
 		_swing += ticks / SWING_TICKS
 		if _swing >= 1.0:
 			_swing = -1.0
-	visible = _shown != Blocks.AIR and not hidden
-	if visible:
+	visible = not hidden
+	_mesh_instance.visible = _shown != Blocks.AIR
+	_arm_instance().visible = _shown == Blocks.AIR
+	if visible and _shown == Blocks.AIR:
+		_arm_pose()
+	elif visible:
 		_pose()
 		var brightness := _brightness()
 		_material.set_shader_parameter("brightness", brightness)
@@ -141,6 +157,42 @@ func _pose() -> void:
 		_mesh_instance.transform = Transform3D(Basis(Vector3.UP, PI), Vector3.ZERO) * ITEM_IN_HAND
 	else:
 		_mesh_instance.transform = ITEM_IN_HAND
+
+
+var _arm: MeshInstance3D
+
+
+## The arm: the player's right arm box with their skin.
+func _arm_instance() -> MeshInstance3D:
+	if _arm == null:
+		_arm = MeshInstance3D.new()
+		var part := {"name": "first_person_arm", "size": [4, 12, 4], "from": [-3, -10, -2], "pivot": [0, 0, 0],
+			"uv": [40, 16], "texture": "player"}
+		var mesh := MobModels.part_mesh("player", part).duplicate() as ArrayMesh
+		var material := ShaderMaterial.new()
+		material.shader = preload("res://shaders/hand.gdshader")
+		material.set_shader_parameter("skin", TexturePacks.load_texture(MobModels.SKINS + "player.png"))
+		material.render_priority = 100
+		mesh.surface_set_material(0, material)
+		_arm.mesh = mesh
+		_arm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_arm)
+	return _arm
+
+
+## The classic empty-hand pose: rest, equip and swing, then the arm.
+func _arm_pose() -> void:
+	transform = Transform3D.IDENTITY
+	var swing := maxf(_swing, 0.0)
+	var arc := sin(swing * PI)
+	var arc_sqrt := sin(sqrt(swing) * PI)
+	var placed := Transform3D(Basis.IDENTITY, Vector3(-arc_sqrt * 0.3, sin(sqrt(swing) * TAU) * 0.4, -arc * 0.4)) \
+		* Transform3D(Basis.IDENTITY, Vector3(0.64, -0.6 - (1.0 - _equip) * 0.6, -0.72)) \
+		* Transform3D(Basis(Vector3.UP, deg_to_rad(45.0)), Vector3.ZERO) \
+		* Transform3D(Basis(Vector3.UP, deg_to_rad(arc_sqrt * 70.0)), Vector3.ZERO) \
+		* Transform3D(Basis(Vector3.BACK, deg_to_rad(-sin(swing * swing * PI) * 20.0)), Vector3.ZERO)
+	_arm.transform = placed * ARM_IN_VIEW
+	_arm.set_instance_shader_parameter("brightness", _brightness())
 
 
 func _brightness() -> float:
