@@ -13,6 +13,10 @@ extends Node3D
 ##   not while sneaking), else use the item in hand: place a block (chests
 ##   and furnaces face the player), place a bed, fill / empty a bucket,
 ##   or eat (hold for 1.6 s). Holding repeats placing every 4 ticks.
+##   RMB on a mob uses it (shear or dye a sheep, milk a cow, tame a wolf);
+##   a bow shoots an arrow, a sword's weapons hit (Items.attack_damage).
+## - LMB on a creature (closer than the block) hits it: knockback, swords
+##   wear by 1, tools by 2. Shears cut leaves and cobwebs, leaves drop.
 ## - MMB: pick the targeted block (see Hotbar.pick).
 ## - Q: throw one item from the hand (Ctrl+Q: the whole stack).
 ## - 1-9 and the mouse wheel choose the hotbar slot.
@@ -38,6 +42,8 @@ const CRACK_GROW := 0.004
 
 ## Current raycast result (see VoxelWorld.raycast), read by the debug screen.
 var target := {}
+## The creature under the crosshair (closer than `target`), or null.
+var target_entity: Entity
 ## Survival breaking progress of `target` (0..1).
 var break_progress := 0.0
 
@@ -68,6 +74,13 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	target = world.raycast(player.eye_position(), player.look_direction(), player.reach()) if player and world else {}
+	target_entity = null
+	if player and world and world.entities:
+		var reach := player.reach() if not target.get("hit", false) else float(target.distance)
+		var found := world.entities.raycast(player.eye_position(), player.look_direction(), reach)
+		if not found.is_empty() and not (found[0] as Entity).is_dead():
+			target_entity = found[0]
+			target = {}
 	var hit: bool = target.get("hit", false)
 	_outline.visible = hit and not player.sleeping
 	if hit:
@@ -116,6 +129,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		MOUSE_BUTTON_LEFT:
 			if _captured():
 				_break_delay = 0.0 # a fresh click breaks right away in creative
+				if target_entity and not player.dead and not player.sleeping:
+					_attack(target_entity)
 				get_viewport().set_input_as_handled()
 		MOUSE_BUTTON_RIGHT:
 			if _captured():
@@ -174,9 +189,12 @@ func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 		if _hit_ticks % 4 == 0:
 			Sounds.play_block("hit", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
 	if break_progress >= 1.0:
-		world.destroy_block(pos, true, can_harvest)
+		var sheared := Items.name_of(tool) == "shears" and Blocks.get_type(id).name.ends_with("_leaves")
+		world.destroy_block(pos, not sheared, can_harvest)
+		if sheared:
+			world.items.drop_from_block(pos, Blocks.id_of(Blocks.get_type(id).name), 1)
 		player.block_broken()
-		if Items.durability(tool) > 0 and hardness > 0.0:
+		if Items.durability(tool) > 0 and (hardness > 0.0 or Items.name_of(tool) == "shears"):
 			player.inventory.wear(player.selected_slot, 2 if Items.get_type(tool).tool == "sword" else 1)
 		_stop_breaking()
 		_break_delay = BREAK_DELAY_TICKS
@@ -194,8 +212,24 @@ func _stop_breaking() -> void:
 
 # --- Using -------------------------------------------------------------------------
 
+## LMB on a creature: hits it with the item in hand, like the classic game.
+func _attack(entity: Entity) -> void:
+	player.swing()
+	var tool := player.held_block()
+	if not entity.damage(Items.attack_damage(tool), player.global_position):
+		return
+	if entity is Mob:
+		(entity as Mob).hurt_by(player)
+	var item := Items.get_type(tool)
+	if item and Items.durability(tool) > 0 and not player.is_creative():
+		player.inventory.wear(player.selected_slot, 1 if item.tool == "sword" else 2)
+
+
 ## RMB: the targeted block's own use first (unless sneaking), then the item.
 func _use() -> void:
+	if target_entity is Mob and (target_entity as Mob).interact(player, player.held_block()):
+		player.swing()
+		return
 	var hit: bool = target.get("hit", false)
 	if hit and not player.sneaking and _use_block(target.pos, target.block):
 		player.swing()
@@ -235,6 +269,8 @@ func _use() -> void:
 			_place_bed()
 		"flint_and_steel":
 			_strike_flint()
+		"bow":
+			_shoot_bow()
 		"bone_meal":
 			if hit and FarmBehavior.bone_meal(world, target.pos):
 				player.swing()
@@ -248,6 +284,9 @@ func _use() -> void:
 
 ## Crafting table, chest, furnace and bed react to RMB. Returns true if used.
 func _use_block(pos: Vector3i, id: int) -> bool:
+	if Blocks.family_of(id) == "dungeon_chest":
+		DungeonBehavior.open_chest(world, pos)
+		id = world.get_block(pos)
 	var family := Blocks.family_of(id)
 	match family:
 		"crafting_table":
@@ -437,6 +476,22 @@ func _place_sign() -> void:
 
 
 ## Flint and steel lights a fire next to the clicked face (it wears out).
+## Beta bows shoot at once: an arrow from the inventory (free in creative).
+func _shoot_bow() -> void:
+	var arrow := Items.id_of("arrow")
+	if not player.is_creative():
+		var slot := player.inventory.find(arrow)
+		if slot < 0:
+			return
+		player.inventory.take(slot)
+		player.inventory.wear(player.selected_slot)
+	var eye := player.eye_position()
+	var look := player.look_direction()
+	var shot := Arrow.shoot(world, eye + look * 0.3 - Vector3(0, 0.1, 0), eye + look * 10.0, 1.5, 1.0, player)
+	shot.velocity = look * 1.5 + Vector3(randfn(0, 1), randfn(0, 1), randfn(0, 1)) * 0.0075
+	player.swing()
+
+
 func _strike_flint() -> void:
 	var cell: Variant = _place_cell()
 	if cell == null:

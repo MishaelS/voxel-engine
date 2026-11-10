@@ -11,6 +11,9 @@ Groups (each with a few variants, picked at random):
   damage/hurtN
   chest/open, chest/close, liquid/water, liquid/lava, liquid/lavapop,
   ambient/caveN
+  mob/<mob>/sayN, hurtN, deathN (pig, cow, sheep, chicken, wolf, zombie,
+  skeleton, spider, creeper, slime), mob/creeper/fuse, mob/slime/bigN,
+  smallN, random/explodeN, bow, bowhit, break
 Materials: stone, wood, gravel, grass, sand, cloth, snow.
 
 Usage: python3 tools/make_sounds.py assets/sounds
@@ -173,6 +176,91 @@ def main(root):
         write(os.path.join(root, "damage", f"hurt{k}.wav"),
               (np.sign(np.sin(2 * np.pi * f * (1 - 0.4 * x) * x)) * 0.5 + lowpass(noise(0.25), 800))
               * envelope(len(x), 0.005, 0.08))
+
+    mobs(root)
+
+
+def voice(seconds, f0, f1, cutoff, buzz=1.0, vibrato=0.0, rate=6.0):
+    """A sawtooth voice gliding from f0 to f1 Hz, filtered: animal calls."""
+    x = t(seconds)
+    freq = f0 + (f1 - f0) * x / seconds
+    freq = freq * (1 + vibrato * np.sin(2 * np.pi * rate * x))
+    phase = np.cumsum(freq) / RATE
+    saw = 2 * (phase % 1.0) - 1
+    return lowpass(saw * buzz + 0.15 * noise(seconds), cutoff)
+
+
+def fade(signal, attack=0.02, release=0.08):
+    n = len(signal)
+    x = np.arange(n) / RATE
+    return signal * np.minimum(x / attack, 1.0) * np.minimum((n / RATE - x) / release, 1.0)
+
+
+def mobs(root):
+    def out(mob, name, signal):
+        write(os.path.join(root, "mob", mob, name + ".wav"), signal)
+
+    for k in range(1, 4):
+        j = rng.uniform(0.9, 1.1)
+        # Pig: short nasal grunts.
+        out("pig", f"say{k}", fade(voice(0.3, 180 * j, 130 * j, 900, vibrato=0.15, rate=30), 0.01, 0.1))
+        out("pig", f"hurt{k}", fade(voice(0.35, 420 * j, 300 * j, 1600, vibrato=0.1, rate=25), 0.01, 0.1))
+        # Cow: long low moo.
+        out("cow", f"say{k}", fade(voice(1.1, 120 * j, 95 * j, 700, vibrato=0.03), 0.15, 0.4))
+        out("cow", f"hurt{k}", fade(voice(0.5, 160 * j, 120 * j, 900), 0.03, 0.2))
+        # Sheep: bleating baa.
+        out("sheep", f"say{k}", fade(voice(0.7, 330 * j, 300 * j, 1800, vibrato=0.06, rate=18), 0.03, 0.2))
+        # Chicken: clucks.
+        cluck = np.zeros(int(RATE * 0.6))
+        for c in range(3):
+            piece = fade(voice(0.08, 900 * j, 700 * j, 3000), 0.003, 0.03)
+            start = int(RATE * (0.05 + c * rng.uniform(0.12, 0.18)))
+            cluck[start:start + len(piece)] += piece[: len(cluck) - start]
+        out("chicken", f"say{k}", cluck)
+        out("chicken", f"hurt{k}", fade(voice(0.2, 1400 * j, 1000 * j, 4000), 0.005, 0.06))
+        # Wolf: bark, whine.
+        out("wolf", f"say{k}", fade(voice(0.18, 500 * j, 300 * j, 1500), 0.005, 0.08))
+        out("wolf", f"hurt{k}", fade(voice(0.4, 900 * j, 700 * j, 2500, vibrato=0.04), 0.02, 0.15))
+        # Zombie: groans.
+        out("zombie", f"say{k}", fade(voice(1.0, 90 * j, 70 * j, 500, vibrato=0.08, rate=4) + 0.4 * lowpass(noise(1.0), 400), 0.2, 0.4))
+        out("zombie", f"hurt{k}", fade(voice(0.35, 140 * j, 100 * j, 700), 0.01, 0.12))
+        # Skeleton: rattling bones.
+        bones = sum(np.roll(np.pad(highpass(noise(0.03), 1500) * env(0.03, 0.001, 0.008), (0, int(RATE * 0.45))),
+                            int(RATE * rng.uniform(0, 0.4))) for _ in range(9))
+        out("skeleton", f"say{k}", bones)
+        out("skeleton", f"hurt{k}", bones[: int(RATE * 0.25)])
+        # Spider: hissy chitter.
+        out("spider", f"say{k}", fade(highpass(noise(0.5), 2500) * (0.6 + 0.4 * np.sin(2 * np.pi * 35 * t(0.5))), 0.03, 0.15))
+        out("spider", f"hurt{k}", fade(highpass(noise(0.25), 2000), 0.005, 0.1))
+        # Creeper: a dry rasp when hurt.
+        out("creeper", f"hurt{k}", fade(highpass(lowpass(noise(0.3), 3000), 600), 0.005, 0.12))
+        # Slime: squelches.
+        out("slime", f"big{k}", fade(lowpass(noise(0.3), 400) + 0.8 * voice(0.3, 160 * j, 60 * j, 300), 0.005, 0.15))
+        out("slime", f"small{k}", fade(lowpass(noise(0.2), 800) + 0.8 * voice(0.2, 320 * j, 140 * j, 600), 0.005, 0.1))
+        # Explosion: a deep rumbling boom.
+        boom = lowpass(noise(2.0), 300) * env(2.0, 0.005, 0.45) + 0.6 * lowpass(noise(2.0), 2000) * env(2.0, 0.002, 0.08)
+        write(os.path.join(root, "random", f"explode{k}.wav"), boom)
+    for mob, base in [("pig", 200), ("cow", 110), ("sheep", 280), ("chicken", 1100), ("wolf", 600), ("zombie", 80),
+                      ("spider", 0), ("creeper", 0), ("skeleton", 0)]:
+        if base:
+            out(mob, "death", fade(voice(0.8, base * 1.3, base * 0.6, base * 6, vibrato=0.05), 0.02, 0.3))
+        else:
+            out(mob, "death", fade(highpass(noise(0.6), 900) * env(0.6, 0.005, 0.25), 0.005, 0.2))
+    out("creeper", "fuse", fade(highpass(noise(1.5), 3000) * np.minimum(t(1.5) / 0.3, 1.0), 0.05, 0.1))
+    x = t(0.4)
+    write(os.path.join(root, "random", "bow.wav"),
+          np.sin(2 * np.pi * (220 + 200 * np.exp(-x * 20)) * x) * env(0.4, 0.002, 0.08) + 0.3 * highpass(noise(0.4), 3000) * env(0.4, 0.002, 0.05))
+    write(os.path.join(root, "random", "bowhit.wav"), MATERIALS["wood"](0.8))
+    for k in range(1, 4):
+        j = rng.uniform(0.9, 1.1)
+        out("sheep", f"hurt{k}", fade(voice(0.4, 380 * j, 330 * j, 2000, vibrato=0.08, rate=20), 0.02, 0.12))
+        out("slime", f"hurt{k}", fade(lowpass(noise(0.25), 600) + 0.8 * voice(0.25, 240 * j, 90 * j, 450), 0.005, 0.1))
+    out("sheep", "death", fade(voice(0.8, 360, 200, 1800, vibrato=0.08, rate=16), 0.02, 0.3))
+    out("slime", "death", fade(lowpass(noise(0.4), 500) + 0.8 * voice(0.4, 200, 50, 350), 0.005, 0.2))
+    # Something wearing out and breaking: a sharp crack.
+    write(os.path.join(root, "random", "break.wav"),
+          highpass(noise(0.25), 1500) * env(0.25, 0.001, 0.04)
+          + 0.6 * np.sin(2 * np.pi * 900 * t(0.25)) * env(0.25, 0.001, 0.02))
 
 
 if __name__ == "__main__":

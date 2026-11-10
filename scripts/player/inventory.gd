@@ -115,8 +115,8 @@ func take(slot: int, count: int = 1) -> void:
 	changed.emit()
 
 
-## Uses a tool in a slot once: it breaks after its durability (survival).
-## Returns true if it broke.
+## Uses a tool (or wears armor) in a slot: it breaks after its durability
+## (survival), with the classic snap. Returns true if it broke.
 func wear(slot: int, amount: int = 1) -> bool:
 	var durability := Items.durability(id_at(slot))
 	if durability <= 0:
@@ -124,6 +124,7 @@ func wear(slot: int, amount: int = 1) -> bool:
 	damages[slot] += amount
 	if damages[slot] >= durability:
 		set_slot(slot, Blocks.AIR, 0)
+		Sounds.play("random/break", null, 0.8, randf_range(0.8, 1.2))
 		return true
 	changed.emit()
 	return false

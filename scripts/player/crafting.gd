@@ -21,6 +21,14 @@ const TOOL_MATERIALS := {
 	"wooden": PLANKS, "stone": "cobblestone", "iron": "iron_ingot",
 	"diamond": "diamond", "golden": "gold_ingot",
 }
+## Armor: material key -> what it is made of (chainmail can't be crafted).
+const ARMOR_MATERIALS := {"leather": "leather", "iron": "iron_ingot", "diamond": "diamond", "golden": "gold_ingot"}
+const ARMOR_PATTERNS := {
+	"helmet": ["MMM", "M M"],
+	"chestplate": ["M M", "MMM", "MMM"],
+	"leggings": ["MMM", "M M", "M M"],
+	"boots": ["M M", "M M"],
+}
 const TOOL_PATTERNS := {
 	"pickaxe": ["MMM", " S ", " S "],
 	"axe": ["MM", "MS", " S"],
@@ -68,6 +76,9 @@ static func _build_recipes() -> Array:
 		{"pattern": ["P", "P", "P"], "keys": {"P": "paper"}, "result": "book", "count": 1},
 		{"pattern": ["S"], "keys": {"S": "sugar_cane"}, "result": "sugar", "count": 1},
 		{"pattern": ["WWW"], "keys": {"W": "wheat"}, "result": "bread", "count": 1},
+		{"pattern": [" SW", "S W", " SW"], "keys": {"S": "stick", "W": "string"}, "result": "bow", "count": 1},
+		{"pattern": ["F", "S", "E"], "keys": {"F": "flint", "S": "stick", "E": "feather"}, "result": "arrow", "count": 4},
+		{"pattern": [" I", "I "], "keys": {"I": "iron_ingot"}, "result": "shears", "count": 1},
 		{"pattern": ["B"], "keys": {"B": "bone"}, "result": "bone_meal", "count": 3},
 		{"pattern": ["MMM", "SES", "WWW"], "keys": {"M": "milk_bucket", "S": "sugar", "E": "egg", "W": "wheat"}, "result": "cake", "count": 1},
 		{"pattern": ["WCW"], "keys": {"W": "wheat", "C": "cocoa_beans"}, "result": "cookie", "count": 8},
@@ -86,6 +97,10 @@ static func _build_recipes() -> Array:
 		for kind: String in TOOL_PATTERNS:
 			recipes.append({"pattern": TOOL_PATTERNS[kind], "keys": {"M": TOOL_MATERIALS[material], "S": "stick"},
 				"result": "%s_%s" % [material, kind], "count": 1})
+	for material: String in ARMOR_MATERIALS:
+		for piece: String in ARMOR_PATTERNS:
+			recipes.append({"pattern": ARMOR_PATTERNS[piece], "keys": {"M": ARMOR_MATERIALS[material]},
+				"result": "%s_%s" % [material, piece], "count": 1})
 	return recipes
 
 

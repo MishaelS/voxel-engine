@@ -58,6 +58,11 @@ func type_name() -> String:
 	return "entity"
 
 
+## Whether attacks and arrows can hit it (arrows themselves can't).
+func can_be_hit() -> bool:
+	return true
+
+
 func is_dead() -> bool:
 	return death_ticks >= 0
 

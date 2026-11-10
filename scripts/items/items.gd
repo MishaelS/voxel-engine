@@ -83,7 +83,41 @@ static func _register_all() -> bool:
 	register(ItemType.make("golden_apple", 11).set_food(4, 1.2, 20))
 	register(ItemType.make("milk_bucket", 77).stack(1).set_container("bucket"))
 	register(ItemType.make("egg", 12).stack(16))
+	register(ItemType.make("porkchop", 87).set_food(3, 0.3, 3))
+	register(ItemType.make("cooked_porkchop", 88).set_food(8, 0.8, 8))
+	register(ItemType.make("leather", 103))
+	register(ItemType.make("feather", 24))
+	register(ItemType.make("gunpowder", 40))
+	register(ItemType.make("slimeball", 30))
+	register(ItemType.make("ink_sac", 78))
+	register(ItemType.make("saddle", 104).stack(1))
+	register(ItemType.make("arrow", 37))
+	register(ItemType.make("bow", 21).set_durability(384))
+	register(ItemType.make("shears", 93).set_durability(238))
+	register(ItemType.make("music_disc_13", 240).stack(1))
+	register(ItemType.make("music_disc_cat", 241).stack(1))
+	register(ItemType.make("raw_fish", 89).set_food(2, 0.1, 2))
+	register(ItemType.make("cooked_fish", 90).set_food(5, 0.6, 5))
+	_register_armor()
 	return true
+
+
+## Armor like Beta 1.7.3: every material gives the same points (helmet 3,
+## chestplate 8, leggings 6, boots 3; 20 = the whole bar), the material
+## only sets how long it lasts: [11, 16, 15, 13] x (leather 3, chain and
+## gold 6, iron 12, diamond 24) hits.
+const ARMOR_PIECES: Array[String] = ["helmet", "chestplate", "leggings", "boots"]
+const ARMOR_POINTS: Array[int] = [3, 8, 6, 3]
+const ARMOR_BASE: Array[int] = [11, 16, 15, 13]
+## [material, durability factor, icon column].
+const ARMOR_MATERIALS := [["leather", 3, 0], ["chainmail", 6, 1], ["iron", 12, 2], ["diamond", 24, 3], ["golden", 6, 4]]
+
+
+static func _register_armor() -> void:
+	for material: Array in ARMOR_MATERIALS:
+		for slot in 4:
+			register(ItemType.make("%s_%s" % [material[0], ARMOR_PIECES[slot]], slot * 16 + material[2])
+				.set_armor(slot, ARMOR_POINTS[slot], material[0], ARMOR_BASE[slot] * material[1]))
 
 
 static func register(item: ItemType) -> int:
@@ -194,7 +228,31 @@ static func break_speed(item_id: int, block_id: int) -> float:
 		return 1.5
 	if item.tool == "sword" and block.name == "cobweb":
 		return 15.0
+	if item.name == "shears":
+		if block.name == "cobweb" or block.name.ends_with("_leaves"):
+			return 15.0
+		if block.name.ends_with("_wool"):
+			return 5.0
 	return 1.0
+
+
+## Melee damage of the item in hand, like Beta 1.7.3: fist 1, swords
+## 4 + 2 x tier (gold like wood), shovels 1 + tier, pickaxes 2 + tier,
+## axes 3 + tier.
+static func attack_damage(item_id: int) -> int:
+	var item := get_type(item_id)
+	if item == null:
+		return 1
+	match item.tool:
+		"sword":
+			return 4 + item.tier * 2
+		"shovel":
+			return 1 + item.tier
+		"pickaxe":
+			return 2 + item.tier
+		"axe":
+			return 3 + item.tier
+	return 1
 
 
 ## Whether breaking the block with this item gives its drops.

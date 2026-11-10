@@ -363,7 +363,7 @@ func _update_furnace_progress() -> void:
 
 # --- Contents ------------------------------------------------------------------------
 
-## The inventory behind a slot, or null (result, catalog, armor).
+## The inventory behind a slot, or null (result, catalog).
 func _inventory_of(slot: Dictionary) -> Inventory:
 	if slot.inventory != null:
 		return slot.inventory
@@ -374,6 +374,8 @@ func _inventory_of(slot: Dictionary) -> Inventory:
 			return _craft
 		Kind.CONTAINER, Kind.OUTPUT:
 			return _container
+		Kind.ARMOR:
+			return player.armor
 	return null
 
 
@@ -464,7 +466,7 @@ func _update_hover(point: Vector2) -> void:
 	_held.position = point - Vector2(8, 8) * P
 	_hover = _slot_at(point)
 	var slot: Dictionary = _slots[_hover] if _hover >= 0 else {}
-	_highlight.visible = _hover >= 0 and slot.kind != Kind.ARMOR
+	_highlight.visible = _hover >= 0
 	var id := Blocks.AIR
 	if _hover >= 0:
 		_highlight.position = Vector2(slot.pos) * P
@@ -481,7 +483,13 @@ func _update_hover(point: Vector2) -> void:
 func _click(slot: Dictionary, right: bool, shift: bool) -> void:
 	match slot.kind:
 		Kind.ARMOR:
-			return # no armor items yet
+			# Only the right piece goes into each armor slot.
+			if _held_count > 0 and not _fits_armor(_held_id, slot.index):
+				return
+			if shift:
+				_quick_move(slot)
+			else:
+				_click_stack(slot, right)
 		Kind.CATALOG:
 			_click_catalog(slot, right, shift)
 		Kind.RESULT:
@@ -607,16 +615,40 @@ func _quick_move(slot: Dictionary) -> void:
 					left = _insert(_container, id, left, content[2], 0, 1)
 				elif Items.fuel_ticks(id) > 0:
 					left = _insert(_container, id, left, content[2], 1, 2)
+			_ when _armor_slot_for(id) >= 0:
+				left = _insert(player.armor, id, left, content[2], _armor_slot_for(id), _armor_slot_for(id) + 1)
+				if left > 0:
+					left = _quick_move_hotbar(slot, id, left, content[2])
 			_:
-				# Hotbar <-> main inventory.
-				var in_hotbar: bool = slot.index < Inventory.HOTBAR_SIZE
-				var from := Inventory.HOTBAR_SIZE if in_hotbar else 0
-				var to := Inventory.SIZE if in_hotbar else Inventory.HOTBAR_SIZE
-				left = _insert(player.inventory, id, left, content[2], from, to)
+				left = _quick_move_hotbar(slot, id, left, content[2])
 	else:
-		# Chest, furnace or crafting grid -> the inventory.
+		# Chest, furnace, crafting grid or armor -> the inventory.
 		left = _insert(player.inventory, id, left, content[2], 0, Inventory.SIZE)
 	_put(slot, id, left, content[2])
+
+
+## Shift-click in the inventory: hotbar <-> main inventory.
+func _quick_move_hotbar(slot: Dictionary, id: int, left: int, damage: int) -> int:
+	var in_hotbar: bool = slot.index < Inventory.HOTBAR_SIZE
+	var from := Inventory.HOTBAR_SIZE if in_hotbar else 0
+	var to := Inventory.SIZE if in_hotbar else Inventory.HOTBAR_SIZE
+	return _insert(player.inventory, id, left, damage, from, to)
+
+
+## The armor slot an item is worn in, -1 if it isn't armor (survival
+## inventory only, where the armor slots are).
+func _armor_slot_for(id: int) -> int:
+	if _mode != Mode.INVENTORY or _creative:
+		return -1
+	var item := Items.get_type(id)
+	if item == null or item.armor_slot < 0 or not player.armor.is_empty_slot(item.armor_slot):
+		return -1
+	return item.armor_slot
+
+
+func _fits_armor(id: int, slot: int) -> bool:
+	var item := Items.get_type(id)
+	return item != null and item.armor_slot == slot
 
 
 ## Puts items into slots [from, to) of an inventory: existing stacks first,

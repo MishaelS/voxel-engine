@@ -4,6 +4,8 @@ extends Control
 ## 10 hearts on the left, 10 drumsticks on the right (filled from the
 ## right). Hearts blink when the player is hurt and jitter at low health
 ## (4 half hearts or less); drumsticks jitter when saturation is gone.
+## The armor bar (Player.armor_value(), 10 chestplates) sits above the
+## hearts while armor is worn.
 ## Hidden in creative.
 
 const P := UiTheme.PIXEL
@@ -21,6 +23,9 @@ var _heart_empty: Texture2D
 var _food_full: Texture2D
 var _food_half: Texture2D
 var _food_empty: Texture2D
+var _armor_full: Texture2D
+var _armor_half: Texture2D
+var _armor_empty: Texture2D
 var _heart_jitter := PackedInt32Array()
 var _food_jitter := PackedInt32Array()
 var _shown := ""
@@ -34,6 +39,9 @@ func _ready() -> void:
 	_food_full = UiTheme.gui_texture("hunger/hunger0.png")
 	_food_half = UiTheme.gui_texture("hunger/hunger1.png")
 	_food_empty = UiTheme.gui_texture("hunger/hunger2.png")
+	_armor_full = UiTheme.gui_texture("armor/armor0.png")
+	_armor_half = UiTheme.gui_texture("armor/armor1.png")
+	_armor_empty = UiTheme.gui_texture("armor/armor2.png")
 	# Over the hotbar, 40 pixels above the bottom (the classic place).
 	anchor_left = 0.5
 	anchor_right = 0.5
@@ -57,7 +65,8 @@ func _process(_delta: float) -> void:
 		_heart_jitter[i] = randi() % 2 if low else 0
 		_food_jitter[i] = (randi() % 2 if randf() < 0.15 else 0) if hungry else 0
 	# Redraw only when something visible changed.
-	var state := "%d %d %s %s %s %s" % [player.health, player.food.food, _blinking(), _heart_jitter, _food_jitter, _hunger()]
+	var state := "%d %d %s %s %s %s %d" % [player.health, player.food.food, _blinking(), _heart_jitter, _food_jitter, _hunger(),
+		player.armor_value()]
 	if state != _shown:
 		_shown = state
 		queue_redraw()
@@ -78,6 +87,12 @@ func _draw() -> void:
 		var position := Vector2(i * STEP, _heart_jitter[i] * P)
 		draw_texture(_heart_empty, position, tint)
 		_draw_level(player.health - i * 2, position, _heart_full, _heart_half, tint)
+	var armor := player.armor_value()
+	if armor > 0:
+		for i in ICONS:
+			var position := Vector2(i * STEP, -10 * P)
+			draw_texture(_armor_empty, position)
+			_draw_level(armor - i * 2, position, _armor_full, _armor_half, Color.WHITE)
 	if not _hunger():
 		return
 	for i in ICONS:

@@ -50,6 +50,22 @@ func set_tool(kind: String, tool_tier: int, speed: float, uses: int) -> ItemType
 
 
 ## Uses before it breaks, for non-tools (flint and steel).
+## Armor: the slot it is worn in (0 helmet, 1 chestplate, 2 leggings,
+## 3 boots; -1 = not armor) and its armor points (half chestplate icons).
+var armor_slot := -1
+var armor := 0
+var armor_material := ""
+
+
+func set_armor(slot: int, points: int, material: String, uses: int) -> ItemType:
+	armor_slot = slot
+	armor = points
+	armor_material = material
+	max_stack = 1
+	durability = uses
+	return self
+
+
 func set_durability(uses: int) -> ItemType:
 	durability = uses
 	max_stack = 1

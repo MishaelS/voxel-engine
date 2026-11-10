@@ -911,6 +911,8 @@ func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true, e
 	var id := get_block(pos)
 	if id == Blocks.AIR:
 		return
+	if Blocks.family_of(id) == "dungeon_chest":
+		DungeonBehavior.open_chest(self, pos) # its loot spills out
 	if effects:
 		particles.break_block(pos, id)
 		Sounds.play_block("break", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))

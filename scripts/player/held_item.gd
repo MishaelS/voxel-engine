@@ -56,6 +56,11 @@ func _ready() -> void:
 	add_child(_mesh_instance)
 
 
+## How far the current swing is (0..1), -1 when not swinging.
+func swing_progress() -> float:
+	return _swing
+
+
 ## Starts a swing; while one is playing it finishes first, so holding the
 ## button gives one smooth swing after another instead of a twitch.
 func swing() -> void:

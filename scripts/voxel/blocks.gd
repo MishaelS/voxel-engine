@@ -215,8 +215,29 @@ static func _register_all() -> bool:
 	_register_building_blocks()
 	_register_nature()
 	_register_farming()
+	_register_dungeons()
 	_set_flammability()
 	return true
+
+
+# --- Dungeons (stage 6) --------------------------------------------------------------
+
+## Mob spawners (one per mob) and the dungeon chest marker (appended: ids
+## stay stable).
+static func _register_dungeons() -> void:
+	for mob: String in DungeonBehavior.SPAWNER_TYPES:
+		var spawner := BlockType.cube("mob_spawner_" + mob, 65).set_layer(Layer.CUTOUT).set_light_opacity(0) \
+			.set_hardness(5.0).set_tool("pickaxe", 0).set_drop("none")
+		spawner.display_tick = Callable(DungeonBehavior, "spawner_display_tick")
+		spawner.family = "mob_spawner"
+		register(spawner)
+	var chest := _chest(0)
+	chest.name = "dungeon_chest"
+	chest.family = "dungeon_chest"
+	chest.item = "chest"
+	chest.in_catalog = false
+	chest.display_tick = Callable(DungeonBehavior, "chest_display_tick")
+	register(chest)
 
 
 # --- Farming (stage 5) ---------------------------------------------------------------

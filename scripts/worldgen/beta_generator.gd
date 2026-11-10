@@ -88,6 +88,7 @@ var _soil_noise := FastNoiseLite.new()
 var _tree_noise := FastNoiseLite.new()
 
 var _id := {} # block name -> id (read-only after _init, safe across threads)
+var _dungeon_ids := {}
 ## BIOMES as packed tables indexed by biome number (BIOME_NAMES order), so
 ## the per-block loops don't read dictionaries.
 const BIOME_NAMES: Array[String] = [
@@ -124,6 +125,9 @@ func _init(seed_value: int) -> void:
 	_setup(_tree_noise, 12, 0.02, 2)
 	for block in Blocks.types:
 		_id[block.name] = block.id
+	_dungeon_ids = {"cobble": _id["cobblestone"], "mossy": _id["mossy_cobblestone"], "chest": _id["dungeon_chest"]}
+	for mob: String in DungeonBehavior.SPAWNER_TYPES:
+		_dungeon_ids["spawner_" + mob] = _id["mob_spawner_" + mob]
 	for biome_name_key in BIOME_NAMES:
 		var biome: Dictionary = BIOMES[biome_name_key]
 		_biome_top.append(_id[biome.top])
@@ -247,6 +251,7 @@ func generate_blocks(cx: int, cz: int) -> PackedInt32Array:
 	var rng := column_rng(cx, cz, 100)
 	_place_water_lake(blocks, column_rng(cx, cz, 250))
 	_place_lava_lake(blocks, column_rng(cx, cz, 200))
+	DungeonBehavior.place(blocks, column_rng(cx, cz, 600), HEIGHT, _dungeon_ids)
 	_place_ores(blocks, rng, top)
 	_place_trees(blocks, cx, cz, biomes, rng)
 	_place_plants(blocks, biomes, column_rng(cx, cz, 300))

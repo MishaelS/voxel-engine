@@ -33,6 +33,7 @@ const ACTIONS := [
 	["regenerate_world", "Regenerate World", "World"],
 	["hide_gui", "Hide GUI", "Camera"],
 	["screenshot", "Take Screenshot", "Camera"],
+	["toggle_perspective", "Toggle Perspective", "Camera"],
 	["isometric_view", "Isometric Camera", "Camera"],
 	["isometric_screenshot", "Isometric Screenshot", "Camera"],
 	["isometric_rotate_left", "Isometric: Rotate Left", "Camera"],

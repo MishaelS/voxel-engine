@@ -59,6 +59,8 @@ const DEATH_TICKS := 20
 ## Falls longer than this many blocks hurt: 1 half heart per extra block.
 const SAFE_FALL := 3.0
 ## Below this height the void hurts (4 per half second), even in creative.
+## How far behind the eyes the third-person camera is (blocks).
+const THIRD_PERSON_DISTANCE := 4.0
 const VOID_Y := -64.0
 ## Ticks asleep before the night is skipped (the classic 100).
 const SLEEP_TICKS := 100
@@ -77,11 +79,17 @@ const STARTING_BLOCKS := [
 		game_mode_changed.emit(value)
 
 var inventory := Inventory.new()
+## Worn armor: 0 helmet, 1 chestplate, 2 leggings, 3 boots.
+var armor := Inventory.new(4)
 ## Hotbar slot in hand (0..8).
 var selected_slot := 0
 var camera: Camera3D
 ## The block drawn in the hand (child of the camera).
 var held_item: HeldItem
+## The player's body with its armor, seen in the third-person view.
+var body: PlayerModel
+## F5: the camera behind the player, like the classic game.
+var third_person := false
 
 ## Velocity in blocks per tick.
 var velocity := Vector3.ZERO
@@ -98,6 +106,7 @@ var hurt_ticks := 0
 var food := FoodStats.new()
 ## Ticks since death (the death animation).
 var death_ticks := 0
+var _armor_remainder := 0
 var _invulnerable := 0
 var _last_damage := 0
 var sprinting := false
@@ -157,6 +166,10 @@ func _ready() -> void:
 	held_item = HeldItem.new()
 	held_item.player = self
 	camera.add_child(held_item)
+	body = PlayerModel.new()
+	body.player = self
+	body.visible = false
+	add_child(body)
 	_yaw = rotation.y
 	rotation = Vector3(0, _yaw, 0)
 	_teleported()
@@ -202,7 +215,7 @@ func save_state() -> Dictionary:
 	return {
 		"position": Vector3(_x, _y, _z), "yaw": _yaw, "pitch": _pitch,
 		"flying": flying, "selected_slot": selected_slot,
-		"inventory": inventory.save_state(), "spawn": spawn_point,
+		"inventory": inventory.save_state(), "armor": armor.save_state(), "spawn": spawn_point,
 		"health": health if not dead else MAX_HEALTH,
 		"food": food.save_state() if not dead else FoodStats.new().save_state(),
 	}
@@ -216,6 +229,8 @@ func load_state(saved: Dictionary) -> void:
 	health = clampi(saved.get("health", MAX_HEALTH), 1, MAX_HEALTH)
 	food.load_state(saved.get("food", {}))
 	spawn_point = saved.get("spawn", Vector3.INF)
+	if saved.has("armor"):
+		armor.load_state(saved.armor)
 	if saved.has("inventory"):
 		inventory.load_state(saved.inventory)
 	else: # older saves
@@ -292,6 +307,11 @@ func eye_position() -> Vector3:
 	return global_position + Vector3(0, _eye, 0)
 
 
+## Up / down view angle (radians, up is positive).
+func pitch() -> float:
+	return _pitch
+
+
 func look_direction() -> Vector3:
 	return Vector3(-sin(_yaw) * cos(_pitch), sin(_pitch), -cos(_yaw) * cos(_pitch))
 
@@ -317,6 +337,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		var invert := -1.0 if Settings.get_value("invert_mouse") else 1.0
 		_yaw -= event.relative.x * sensitivity
 		_pitch = clampf(_pitch - event.relative.y * sensitivity * invert, -PI / 2 + 0.001, PI / 2 - 0.001)
+	elif event.is_action_pressed("toggle_perspective") and not event.is_echo():
+		third_person = not third_person
+		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("jump") and not event.is_echo():
 		if is_creative():
 			if _jump_tap > 0:
@@ -394,6 +417,19 @@ func _update_camera(alpha: float, delta: float) -> void:
 		var f := clampf((hurt_ticks - alpha) / HURT_TICKS, 0.0, 1.0)
 		var roll := sin(f * f * f * f * PI) * deg_to_rad(14.0)
 		transform_3d = Transform3D(Basis(Vector3.BACK, -roll), Vector3.ZERO) * transform_3d
+	if third_person and not sleeping:
+		# The classic third-person view: 4 blocks behind the eyes, closer
+		# when a block is in the way.
+		var back := Basis(Vector3.RIGHT, _pitch) * Vector3(0, 0, THIRD_PERSON_DISTANCE)
+		var eye_point := global_position + Vector3(0, eye, 0)
+		var distance := THIRD_PERSON_DISTANCE
+		if world:
+			var hit := world.raycast(eye_point, global_basis * back, THIRD_PERSON_DISTANCE)
+			if hit.get("hit", false):
+				distance = maxf(float(hit.distance) - 0.3, 0.3)
+		transform_3d.origin += back.normalized() * distance
+	body.visible = third_person and not sleeping
+	held_item.visible = not body.visible
 	camera.transform = transform_3d
 	var base_fov: float = Settings.get_value("fov")
 	camera.fov = clampf(base_fov * lerpf(_prev_fov_factor, _fov_factor, alpha), 1.0, 170.0)
@@ -414,6 +450,8 @@ func _tick() -> void:
 		death_ticks += 1
 		return
 	_update_health()
+	if Settings.get_value("difficulty") == 0 and health < MAX_HEALTH and not dead and Engine.get_process_frames() % 20 == 0:
+		heal(1) # peaceful: health comes back by itself
 	if sleeping:
 		_tick_sleep()
 		return
@@ -706,10 +744,10 @@ func damage(amount: int, always: bool = false) -> void:
 	if _invulnerable > INVULNERABLE_TICKS / 2:
 		if amount <= _last_damage:
 			return
-		health = maxi(health - (amount - _last_damage), 0)
+		health = maxi(health - _through_armor(amount - _last_damage), 0)
 		_last_damage = amount
 	else:
-		health = maxi(health - amount, 0)
+		health = maxi(health - _through_armor(amount), 0)
 		_last_damage = amount
 		_invulnerable = INVULNERABLE_TICKS
 		hurt_ticks = HURT_TICKS
@@ -717,6 +755,49 @@ func damage(amount: int, always: bool = false) -> void:
 	Sounds.play("damage/hurt", null, 1.0, randf_range(0.8, 1.2))
 	if health == 0:
 		_die()
+
+
+## The armor bar like Beta 1.7.3 (0..20): the worn pieces' points, scaled
+## down by how worn out they are.
+func armor_value() -> int:
+	var points := 0
+	var left := 0
+	var total := 0
+	for slot in armor.size():
+		var item := Items.get_type(armor.id_at(slot))
+		if armor.count_at(slot) <= 0 or item == null or item.armor_slot < 0:
+			continue
+		points += item.armor
+		total += item.durability
+		left += item.durability - armor.damage_at(slot)
+	if total == 0:
+		return 0
+	return (points - 1) * left / total + 1
+
+
+## Armor takes (armor value) / 25 of each hit, like Beta 1.7.3 (the
+## remainders add up), and every worn piece wears by the hit's damage.
+func _through_armor(amount: int) -> int:
+	var value := armor_value()
+	if value <= 0:
+		return amount
+	for slot in armor.size():
+		if armor.count_at(slot) > 0:
+			armor.wear(slot, amount)
+	var scaled := amount * (25 - value) + _armor_remainder
+	_armor_remainder = scaled % 25
+	return scaled / 25
+
+
+## Pushed away from a hit (mobs, arrows), like the classic knockback.
+func knockback(from: Vector3) -> void:
+	var direction := Vector2(_x - from.x, _z - from.z)
+	if direction.length_squared() < 1e-6:
+		direction = Vector2(randf() - 0.5, randf() - 0.5)
+	direction = direction.normalized() * 0.4
+	velocity.x = velocity.x * 0.5 + direction.x
+	velocity.z = velocity.z * 0.5 + direction.y
+	velocity.y = minf(velocity.y * 0.5 + 0.4, 0.4)
 
 
 func heal(amount: int) -> void:
@@ -750,10 +831,12 @@ func _die() -> void:
 	if world == null or not world.keep_inventory:
 		if world:
 			var center := global_position + Vector3(0, 1.0, 0)
-			for slot in inventory.size():
-				if inventory.count_at(slot) > 0:
-					world.items.scatter(center, inventory.id_at(slot), inventory.count_at(slot), inventory.damage_at(slot))
+			for container: Inventory in [inventory, armor]:
+				for slot in container.size():
+					if container.count_at(slot) > 0:
+						world.items.scatter(center, container.id_at(slot), container.count_at(slot), container.damage_at(slot))
 		inventory.clear()
+		armor.clear()
 	died.emit()
 
 

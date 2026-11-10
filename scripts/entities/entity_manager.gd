@@ -12,6 +12,8 @@ const TYPES := {
 
 var world: VoxelWorld
 var _entities: Array[Entity] = []
+## Natural mob spawning around the player.
+var spawner: MobSpawner
 
 
 func _ready() -> void:
@@ -39,10 +41,44 @@ func spawn(entity: Entity, position: Vector3) -> Entity:
 	return entity
 
 
-## A new entity of a registered type, or null.
+## A new entity of a registered type (mobs by their name), or null.
 func create(type: String) -> Entity:
+	if Mob.TYPES.has(type):
+		return Mob.create(type)
+	if type == "arrow":
+		return Arrow.new()
 	var script: Script = TYPES.get(type)
 	return script.new() if script else null
+
+
+## The entity hit first by a ray (its box), within `max_distance`:
+## [entity, distance], or [] when none.
+func raycast(origin: Vector3, direction: Vector3, max_distance: float, ignore: Entity = null) -> Array:
+	var best: Entity = null
+	var best_distance := max_distance
+	var to := origin + direction.normalized() * max_distance
+	for entity in _entities:
+		if entity == ignore or entity.is_dead() or entity.removed or not entity.can_be_hit():
+			continue
+		var feet := entity.feet()
+		var box := AABB(feet - Vector3(entity.half_width, 0, entity.half_width),
+			Vector3(entity.half_width * 2, entity.height, entity.half_width * 2)).grow(0.1)
+		var hit: Variant = box.intersects_segment(origin, to)
+		if hit != null:
+			var distance := origin.distance_to(hit)
+			if distance < best_distance:
+				best_distance = distance
+				best = entity
+	return [best, best_distance] if best else []
+
+
+## Mobs of a type within `radius` of a point.
+func count_near(type: String, point: Vector3, radius: float) -> int:
+	var total := 0
+	for entity in _entities:
+		if entity.type_name() == type and entity.feet().distance_to(point) <= radius:
+			total += 1
+	return total
 
 
 ## Entities whose middle is within `radius` of `point`.
@@ -61,6 +97,10 @@ func clear() -> void:
 
 
 func _tick(_tick_index: int) -> void:
+	if spawner == null and world:
+		spawner = MobSpawner.new(world)
+	if spawner:
+		spawner.tick()
 	var i := 0
 	while i < _entities.size():
 		var entity := _entities[i]

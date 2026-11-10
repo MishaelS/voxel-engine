@@ -60,6 +60,7 @@ func _register_all() -> void:
 	define("general", Setting.range_of("sound_volume", "Sound", 0, 100, 100, 5) \
 		.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0.0 else "%d%%" % int(v)))
 	define("general", Setting.range_of("fov", "FOV", 30, 110, 75))
+	define("general", Setting.choice("difficulty", "Difficulty", PackedStringArray(["Peaceful", "Easy", "Normal", "Hard"]), 2))
 	# Video Settings: the main list, laid out like the classic game (two
 	# columns: Graphics | Render Distance, Smooth Lighting | Max Framerate...).
 	define("video", Setting.choice("graphics", "Graphics", PackedStringArray(["Fast", "Fancy"]), 1))

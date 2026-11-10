@@ -112,6 +112,24 @@ func smoke(point: Vector3, amount: int = 8) -> void:
 			Color(gray, gray, gray, 0.8), _rng.randi_range(15, 30), -0.01, true)
 
 
+## An explosion: big puffs of smoke all around and a flash.
+func explosion(center: Vector3, power: float) -> void:
+	for i in int(power * 16):
+		var offset := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * power * 0.8
+		var gray := _rng.randf_range(0.4, 0.75)
+		_add(center + offset, offset * 0.03 + Vector3(0, 0.02, 0), Color(-2, 0, 0, _rng.randf_range(0.2, 0.45)),
+			Color(gray, gray, gray, 0.9), _rng.randi_range(12, 30), -0.01, true)
+	for i in 6:
+		_add(center, Vector3.ZERO, Color(-2, 0, 0, power * 0.3), Color(1.0, 0.95, 0.8, 0.8), 3, 0.0, true)
+
+
+## Hearts rising (a wolf tamed).
+func hearts(point: Vector3) -> void:
+	for i in 7:
+		var start := point + Vector3(_rng.randf_range(-0.5, 0.5), _rng.randf_range(0, 0.5), _rng.randf_range(-0.5, 0.5))
+		_add(start, Vector3(0, 0.02, 0), Color(-2, 0, 0, 0.15), Color(0.95, 0.2, 0.25, 1.0), 25, 0.0, true)
+
+
 ## A torch's tip: a wisp of smoke and a small flame.
 func torch(tip: Vector3) -> void:
 	var gray := _rng.randf_range(0.2, 0.35)
