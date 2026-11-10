@@ -245,11 +245,17 @@ func generate_blocks(cx: int, cz: int) -> PackedInt32Array:
 	_replace_surface(blocks, cx, cz, biomes, top)
 	_carve_caves(blocks, cx, cz)
 	var rng := column_rng(cx, cz, 100)
+	_place_water_lake(blocks, column_rng(cx, cz, 250))
 	_place_lava_lake(blocks, column_rng(cx, cz, 200))
 	_place_ores(blocks, rng, top)
 	_place_trees(blocks, cx, cz, biomes, rng)
 	_place_plants(blocks, biomes, column_rng(cx, cz, 300))
 	_place_clay(blocks, column_rng(cx, cz, 400))
+	var nature := column_rng(cx, cz, 500)
+	_place_cacti(blocks, biomes, nature)
+	_place_sugar_cane(blocks, nature)
+	_place_mushrooms(blocks, nature)
+	_place_springs(blocks, nature)
 	_freeze(blocks, biomes)
 	return blocks
 
@@ -614,6 +620,8 @@ func _place_trees(blocks: PackedInt32Array, cx: int, cz: int, biomes: PackedByte
 			"forest":
 				if rng.randi_range(0, 4) == 0:
 					_round_tree(blocks, rng, x, y + 1, z, _id["birch_log"], _id["birch_leaves"], 5)
+				elif rng.randi_range(0, 9) == 0:
+					_big_oak(blocks, rng, x, y + 1, z)
 				else:
 					_round_tree(blocks, rng, x, y + 1, z, _id["oak_log"], _id["oak_leaves"], 4)
 			_:
@@ -629,6 +637,20 @@ func _place_lava_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> v
 	var y := rng.randi_range(0, rng.randi_range(0, 119) + 7)
 	if y >= SEA_LEVEL and rng.randi_range(0, 9) != 0:
 		return
+	_place_lake(blocks, rng, y, _lava)
+
+
+## Water lakes like the classic game: one column in 4, at any height (on
+## the surface or underground).
+func _place_water_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
+	if rng.randi_range(0, 3) != 0:
+		return
+	_place_lake(blocks, rng, rng.randi_range(8, HEIGHT - 8), _water)
+
+
+## A lake: a few overlapping blobs, the lower half filled with `liquid`, the
+## upper half air; skipped where it would open into water or float over air.
+func _place_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator, y: int, liquid: int) -> void:
 	var floor_y := y - 4
 	if floor_y < 2:
 		return
@@ -651,14 +673,16 @@ func _place_lava_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> v
 			continue
 		var ly := i / 256
 		var block := blocks[index(i % 16, floor_y + ly, (i / 16) % 16)]
-		if block == _water or (ly < 4 and block == Blocks.AIR):
+		if block == _water or block == _lava or (ly < 4 and block == Blocks.AIR):
 			return
+	if floor_y + 8 >= HEIGHT:
+		return
 	for i in shape.size():
 		if shape[i] == 1:
 			var ly := i / 256
 			var j := index(i % 16, floor_y + ly, (i / 16) % 16)
 			if blocks[j] != _bedrock:
-				blocks[j] = _lava if ly < 4 else Blocks.AIR
+				blocks[j] = liquid if ly < 4 else Blocks.AIR
 
 
 ## Tall grass, ferns, flowers, dead bushes and pumpkins like the classic game: patches
@@ -798,7 +822,9 @@ func _pine(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: int,
 ## the bottom of shallow water.
 func _place_clay(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
 	var clay: int = _id["clay"]
-	for patch in 3:
+	for patch in 2:
+		if rng.randi_range(0, 1) == 0:
+			continue
 		var x0 := rng.randi_range(2, 13)
 		var z0 := rng.randi_range(2, 13)
 		var y := _surface_y(blocks, x0, z0)
@@ -816,6 +842,142 @@ func _place_clay(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
 					var here := blocks[i]
 					if here == _id["sand"] or here == _id["dirt"] or here == _id["gravel"]:
 						blocks[i] = clay
+
+
+## Cactus in deserts like the classic game: 10 tries per column, 1-3 high,
+## on sand with nothing beside it.
+func _place_cacti(blocks: PackedInt32Array, biomes: PackedByteArray, rng: RandomNumberGenerator) -> void:
+	if BIOME_NAMES[biomes[8 * 16 + 8]] != "desert":
+		return
+	var cactus: int = _id["cactus"]
+	for attempt in 10:
+		var x := rng.randi_range(1, 14)
+		var z := rng.randi_range(1, 14)
+		var y := _surface_y(blocks, x, z) + 1
+		var height := 1 + rng.randi_range(0, rng.randi_range(0, 2) + 1)
+		if y <= 0 or blocks[index(x, y - 1, z)] != _id["sand"]:
+			continue
+		for h in mini(height, 3):
+			var free := blocks[index(x, y + h, z)] == Blocks.AIR
+			for offset: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				if blocks[index(x + offset.x, y + h, z + offset.y)] != Blocks.AIR:
+					free = false
+			if not free:
+				break
+			blocks[index(x, y + h, z)] = cactus
+
+
+## Sugar cane like the classic game: 20 tries per column, 2-3 high, on grass,
+## dirt or sand right next to water.
+func _place_sugar_cane(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
+	var reeds: int = _id["sugar_cane_block"]
+	for attempt in 20:
+		var x := rng.randi_range(1, 14)
+		var z := rng.randi_range(1, 14)
+		var y := _surface_y(blocks, x, z) + 1
+		if y <= 0 or blocks[index(x, y, z)] != Blocks.AIR:
+			continue
+		var ground := Blocks.get_type(blocks[index(x, y - 1, z)]).name
+		if not (ground.begins_with("grass_") or ground == "dirt" or ground == "sand"):
+			continue
+		var by_water := false
+		for offset: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if blocks[index(x + offset.x, y - 1, z + offset.y)] == _water:
+				by_water = true
+		if not by_water:
+			continue
+		var height := mini(2 + rng.randi_range(0, rng.randi_range(0, 2) + 1), 3)
+		for h in height:
+			if blocks[index(x, y + h, z)] == Blocks.AIR:
+				blocks[index(x, y + h, z)] = reeds
+
+
+## Mushrooms like the classic game: brown ones in one column of 4, red ones in
+## one of 8, in patches on solid ground (mostly in caves: they need the dark).
+func _place_mushrooms(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
+	for kind: Array in [["brown_mushroom", 4], ["red_mushroom", 8]]:
+		if rng.randi_range(0, kind[1] - 1) != 0:
+			continue
+		var id: int = _id[kind[0]]
+		var x0 := rng.randi_range(0, 15)
+		var z0 := rng.randi_range(0, 15)
+		var y0 := rng.randi_range(1, maxi(_surface_y(blocks, x0, z0), 2))
+		for attempt in 64:
+			var x := x0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
+			var y := y0 + rng.randi_range(0, 3) - rng.randi_range(0, 3)
+			var z := z0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
+			if x < 0 or x > 15 or z < 0 or z > 15 or y < 1 or y >= HEIGHT - 1:
+				continue
+			# Under a roof: the open sky would be too bright.
+			if blocks[index(x, y, z)] == Blocks.AIR and Blocks.is_opaque_table[blocks[index(x, y - 1, z)]] == 1 \
+					and y < _surface_y(blocks, x, z):
+				blocks[index(x, y, z)] = id
+
+
+## Springs like the classic game: single water (50 tries) and lava (20 tries)
+## sources in cave walls - stone above, below and on three sides, air on
+## the fourth. They start flowing when the player comes near.
+func _place_springs(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
+	var stone: int = _id["stone"]
+	for kind: Array in [["water_spring", 50], ["lava_spring", 20]]:
+		for attempt in kind[1]:
+			var x := rng.randi_range(1, 14)
+			var z := rng.randi_range(1, 14)
+			var y := 0
+			if kind[0] == "water_spring":
+				y = rng.randi_range(0, rng.randi_range(0, 119) + 7)
+			else:
+				y = rng.randi_range(0, rng.randi_range(0, rng.randi_range(0, 111) + 7) + 7)
+			if y < 1 or y >= HEIGHT - 1 or blocks[index(x, y, z)] != stone:
+				continue
+			if blocks[index(x, y + 1, z)] != stone or blocks[index(x, y - 1, z)] != stone:
+				continue
+			var walls := 0
+			var air := 0
+			for offset: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var side := blocks[index(x + offset.x, y, z + offset.y)]
+				if side == stone:
+					walls += 1
+				elif side == Blocks.AIR:
+					air += 1
+			if walls == 3 and air == 1:
+				blocks[index(x, y, z)] = _id[kind[0]]
+
+
+## A big oak (sometimes in forests), like the classic game's big trees: a
+## tall trunk, a few branches reaching out and up, round leaf clusters at
+## their ends and at the top.
+func _big_oak(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: int, z: int) -> void:
+	var height := rng.randi_range(8, 12)
+	if not _trunk_fits(blocks, x, y, z, height):
+		return
+	var log_id: int = _id["oak_log"]
+	var leaves: int = _id["oak_leaves"]
+	blocks[index(x, y - 1, z)] = _id["dirt"]
+	var clusters: Array[Vector3i] = [Vector3i(x, y + height, z)]
+	for branch in rng.randi_range(3, 5):
+		var start_y := y + rng.randi_range(height / 2, height - 2)
+		var angle := rng.randf() * TAU
+		var length := rng.randi_range(2, 3)
+		var tip := Vector3i(x + roundi(cos(angle) * length), start_y + length - 1, z + roundi(sin(angle) * length))
+		tip.x = clampi(tip.x, 2, 13)
+		tip.z = clampi(tip.z, 2, 13)
+		# Logs from the trunk to the tip.
+		for step in length + 1:
+			var t := float(step) / length
+			var cell := Vector3i(roundi(lerpf(x, tip.x, t)), roundi(lerpf(start_y, tip.y, t)), roundi(lerpf(z, tip.z, t)))
+			if cell.y < HEIGHT and blocks[index(cell.x, cell.y, cell.z)] == Blocks.AIR:
+				blocks[index(cell.x, cell.y, cell.z)] = log_id
+		clusters.append(tip)
+	for cluster in clusters:
+		for dy in range(-1, 3):
+			var radius := 2.5 if dy < 2 else 1.5
+			for dx in range(-3, 4):
+				for dz in range(-3, 4):
+					if dx * dx + dz * dz + dy * dy * 0.5 <= radius * radius:
+						_set_if_air(blocks, cluster.x + dx, cluster.y + dy, cluster.z + dz, leaves)
+	for dy in height:
+		blocks[index(x, y + dy, z)] = log_id
 
 
 ## Ice on the sea surface of cold biomes; snow lying on the land and trees.

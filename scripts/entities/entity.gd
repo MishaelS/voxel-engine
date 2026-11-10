@@ -167,6 +167,8 @@ func _burn() -> void:
 	if in_lava:
 		damage(4)
 		fire_ticks = FIRE_TICKS
+	if EntityPhysics.touches_cactus(world, _x, _y, _z, half_width, height):
+		damage(1)
 	if not in_lava and EntityPhysics.touches_fire(world, _x, _y, _z, half_width, height):
 		damage(1)
 		fire_ticks = maxi(fire_ticks, 160)

@@ -79,6 +79,19 @@ static func is_free(world: VoxelWorld, x: float, y: float, z: float, half_width:
 		x + half_width - E, y + height - E, z + half_width - E).is_empty()
 
 
+## True if the box (slightly grown) touches a cactus.
+static func touches_cactus(world: VoxelWorld, x: float, y: float, z: float, half_width: float, height: float) -> bool:
+	if world == null:
+		return false
+	const E := 0.01
+	for by in range(floori(y - E), floori(y + height + E) + 1):
+		for bz in range(floori(z - half_width - E), floori(z + half_width + E) + 1):
+			for bx in range(floori(x - half_width - E), floori(x + half_width + E) + 1):
+				if Blocks.get_type(world.get_block(Vector3i(bx, by, bz))).name == "cactus":
+					return true
+	return false
+
+
 ## True if the box (slightly shrunk) touches fire.
 static func touches_fire(world: VoxelWorld, x: float, y: float, z: float, half_width: float, height: float) -> bool:
 	if world == null:

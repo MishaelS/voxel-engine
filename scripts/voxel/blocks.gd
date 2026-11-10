@@ -213,8 +213,41 @@ static func _register_all() -> bool:
 	for age in FireBehavior.MAX_AGE + 1:
 		register(_fire(age))
 	_register_building_blocks()
+	_register_nature()
 	_set_flammability()
 	return true
+
+
+# --- Nature (stage 4) ----------------------------------------------------------------
+
+## Cactus, sugar cane, mushrooms and springs (appended: ids stay stable).
+static func _register_nature() -> void:
+	var cactus := BlockType.column("cactus", 69, 70, 71).set_layer(Layer.CUTOUT).set_hardness(0.4) \
+		.set_height(0.999).set_light_opacity(0).set_on_update(Callable(NatureBehavior, "on_update")) \
+		.set_random_tick(Callable(NatureBehavior, "random_tick")) \
+		.set_collision([AABB(Vector3(1, 0, 1), Vector3(14, 15, 14))]).set_selection(AABB(Vector3(1, 0, 1), Vector3(14, 16, 14)))
+	cactus.shape = BlockType.Shape.MODEL
+	cactus.model = BlockModel.register([{"from": Vector3(1, 0, 1), "to": Vector3(15, 16, 15), "faces": {
+		BlockModel.UP: {"layer": 69, "uv": Rect2(0, 0, 16, 16)}, BlockModel.DOWN: {"layer": 71, "uv": Rect2(0, 0, 16, 16)},
+		BlockModel.EAST: {"layer": 70}, BlockModel.WEST: {"layer": 70}, BlockModel.SOUTH: {"layer": 70}, BlockModel.NORTH: {"layer": 70},
+	}}])
+	register(cactus)
+	var reeds := BlockType.cube("sugar_cane_block", 73).as_plant().set_item("sugar_cane") \
+		.set_on_update(Callable(NatureBehavior, "on_update")).set_random_tick(Callable(NatureBehavior, "random_tick")) \
+		.hidden_from_catalog()
+	reeds.replaceable = false
+	reeds.height = 1.0
+	register(reeds)
+	for mushroom: Array in [["brown_mushroom", 29, 1], ["red_mushroom", 28, 0]]:
+		var block := BlockType.cube(mushroom[0], mushroom[1]).as_plant().set_height(0.4) \
+			.set_light_emission(mushroom[2]).set_on_update(Callable(NatureBehavior, "on_update")) \
+			.set_random_tick(Callable(NatureBehavior, "random_tick"))
+		block.replaceable = false
+		register(block)
+	for family: String in ["water", "lava"]:
+		var spring := _liquid(family + "_spring", 0, family).hidden_from_catalog()
+		spring.display_tick = Callable(NatureBehavior, "spring_display_tick")
+		register(spring)
 
 
 # --- Building blocks (stage 3) ------------------------------------------------------
@@ -511,7 +544,7 @@ static func _sound_material(block: BlockType) -> String:
 		return ""
 	if n.contains("glass") or n == "ice" or n == "glowstone":
 		return "glass"
-	if n.ends_with("_wool"):
+	if n.ends_with("_wool") or n == "cactus":
 		return "cloth"
 	for wood in ["_log", "_planks", "crafting_table", "chest", "bed_", "torch", "pumpkin", "jack_o_lantern"]:
 		if n.contains(wood):

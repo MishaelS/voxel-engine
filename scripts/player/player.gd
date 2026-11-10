@@ -670,6 +670,8 @@ func _burn() -> void:
 	if in_lava and not is_creative():
 		damage(LAVA_DAMAGE)
 		fire_ticks = FIRE_TICKS
+	if EntityPhysics.touches_cactus(world, _x, _y, _z, HALF_WIDTH, HEIGHT):
+		damage(1) # cactus pricks
 	if not in_lava and not is_creative() and EntityPhysics.touches_fire(world, _x, _y, _z, HALF_WIDTH, HEIGHT):
 		# Walking in fire: 1 damage and 8 seconds of burning (the classic game).
 		damage(1)

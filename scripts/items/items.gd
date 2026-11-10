@@ -66,6 +66,11 @@ static func _register_all() -> bool:
 	register(ItemType.make("wooden_door", 43).stack(1))
 	register(ItemType.make("iron_door", 44).stack(1))
 	register(ItemType.make("sign", 42).stack(1))
+	register(ItemType.make("sugar_cane", 27).set_places("sugar_cane_block"))
+	register(ItemType.make("sugar", 13))
+	register(ItemType.make("bowl", 71))
+	register(ItemType.make("mushroom_stew", 72).stack(1).set_food(6, 0.6).set_container("bowl"))
+	register(ItemType.make("cactus_green", 110))
 	return true
 
 

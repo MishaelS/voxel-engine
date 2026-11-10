@@ -210,6 +210,9 @@ func _use() -> void:
 		if player.is_creative() or player.food.food < FoodStats.MAX_FOOD:
 			_eating = 0.0
 		return
+	if item.places != "":
+		_place_block(Blocks.id_of(item.places)) # sugar cane
+		return
 	match item.name:
 		"bucket":
 			_fill_bucket()
@@ -293,7 +296,10 @@ func _place_block(id: int) -> void:
 	if Blocks.family_ids(family).size() == 4 and Blocks.facing_table[id] >= 0:
 		id = Blocks.variant(family, Blocks.facing_toward(player.look_direction()))
 	var block := Blocks.get_type(id)
-	if block.shape == BlockType.Shape.CROSS and not PlantBehavior.can_stay(id, world.get_block(pos + Vector3i.DOWN)):
+	if block.on_update == Callable(NatureBehavior, "on_update"):
+		if not NatureBehavior.can_stay(world, pos, id):
+			return # cactus on sand, sugar cane by water, mushrooms in the dark
+	elif block.shape == BlockType.Shape.CROSS and not PlantBehavior.can_stay(id, world.get_block(pos + Vector3i.DOWN)):
 		return # plants only on their ground
 	if family == "torch":
 		# On the floor, or on the wall that was clicked (leaning away from it).
@@ -472,6 +478,13 @@ func _continue_eating(ticks: float) -> void:
 		Sounds.play("random/burp", null, 0.5, randf_range(0.9, 1.0))
 		if not player.is_creative():
 			player.inventory.take(player.selected_slot)
+			var container := Items.get_type(id).container
+			if container != "":
+				# The bowl stays in hand.
+				if player.inventory.is_empty_slot(player.selected_slot):
+					player.inventory.set_slot(player.selected_slot, Items.id_of(container), 1)
+				elif player.inventory.add(Items.id_of(container), 1) > 0:
+					player.throw_items(Items.id_of(container), 1)
 		_stop_eating()
 		_place_delay = PLACE_DELAY_TICKS * 2
 

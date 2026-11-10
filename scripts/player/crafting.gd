@@ -65,6 +65,11 @@ static func _build_recipes() -> Array:
 		{"pattern": ["BB", "BB"], "keys": {"B": "brick"}, "result": "bricks", "count": 1},
 		{"pattern": ["CC", "CC"], "keys": {"C": "clay_ball"}, "result": "clay", "count": 1},
 		{"pattern": ["P", "P", "P"], "keys": {"P": "paper"}, "result": "book", "count": 1},
+		{"pattern": ["S"], "keys": {"S": "sugar_cane"}, "result": "sugar", "count": 1},
+		{"pattern": ["SSS"], "keys": {"S": "sugar_cane"}, "result": "paper", "count": 3},
+		{"pattern": ["P P", " P "], "keys": {"P": PLANKS}, "result": "bowl", "count": 4},
+		{"pattern": ["B", "R", "W"], "keys": {"B": "brown_mushroom", "R": "red_mushroom", "W": "bowl"}, "result": "mushroom_stew", "count": 1},
+		{"pattern": ["R", "B", "W"], "keys": {"B": "brown_mushroom", "R": "red_mushroom", "W": "bowl"}, "result": "mushroom_stew", "count": 1},
 		{"pattern": ["PPP", "BBB", "PPP"], "keys": {"P": PLANKS, "B": "book"}, "result": "bookshelf", "count": 1},
 	]
 	for block: String in ["iron", "gold", "diamond"]:

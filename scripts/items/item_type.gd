@@ -20,6 +20,10 @@ var food := 0
 var saturation := 0.0
 ## Ticks it burns in a furnace (0 = not fuel).
 var fuel := 0
+## The block this item places (sugar cane), "" = none.
+var places := ""
+## What is left after eating it (the bowl of a stew), "" = nothing.
+var container := ""
 
 
 static func make(item_name: String, icon_tile: int) -> ItemType:
@@ -53,6 +57,16 @@ func set_durability(uses: int) -> ItemType:
 func set_food(points: int, saturation_modifier: float) -> ItemType:
 	food = points
 	saturation = saturation_modifier
+	return self
+
+
+func set_places(block_name: String) -> ItemType:
+	places = block_name
+	return self
+
+
+func set_container(item_name: String) -> ItemType:
+	container = item_name
 	return self
 
 
