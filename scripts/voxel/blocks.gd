@@ -129,7 +129,8 @@ static func _register_all() -> bool:
 	register(BlockType.cube("coal_ore", 34).set_hardness(3.0).set_tool("pickaxe", 0).set_drops([{"item": "coal"}]))
 	register(BlockType.cube("iron_ore", 33).set_hardness(3.0).set_tool("pickaxe", 1))
 	register(BlockType.cube("gold_ore", 32).set_hardness(3.0).set_tool("pickaxe", 2))
-	register(BlockType.cube("lapis_ore", 160).set_hardness(3.0).set_tool("pickaxe", 1))
+	register(BlockType.cube("lapis_ore", 160).set_hardness(3.0).set_tool("pickaxe", 1)
+		.set_drops([{"item": "lapis_lazuli", "min": 4, "max": 8}]))
 	register(BlockType.cube("diamond_ore", 50).set_hardness(3.0).set_tool("pickaxe", 2).set_drops([{"item": "diamond"}]))
 	register(BlockType.cube("redstone_ore", 51).set_hardness(3.0).set_tool("pickaxe", 2).set_drops([{"item": "redstone", "min": 4, "max": 5}]))
 	register(BlockType.cube("iron_block", 22).set_hardness(5.0).set_tool("pickaxe", 1))
@@ -216,8 +217,17 @@ static func _register_all() -> bool:
 	_register_nature()
 	_register_farming()
 	_register_dungeons()
+	_register_music()
 	_set_flammability()
 	return true
+
+
+# --- Music (stage 8) -----------------------------------------------------------------
+
+## Note blocks and jukeboxes (MusicBehavior) (appended: ids stay stable).
+static func _register_music() -> void:
+	register(BlockType.cube("note_block", 74).set_hardness(0.8).set_tool("axe"))
+	register(BlockType.column("jukebox", 75, 74).set_hardness(2.0).set_tool("axe"))
 
 
 # --- Dungeons (stage 6) --------------------------------------------------------------

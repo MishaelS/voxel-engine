@@ -58,6 +58,11 @@ func type_name() -> String:
 	return "entity"
 
 
+## The box attacks and arrows hit (its body by default).
+func hit_box() -> AABB:
+	return AABB(feet() - Vector3(half_width, 0, half_width), Vector3(half_width * 2, height, half_width * 2))
+
+
 ## Whether attacks and arrows can hit it (arrows themselves can't).
 func can_be_hit() -> bool:
 	return true

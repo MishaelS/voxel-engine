@@ -90,6 +90,12 @@ var held_item: HeldItem
 var body: PlayerModel
 ## F5: the camera behind the player, like the classic game.
 var third_person := false
+## The creature being ridden (a saddled pig), or null.
+var vehicle: Entity
+## The bobber of the cast fishing rod, or null.
+var fishing_bobber: FishingBobber
+## The map in hand (shown instead of the held item).
+var map_view: MapView
 
 ## Velocity in blocks per tick.
 var velocity := Vector3.ZERO
@@ -166,6 +172,9 @@ func _ready() -> void:
 	held_item = HeldItem.new()
 	held_item.player = self
 	camera.add_child(held_item)
+	var animations := ItemAnimations.new()
+	animations.player = self
+	add_child(animations)
 	body = PlayerModel.new()
 	body.player = self
 	body.visible = false
@@ -177,6 +186,9 @@ func _ready() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 5
 	add_child(layer)
+	map_view = MapView.new()
+	map_view.player = self
+	layer.add_child(map_view)
 	_sleep_fade = ColorRect.new()
 	_sleep_fade.color = Color(0.03, 0.03, 0.06, 0.0)
 	_sleep_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -429,7 +441,7 @@ func _update_camera(alpha: float, delta: float) -> void:
 				distance = maxf(float(hit.distance) - 0.3, 0.3)
 		transform_3d.origin += back.normalized() * distance
 	body.visible = third_person and not sleeping
-	held_item.visible = not body.visible
+	held_item.hidden = body.visible or (map_view != null and map_view.visible)
 	camera.transform = transform_3d
 	var base_fov: float = Settings.get_value("fov")
 	camera.fov = clampf(base_fov * lerpf(_prev_fov_factor, _fov_factor, alpha), 1.0, 170.0)
@@ -454,6 +466,9 @@ func _tick() -> void:
 		heal(1) # peaceful: health comes back by itself
 	if sleeping:
 		_tick_sleep()
+		return
+	if vehicle:
+		_tick_riding()
 		return
 	if world and not world.is_inside(Vector3i(floori(_x), 0, floori(_z))) and _y > 0.0:
 		return # the ground is not loaded yet: wait in place
@@ -787,6 +802,37 @@ func _through_armor(amount: int) -> int:
 	var scaled := amount * (25 - value) + _armor_remainder
 	_armor_remainder = scaled % 25
 	return scaled / 25
+
+
+## Gets on a saddled pig, like the classic game.
+func mount(creature: Entity) -> void:
+	vehicle = creature
+	velocity = Vector3.ZERO
+	sprinting = false
+	flying = false
+
+
+## Riding: sitting on the creature (it goes where it wants, like Beta's
+## pigs); Shift gets off.
+func _tick_riding() -> void:
+	var off := not GameInput.is_blocked() and Input.is_action_pressed("sneak")
+	if off or vehicle.removed or vehicle.is_dead():
+		var at := vehicle.feet() + Vector3(0, vehicle.height + 0.1, 0)
+		vehicle = null
+		_x = at.x
+		_y = at.y
+		_z = at.z
+		velocity = Vector3.ZERO
+		_fall_distance = 0.0
+		return
+	var seat := vehicle.feet() + Vector3(0, vehicle.height * 0.75 - 0.2, 0)
+	_x = seat.x
+	_y = seat.y
+	_z = seat.z
+	velocity = Vector3.ZERO
+	_fall_distance = 0.0
+	sneaking = false
+	in_water = _touches_liquid_at(_x, _y, _z, "water")
 
 
 ## Pushed away from a hit (mobs, arrows), like the classic knockback.

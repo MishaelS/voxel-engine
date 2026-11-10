@@ -35,7 +35,7 @@ func _ready() -> void:
 	_material = ShaderMaterial.new()
 	_material.shader = preload("res://shaders/particle.gdshader")
 	_material.set_shader_parameter("tiles", BlockMaterials.tiles())
-	_material.set_shader_parameter("items", load(Items.ICONS_PATH))
+	_material.set_shader_parameter("items", Items.icons_texture())
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	quad.material = _material
@@ -121,6 +121,21 @@ func explosion(center: Vector3, power: float) -> void:
 			Color(gray, gray, gray, 0.9), _rng.randi_range(12, 30), -0.01, true)
 	for i in 6:
 		_add(center, Vector3.ZERO, Color(-2, 0, 0, power * 0.3), Color(1.0, 0.95, 0.8, 0.8), 3, 0.0, true)
+
+
+## A splash on water (a fish biting): droplets thrown up.
+func splash(point: Vector3) -> void:
+	for i in 12:
+		var velocity := Vector3(_rng.randf_range(-0.08, 0.08), _rng.randf_range(0.08, 0.2), _rng.randf_range(-0.08, 0.08))
+		_add(point, velocity, Color(-2, 0, 0, 0.06), Color(0.55, 0.7, 1.0, 0.9), _rng.randi_range(8, 16), 0.04, false)
+
+
+## A note floating up from a note block, colored by its pitch like the game.
+func note(point: Vector3, pitch: int) -> void:
+	var f := pitch / 24.0
+	var color := Color(maxf(sin(f * TAU) * 0.65 + 0.35, 0.0), maxf(sin((f + 1.0 / 3.0) * TAU) * 0.65 + 0.35, 0.0),
+		maxf(sin((f + 2.0 / 3.0) * TAU) * 0.65 + 0.35, 0.0), 1.0)
+	_add(point, Vector3(0, 0.02, 0), Color(-2, 0, 0, 0.18), color, 20, 0.0, true)
 
 
 ## Hearts rising (a wolf tamed).

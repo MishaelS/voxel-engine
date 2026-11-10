@@ -5,7 +5,12 @@ chord's pentatonic scale in the right hand, a quiet pad and reverb.
 Each track is about two minutes; the game plays one every 10-20 minutes.
 Replace them with any music (mp3 / ogg / wav in assets/music).
 
+With --records DIR it makes the music discs' tracks instead (DIR/13.mp3,
+DIR/cat.mp3, played by jukeboxes): our own pieces, not the classic ones -
+"13" slow and dark in a minor key, "cat" brighter and quicker.
+
 Usage: python3 tools/make_music.py assets/music
+       python3 tools/make_music.py --records assets/records
 Needs numpy, scipy and the `lame` mp3 encoder.
 """
 import os
@@ -25,6 +30,11 @@ TRACKS = [
     ("calm1", 11, 66, [(48, "maj7"), (45, "min7"), (41, "maj7"), (43, "add9")]),
     ("calm2", 23, 58, [(45, "min7"), (41, "maj7"), (48, "add9"), (43, "sus2")]),
     ("calm3", 37, 62, [(50, "min7"), (43, "add9"), (48, "maj7"), (45, "min7")]),
+]
+# Music discs: (name, seed, tempo, chords).
+RECORDS = [
+    ("13", 113, 52, [(45, "min7"), (44, "sus2"), (41, "min7"), (40, "sus2")]),
+    ("cat", 127, 92, [(48, "add9"), (43, "maj7"), (45, "min7"), (41, "add9")]),
 ]
 CHORDS = {"maj7": [0, 4, 7, 11], "min7": [0, 3, 7, 10], "add9": [0, 4, 7, 14], "sus2": [0, 2, 7, 12]}
 PENTATONIC = {"maj7": [0, 2, 4, 7, 9], "min7": [0, 3, 5, 7, 10], "add9": [0, 2, 4, 7, 9], "sus2": [0, 2, 5, 7, 9]}
@@ -117,4 +127,10 @@ def main(root):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    if sys.argv[1] == "--records":
+        os.makedirs(sys.argv[2], exist_ok=True)
+        for name, seed, bpm, chords in RECORDS:
+            write_mp3(os.path.join(sys.argv[2], name + ".mp3"), render(seed, bpm, chords))
+            print("wrote", name)
+    else:
+        main(sys.argv[1])

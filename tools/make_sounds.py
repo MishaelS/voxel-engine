@@ -13,7 +13,8 @@ Groups (each with a few variants, picked at random):
   ambient/caveN
   mob/<mob>/sayN, hurtN, deathN (pig, cow, sheep, chicken, wolf, zombie,
   skeleton, spider, creeper, slime), mob/creeper/fuse, mob/slime/bigN,
-  smallN, random/explodeN, bow, bowhit, break
+  smallN, random/explodeN, bow, bowhit, break,
+  note/harp, bass, bd, snare, hat (note blocks; the game changes the pitch)
 Materials: stone, wood, gravel, grass, sand, cloth, snow.
 
 Usage: python3 tools/make_sounds.py assets/sounds
@@ -261,6 +262,23 @@ def mobs(root):
     write(os.path.join(root, "random", "break.wav"),
           highpass(noise(0.25), 1500) * env(0.25, 0.001, 0.04)
           + 0.6 * np.sin(2 * np.pi * 900 * t(0.25)) * env(0.25, 0.001, 0.02))
+    notes(root)
+
+
+
+def notes(root):
+    """Note block instruments, all at F#4 (the game pitches them)."""
+    f = 369.99
+    x = t(1.2)
+    harp = sum(np.sin(2 * np.pi * f * m * x) * np.exp(-x * (3 + 2 * m)) / m for m in (1, 2, 3, 4))
+    write(os.path.join(root, "note", "harp.wav"), harp * env(1.2, 0.002, 0.6))
+    bass = sum(np.sin(2 * np.pi * f / 4 * m * x) * np.exp(-x * (4 + m)) / m for m in (1, 2, 3))
+    write(os.path.join(root, "note", "bass.wav"), bass * env(1.2, 0.003, 0.4))
+    x = t(0.4)
+    write(os.path.join(root, "note", "bd.wav"), np.sin(2 * np.pi * (60 + 120 * np.exp(-x * 30)) * x) * env(0.4, 0.002, 0.12))
+    write(os.path.join(root, "note", "snare.wav"), (highpass(noise(0.4), 1200) + 0.4 * np.sin(2 * np.pi * 190 * x)) * env(0.4, 0.001, 0.07))
+    x = t(0.15)
+    write(os.path.join(root, "note", "hat.wav"), highpass(noise(0.15), 5000) * env(0.15, 0.001, 0.02))
 
 
 if __name__ == "__main__":

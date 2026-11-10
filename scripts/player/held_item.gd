@@ -30,6 +30,8 @@ var player: Player
 ## Hidden while another camera is used (isometric view, screenshots): the
 ## block floats next to the player's eyes in the world.
 var hidden := false
+## Items drawn turned half around in hand, like the classic game's.
+const TURNED_AROUND: Array[String] = ["fishing_rod"]
 
 var _mesh_instance := MeshInstance3D.new()
 var _material := ShaderMaterial.new()
@@ -47,7 +49,7 @@ func _ready() -> void:
 		BlockMaterials.tiles())
 	_material.render_priority = 100
 	_item_material.shader = preload("res://shaders/item_held.gdshader")
-	_item_material.set_shader_parameter("items", load(Items.ICONS_PATH))
+	_item_material.set_shader_parameter("items", Items.icons_texture())
 	_item_material.render_priority = 100
 	_plant_material.shader = _item_material.shader
 	_plant_material.set_shader_parameter("items", load(Blocks.ATLAS_PATH))
@@ -133,6 +135,10 @@ func _pose() -> void:
 	if not ItemMeshes.is_flat(_shown):
 		# The block's mesh spans 0..1: center it on the pivot.
 		_mesh_instance.transform = Transform3D(Basis.IDENTITY, Vector3(-0.5, -0.5, -0.5))
+	elif Items.name_of(_shown) in TURNED_AROUND:
+		# Like the game's "rotate around when rendering" items: the rod is
+		# held turned half around, so its line hangs from the far side.
+		_mesh_instance.transform = Transform3D(Basis(Vector3.UP, PI), Vector3.ZERO) * ITEM_IN_HAND
 	else:
 		_mesh_instance.transform = ITEM_IN_HAND
 

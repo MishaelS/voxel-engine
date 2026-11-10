@@ -60,6 +60,8 @@ var wool_color := "white"
 var size := 1
 var tamed := false
 var sitting := false
+## Pigs: wearing a saddle (the player can ride them).
+var saddled := false
 var angry := false
 
 var target: Node3D
@@ -423,6 +425,16 @@ func interact(player: Player, item_id: int) -> bool:
 				if not player.is_creative():
 					player.inventory.take(player.selected_slot)
 				return true
+		"pig":
+			if not saddled and item_name == "saddle":
+				saddled = true
+				_update_wool()
+				if not player.is_creative():
+					player.inventory.take(player.selected_slot)
+				return true
+			if saddled and player.vehicle == null:
+				player.mount(self)
+				return true
 		"cow":
 			if item_name == "bucket":
 				if not player.is_creative():
@@ -452,13 +464,18 @@ func interact(player: Player, item_id: int) -> bool:
 	return false
 
 
-## The wool color a dye gives (the dyes in the game so far).
+## The wool color a dye gives.
 static func _dye_color(item_name: String) -> String:
-	return {"bone_meal": "white", "cactus_green": "green", "cocoa_beans": "brown", "ink_sac": "black"}.get(item_name, "")
+	return Items.DYE_COLORS.get(item_name, "")
 
 
 func _update_wool() -> void:
-	if _model.is_empty() or mob_type != "sheep":
+	if _model.is_empty():
+		return
+	for part: Dictionary in _model.spec.parts:
+		if part.get("saddle", false):
+			(_model.instances[part.name] as MeshInstance3D).visible = saddled
+	if mob_type != "sheep":
 		return
 	# The fleece: the model's parts marked "wool" (body, head and legs).
 	for part: Dictionary in _model.spec.parts:
@@ -596,7 +613,7 @@ func _turn_head(node: Node3D) -> void:
 
 func save_state() -> Dictionary:
 	var state := super()
-	state.merge({"sheared": sheared, "wool": wool_color, "size": size, "tamed": tamed, "sitting": sitting})
+	state.merge({"sheared": sheared, "wool": wool_color, "size": size, "tamed": tamed, "sitting": sitting, "saddled": saddled})
 	return state
 
 
@@ -607,6 +624,8 @@ func load_state(saved: Dictionary) -> void:
 	size = saved.get("size", 1)
 	tamed = saved.get("tamed", false)
 	sitting = saved.get("sitting", false)
+	saddled = saved.get("saddled", false)
+	_update_wool()
 	_apply_size()
 	health = mini(saved.get("health", max_health), max_health)
 	_update_wool()

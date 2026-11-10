@@ -99,7 +99,30 @@ static func _register_all() -> bool:
 	register(ItemType.make("raw_fish", 89).set_food(2, 0.1, 2))
 	register(ItemType.make("cooked_fish", 90).set_food(5, 0.6, 5))
 	_register_armor()
+	for dye: Array in NEW_DYES:
+		register(ItemType.make(dye[0], dye[1]))
+	register(ItemType.make("compass", ItemAnimations.COMPASS_TILE))
+	register(ItemType.make("clock", ItemAnimations.CLOCK_TILE))
+	register(ItemType.make("map", 60).stack(1))
+	register(ItemType.make("fishing_rod", 69).set_durability(64))
+	register(ItemType.make("painting", 26))
 	return true
+
+
+## The 16 dyes like the classic game: dye item -> wool color. Bone meal,
+## ink sacs, cocoa beans and cactus green were there before; the rest are
+## registered here (name, icon).
+const DYE_COLORS := {
+	"bone_meal": "white", "orange_dye": "orange", "magenta_dye": "magenta", "light_blue_dye": "light_blue",
+	"dandelion_yellow": "yellow", "lime_dye": "lime", "pink_dye": "pink", "gray_dye": "gray",
+	"light_gray_dye": "light_gray", "cyan_dye": "cyan", "purple_dye": "purple", "lapis_lazuli": "blue",
+	"cocoa_beans": "brown", "cactus_green": "green", "rose_red": "red", "ink_sac": "black",
+}
+const NEW_DYES := [
+	["rose_red", 94], ["dandelion_yellow", 127], ["lapis_lazuli", 142], ["purple_dye", 158], ["cyan_dye", 174],
+	["light_gray_dye", 190], ["gray_dye", 79], ["pink_dye", 95], ["lime_dye", 111], ["light_blue_dye", 143],
+	["magenta_dye", 159], ["orange_dye", 175],
+]
 
 
 ## Armor like Beta 1.7.3: every material gives the same points (helmet 3,
@@ -186,6 +209,30 @@ static func fuel_ticks(id: int) -> int:
 	return BLOCK_FUEL.get(Blocks.get_type(id).name, 0) if id > Blocks.AIR else 0
 
 
+static var _icons_texture: ImageTexture
+static var _icons_image: Image
+
+
+## The item atlas as one shared texture everything draws items with (the
+## inventory, the hand, dropped items, particles), so animated icons
+## (compass, clock: ItemAnimations) change everywhere at once.
+static func icons_texture() -> ImageTexture:
+	if _icons_texture == null:
+		_icons_image = (load(ICONS_PATH) as Texture2D).get_image()
+		if _icons_image.is_compressed():
+			_icons_image.decompress()
+		_icons_image.convert(Image.FORMAT_RGBA8)
+		_icons_texture = ImageTexture.create_from_image(_icons_image)
+	return _icons_texture
+
+
+## The item atlas picture (the one icons_texture() shows); after changing
+## it, call icons_texture().update(icons_image()).
+static func icons_image() -> Image:
+	icons_texture()
+	return _icons_image
+
+
 ## Display name ("iron_ingot" -> "Iron Ingot"), translated.
 static func display_name(id: int) -> String:
 	return Lang.t(name_of(id).capitalize())
@@ -198,7 +245,7 @@ static func icon(id: int) -> Texture2D:
 		return null
 	if not _icons.has(id):
 		var texture := AtlasTexture.new()
-		texture.atlas = load(ICONS_PATH)
+		texture.atlas = icons_texture()
 		texture.region = Rect2((item.icon % 16) * 16, (item.icon / 16) * 16, 16, 16)
 		_icons[id] = texture
 	return _icons[id]

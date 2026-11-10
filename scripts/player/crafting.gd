@@ -9,6 +9,8 @@ extends RefCounted
 ## of item names that are all accepted), the result and its count.
 ## A "$" result means "the same kind as the ingredient" (oak log -> oak
 ## planks) via the result_by_ingredient table.
+## Shapeless recipes ({"shapeless": [item names], ...}) take their items
+## anywhere in the grid (dyes, dyed wool).
 
 const PLANKS := ["oak_planks", "birch_planks", "spruce_planks"]
 const WOOL := [
@@ -80,6 +82,13 @@ static func _build_recipes() -> Array:
 		{"pattern": ["F", "S", "E"], "keys": {"F": "flint", "S": "stick", "E": "feather"}, "result": "arrow", "count": 4},
 		{"pattern": [" I", "I "], "keys": {"I": "iron_ingot"}, "result": "shears", "count": 1},
 		{"pattern": ["B"], "keys": {"B": "bone"}, "result": "bone_meal", "count": 3},
+		{"pattern": [" I ", "IRI", " I "], "keys": {"I": "iron_ingot", "R": "redstone"}, "result": "compass", "count": 1},
+		{"pattern": ["PPP", "PRP", "PPP"], "keys": {"P": PLANKS, "R": "redstone"}, "result": "note_block", "count": 1},
+		{"pattern": ["PPP", "PDP", "PPP"], "keys": {"P": PLANKS, "D": "diamond"}, "result": "jukebox", "count": 1},
+		{"pattern": ["SSS", "SWS", "SSS"], "keys": {"S": "stick", "W": WOOL}, "result": "painting", "count": 1},
+		{"pattern": ["  S", " SW", "S W"], "keys": {"S": "stick", "W": "string"}, "result": "fishing_rod", "count": 1},
+		{"pattern": ["PPP", "PCP", "PPP"], "keys": {"P": "paper", "C": "compass"}, "result": "map", "count": 1},
+		{"pattern": [" G ", "GRG", " G "], "keys": {"G": "gold_ingot", "R": "redstone"}, "result": "clock", "count": 1},
 		{"pattern": ["MMM", "SES", "WWW"], "keys": {"M": "milk_bucket", "S": "sugar", "E": "egg", "W": "wheat"}, "result": "cake", "count": 1},
 		{"pattern": ["WCW"], "keys": {"W": "wheat", "C": "cocoa_beans"}, "result": "cookie", "count": 8},
 		{"pattern": ["GGG", "GAG", "GGG"], "keys": {"G": "gold_block", "A": "apple"}, "result": "golden_apple", "count": 1},
@@ -97,10 +106,39 @@ static func _build_recipes() -> Array:
 		for kind: String in TOOL_PATTERNS:
 			recipes.append({"pattern": TOOL_PATTERNS[kind], "keys": {"M": TOOL_MATERIALS[material], "S": "stick"},
 				"result": "%s_%s" % [material, kind], "count": 1})
+	recipes.append_array(_dye_recipes())
 	for material: String in ARMOR_MATERIALS:
 		for piece: String in ARMOR_PATTERNS:
 			recipes.append({"pattern": ARMOR_PATTERNS[piece], "keys": {"M": ARMOR_MATERIALS[material]},
 				"result": "%s_%s" % [material, piece], "count": 1})
+	return recipes
+
+
+## Dyes like the classic game: from flowers and lapis, mixed into the
+## other colors, and dyeing white wool.
+static func _dye_recipes() -> Array:
+	var recipes := [
+		{"shapeless": ["rose"], "result": "rose_red", "count": 2},
+		{"shapeless": ["dandelion"], "result": "dandelion_yellow", "count": 2},
+		{"pattern": ["LLL", "LLL", "LLL"], "keys": {"L": "lapis_lazuli"}, "result": "lapis_block", "count": 1},
+		{"pattern": ["B"], "keys": {"B": "lapis_block"}, "result": "lapis_lazuli", "count": 9},
+		{"shapeless": ["rose_red", "dandelion_yellow"], "result": "orange_dye", "count": 2},
+		{"shapeless": ["lapis_lazuli", "rose_red"], "result": "purple_dye", "count": 2},
+		{"shapeless": ["lapis_lazuli", "cactus_green"], "result": "cyan_dye", "count": 2},
+		{"shapeless": ["gray_dye", "bone_meal"], "result": "light_gray_dye", "count": 2},
+		{"shapeless": ["ink_sac", "bone_meal", "bone_meal"], "result": "light_gray_dye", "count": 3},
+		{"shapeless": ["ink_sac", "bone_meal"], "result": "gray_dye", "count": 2},
+		{"shapeless": ["rose_red", "bone_meal"], "result": "pink_dye", "count": 2},
+		{"shapeless": ["cactus_green", "bone_meal"], "result": "lime_dye", "count": 2},
+		{"shapeless": ["lapis_lazuli", "bone_meal"], "result": "light_blue_dye", "count": 2},
+		{"shapeless": ["purple_dye", "pink_dye"], "result": "magenta_dye", "count": 2},
+		{"shapeless": ["lapis_lazuli", "rose_red", "pink_dye"], "result": "magenta_dye", "count": 3},
+		{"shapeless": ["lapis_lazuli", "rose_red", "rose_red", "bone_meal"], "result": "magenta_dye", "count": 4},
+	]
+	for dye: String in Items.DYE_COLORS:
+		var color: String = Items.DYE_COLORS[dye]
+		if color != "white":
+			recipes.append({"shapeless": [dye, "white_wool"], "result": color + "_wool", "count": 1})
 	return recipes
 
 
@@ -123,6 +161,10 @@ static func result_of(grid: PackedInt32Array, width: int) -> Dictionary:
 	if max_x < 0:
 		return {}
 	for recipe: Dictionary in RECIPES:
+		if recipe.has("shapeless"):
+			if _match_shapeless(recipe.shapeless, grid):
+				return {"id": Items.id_of(recipe.result), "count": recipe.count}
+			continue
 		var pattern: Array = recipe.pattern
 		if pattern.size() != max_y - min_y + 1 or (pattern[0] as String).length() != max_x - min_x + 1:
 			continue
@@ -134,6 +176,19 @@ static func result_of(grid: PackedInt32Array, width: int) -> Dictionary:
 					result_name = recipe.result_by_ingredient[Items.name_of(ingredient)]
 				return {"id": Items.id_of(result_name), "count": recipe.count}
 	return {}
+
+
+## Whether the grid holds exactly these items (one each), anywhere.
+static func _match_shapeless(names: Array, grid: PackedInt32Array) -> bool:
+	var wanted := names.duplicate()
+	for id in grid:
+		if id == Blocks.AIR:
+			continue
+		var at := wanted.find(Items.name_of(id))
+		if at < 0:
+			return false
+		wanted.remove_at(at)
+	return wanted.is_empty()
 
 
 ## The (single) ingredient kind if the grid matches the recipe, else -1.

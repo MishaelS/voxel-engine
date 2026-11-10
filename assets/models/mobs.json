@@ -603,6 +603,60 @@
      16
     ],
     "role": "leg_a"
+   },
+   {
+    "name": "saddle",
+    "size": [
+     10,
+     1,
+     8
+    ],
+    "from": [
+     -5,
+     13,
+     -4
+    ],
+    "pivot": [
+     0,
+     9,
+     0
+    ],
+    "uv": [
+     0,
+     0
+    ],
+    "role": "",
+    "parent": "body",
+    "texture": "pig_saddle",
+    "inflate": 0.3,
+    "saddle": true
+   },
+   {
+    "name": "saddle_strap",
+    "size": [
+     10,
+     6,
+     2
+    ],
+    "from": [
+     -5,
+     7,
+     -1
+    ],
+    "pivot": [
+     0,
+     9,
+     0
+    ],
+    "uv": [
+     0,
+     10
+    ],
+    "role": "",
+    "parent": "body",
+    "texture": "pig_saddle",
+    "inflate": 0.4,
+    "saddle": true
    }
   ]
  },

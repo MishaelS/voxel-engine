@@ -76,6 +76,11 @@ var natural_regeneration := true
 ## doHunger game rule: hunger like Beta 1.8 (on), or like Beta 1.7.3 (off):
 ## no food bar, food is eaten at once and heals right away.
 var hunger := true
+## Maps drawn so far: number -> {x, z (center), colors} (see Maps).
+var maps := {}
+## Jukeboxes playing: position -> AudioStreamPlayer3D (MusicBehavior).
+var record_players := {}
+var next_map_id := 0
 ## Where this world is saved (WorldSave.current when started from the
 ## title screen); null = not saved.
 var save: WorldSave
@@ -913,6 +918,8 @@ func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true, e
 		return
 	if Blocks.family_of(id) == "dungeon_chest":
 		DungeonBehavior.open_chest(self, pos) # its loot spills out
+	if Blocks.family_of(id) == "jukebox":
+		MusicBehavior.eject(self, pos) # the disc pops out
 	if effects:
 		particles.break_block(pos, id)
 		Sounds.play_block("break", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
@@ -945,6 +952,8 @@ static func _entity_type(id: int) -> String:
 		return "furnace"
 	if family == "sign" or family == "wall_sign":
 		return "sign"
+	if family == "jukebox" or family == "note_block":
+		return family
 	return ""
 
 
@@ -974,6 +983,9 @@ func block_entity(pos: Vector3i) -> Dictionary:
 	if not _block_entities.has(pos) or _block_entities[pos].type != type:
 		if type == "sign":
 			_block_entities[pos] = {"type": "sign", "lines": ["", "", "", ""]}
+			return _block_entities[pos]
+		if type == "jukebox" or type == "note_block":
+			_block_entities[pos] = {"type": type, "record": 0} if type == "jukebox" else {"type": type, "note": 0}
 			return _block_entities[pos]
 		var entity := {"type": type, "inventory": Inventory.new(CHEST_SIZE if type == "chest" else FURNACE_SIZE)}
 		if type == "furnace":
@@ -1407,7 +1419,8 @@ func save_state() -> Dictionary:
 			entity.inventory = (entity.inventory as Inventory).save_state()
 		saved_block_entities[pos] = entity
 	return {"game_time": clock.game_time, "day_time": clock.day_time, "rules": rules,
-		"block_entities": saved_block_entities, "items": items.save_state(), "entities": entities.save_state()}
+		"block_entities": saved_block_entities, "items": items.save_state(), "entities": entities.save_state(),
+		"maps": maps, "next_map_id": next_map_id}
 
 
 func _restore_state() -> void:
@@ -1425,6 +1438,8 @@ func _restore_state() -> void:
 		_block_entities[pos] = entity
 	items.load_state(world_state.get("items", []))
 	entities.load_state(world_state.get("entities", []))
+	maps = world_state.get("maps", {})
+	next_map_id = world_state.get("next_map_id", 0)
 	clock.day_time = world_state.get("day_time", start_day_time)
 	var rules: Dictionary = world_state.get("rules", {})
 	for rule_name: String in rules:

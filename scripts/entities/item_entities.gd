@@ -308,7 +308,7 @@ static func _flat_material(id: int) -> ShaderMaterial:
 	if not _flat_materials.has(path):
 		var material := ShaderMaterial.new()
 		material.shader = preload("res://shaders/item_world.gdshader")
-		material.set_shader_parameter("items", load(path))
+		material.set_shader_parameter("items", ItemMeshes.atlas_texture(id))
 		_flat_materials[path] = material
 	return _flat_materials[path]
 

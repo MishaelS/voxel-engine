@@ -131,6 +131,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_break_delay = 0.0 # a fresh click breaks right away in creative
 				if target_entity and not player.dead and not player.sleeping:
 					_attack(target_entity)
+				elif target.get("hit", false) and Blocks.family_of(target.block) == "note_block":
+					MusicBehavior.play_note(world, target.pos)
 				get_viewport().set_input_as_handled()
 		MOUSE_BUTTON_RIGHT:
 			if _captured():
@@ -271,6 +273,13 @@ func _use() -> void:
 			_strike_flint()
 		"bow":
 			_shoot_bow()
+		"fishing_rod":
+			_fish()
+		"painting":
+			if hit and Painting.hang(world, target.pos, target.normal):
+				player.swing()
+				if not player.is_creative():
+					player.inventory.take(player.selected_slot)
 		"bone_meal":
 			if hit and FarmBehavior.bone_meal(world, target.pos):
 				player.swing()
@@ -291,6 +300,10 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 	match family:
 		"crafting_table":
 			_screen().open_crafting_table()
+		"jukebox":
+			return MusicBehavior.use_jukebox(world, pos, player, player.held_block())
+		"note_block":
+			MusicBehavior.tune(world, pos)
 		"chest", "chest_left", "chest_right":
 			var other: Variant = ChestBehavior.partner(world, pos)
 			Sounds.play("chest/open", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.5, randf() * 0.1 + 0.9)
@@ -476,6 +489,17 @@ func _place_sign() -> void:
 
 
 ## Flint and steel lights a fire next to the clicked face (it wears out).
+## The fishing rod: casts the bobber, or reels it in (a fish if one bites).
+func _fish() -> void:
+	player.swing()
+	if player.fishing_bobber and not player.fishing_bobber.removed:
+		var wear := player.fishing_bobber.reel_in()
+		if wear > 0 and not player.is_creative():
+			player.inventory.wear(player.selected_slot, wear)
+	else:
+		player.fishing_bobber = FishingBobber.cast(player)
+
+
 ## Beta bows shoot at once: an arrow from the inventory (free in creative).
 func _shoot_bow() -> void:
 	var arrow := Items.id_of("arrow")

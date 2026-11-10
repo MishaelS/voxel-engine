@@ -47,6 +47,8 @@ func create(type: String) -> Entity:
 		return Mob.create(type)
 	if type == "arrow":
 		return Arrow.new()
+	if type == "painting":
+		return Painting.new()
 	var script: Script = TYPES.get(type)
 	return script.new() if script else null
 
@@ -60,9 +62,7 @@ func raycast(origin: Vector3, direction: Vector3, max_distance: float, ignore: E
 	for entity in _entities:
 		if entity == ignore or entity.is_dead() or entity.removed or not entity.can_be_hit():
 			continue
-		var feet := entity.feet()
-		var box := AABB(feet - Vector3(entity.half_width, 0, entity.half_width),
-			Vector3(entity.half_width * 2, entity.height, entity.half_width * 2)).grow(0.1)
+		var box := entity.hit_box().grow(0.1)
 		var hit: Variant = box.intersects_segment(origin, to)
 		if hit != null:
 			var distance := origin.distance_to(hit)
