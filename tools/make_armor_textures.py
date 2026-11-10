@@ -10,7 +10,9 @@
 - assets/textures/mobs/player.png: the player's skin (the "player" model
   in assets/models/mobs.json).
 
-Usage: python3 tools/make_armor_textures.py assets/textures
+Textures that are already there are kept (add --force to redraw them).
+
+Usage: python3 tools/make_armor_textures.py assets/textures [--force]
 Needs Pillow and numpy.
 """
 import os
@@ -42,6 +44,14 @@ ICON = [
 ]
 
 
+FORCE = "--force" in sys.argv
+
+
+def save(img, path):
+    if FORCE or not os.path.exists(path):
+        Image.fromarray(img).save(path)
+
+
 def icons(out_dir):
     os.makedirs(out_dir, exist_ok=True)
     outline = (30, 30, 30, 255)
@@ -57,7 +67,7 @@ def icons(out_dir):
                 elif c == "i":
                     filled = x <= cut
                     img[y, x] = (shade if y >= 5 else full) if filled else empty
-        Image.fromarray(img).save(os.path.join(out_dir, name + ".png"))
+        save(img, os.path.join(out_dir, name + ".png"))
 
 
 def faces(u, v, w, h, d):
@@ -111,7 +121,7 @@ def armor(out_dir):
         paint(img, leg["bottom"], rgb, holes=holes)
         for rect in sides(leg):
             paint(img, rect, rgb, rows=range(8, 12), holes=holes)
-        Image.fromarray(img).save(os.path.join(out_dir, f"armor_{material}_1.png"))
+        save(img, os.path.join(out_dir, f"armor_{material}_1.png"))
         # Layer 2: leggings.
         img = np.zeros((64, 64, 4), np.uint8)
         for rect in [body["bottom"]] + sides(body):
@@ -119,7 +129,7 @@ def armor(out_dir):
         paint(img, leg["top"], rgb, holes=holes)
         for rect in sides(leg):
             paint(img, rect, rgb, rows=range(0, 9), holes=holes)
-        Image.fromarray(img).save(os.path.join(out_dir, f"armor_{material}_2.png"))
+        save(img, os.path.join(out_dir, f"armor_{material}_2.png"))
 
 
 def player(out_dir):
@@ -159,7 +169,7 @@ def player(out_dir):
         paint(img, leg["bottom"], shoes)
         for rect in sides(leg):
             paint(img, rect, shoes, rows=range(10, 12))
-    Image.fromarray(img).save(os.path.join(out_dir, "player.png"))
+    save(img, os.path.join(out_dir, "player.png"))
 
 
 if __name__ == "__main__":

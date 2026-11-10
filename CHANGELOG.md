@@ -47,8 +47,12 @@ Sections:
 - Chest model and large chests like the modern game (`ChestModel`, `ChestBehavior`): chests are drawn as the game's chest model (a base, a lid and a latch, 14/16 high) with textures from `assets/textures/chest-atlas.png` (the game's chest texture layout, unfolded boxes); its faces become extra layers of the block tile array. A chest placed next to a single chest facing the same way joins it into a large chest (two halves with one long lid and the latch at the seam); opening it shows both halves' 27 slots as one 54-slot window (container4.png, "Large Chest"). Breaking one half leaves a single chest; each half keeps its own items.
 
 ### Changed
+- Mob models follow the game's own boxes and texture layout (`assets/models/mobs.json`), so the game's skins fit: 64 x 32 skins work next to 64 x 64 ones, left limbs can use the right ones' texture mirrored, the cow's and sheep's bodies lie along the box like the game's, horns, the udder and the fleece move with their parts. The sheep's fleece is now made of a head, body and leg pieces. New skins for the zombie, skeleton, creeper, spider, cow, sheep, squid, the player and the armor of every material (the leather armor tinted brown like Beta); pigs, chickens, slimes, wolves, the fleece and the leggings layer keep the generated ones. `tools/make_mob_textures.py` and `tools/make_armor_textures.py` no longer overwrite textures that are already there.
 - Block ids are 32-bit (`ChunkData.blocks` is a `PackedInt32Array`): up to 65535 block states instead of 256, every state its own id. Older saves (one byte per block) are converted on load and written back; item ids moved to 32768 and up (`Items.FIRST_ITEM`), older saved inventories and dropped items are renumbered (`Items.from_save()`).
 - Player collision lives in `EntityPhysics`, shared with entities.
+
+### Fixed
+- Spider legs slope down to the ground like the game's (front and back pairs at 45 degrees, the middle ones flatter); they pointed up.
 
 ### Removed
 - The hand-drawn chest tiles in the block atlas and `tools/make_chest_tiles.py` (replaced by the chest model).

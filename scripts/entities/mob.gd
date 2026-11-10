@@ -460,11 +460,12 @@ static func _dye_color(item_name: String) -> String:
 func _update_wool() -> void:
 	if _model.is_empty() or mob_type != "sheep":
 		return
-	var wool: Node3D = _model.parts.get("wool")
-	if wool:
-		wool.visible = not sheared
-		for child in wool.get_children():
-			(child as GeometryInstance3D).set_instance_shader_parameter("tint", WOOL_TINTS.get(wool_color, Color.WHITE))
+	# The fleece: the model's parts marked "wool" (body, head and legs).
+	for part: Dictionary in _model.spec.parts:
+		if part.get("wool", false):
+			var instance: MeshInstance3D = _model.instances[part.name]
+			instance.visible = not sheared
+			instance.set_instance_shader_parameter("tint", WOOL_TINTS.get(wool_color, Color.WHITE))
 
 
 # --- Health ---------------------------------------------------------------------------
@@ -532,7 +533,9 @@ func _process(delta: float) -> void:
 	var swing := cos(_limb_swing * 0.6662) * 1.4 * _limb_amount
 	var parts: Dictionary = _model.parts
 	for part: Dictionary in _model.spec.parts:
-		var node: Node3D = parts[part.name]
+		var node: Node3D = parts.get(part.name)
+		if node == null:
+			continue # moves with its parent part
 		match str(part.role):
 			"leg_a":
 				node.rotation.x = swing
@@ -556,7 +559,9 @@ func _process(delta: float) -> void:
 				if str(part.role).begins_with("spider_leg"):
 					var side := 1.0 if str(part.role).contains("_l_") else -1.0
 					var index := int(str(part.role).right(1))
-					node.rotation.z = side * (-0.6 if index % 2 == 0 else -0.45) * -1.0
+					# Legs slope down to the ground like the game's: the front
+					# and back pairs at 45 degrees, the middle ones flatter.
+					node.rotation.z = -side * (PI / 4.0 if index == 0 or index == 3 else PI / 4.0 * 0.74)
 					node.rotation.y = side * ((index - 1.5) * 0.4) + side * swing * 0.4 * (1 if index % 2 == 0 else -1)
 	if mob_type == "wolf" and sitting:
 		_model.root.position.y = -0.15

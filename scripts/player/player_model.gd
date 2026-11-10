@@ -8,12 +8,13 @@ extends Node3D
 ## arms swing with the steps, the head follows the view, the right arm
 ## swings with the held item, the body bends when sneaking.
 
-## Armor slot -> [[model part, texture layer, inflate, uv], ...].
+## Armor slot -> [[model part, texture layer, inflate, uv, mirrored], ...]
+## (the left limbs use the right ones' texture, mirrored, like the game).
 const ARMOR_PARTS := [
-	[["head", 1, 1.0, [0, 0]]],
-	[["body", 1, 1.0, [16, 16]], ["right_arm", 1, 1.0, [40, 16]], ["left_arm", 1, 1.0, [40, 16]]],
-	[["body", 2, 0.5, [16, 16]], ["right_leg", 2, 0.5, [0, 16]], ["left_leg", 2, 0.5, [0, 16]]],
-	[["right_leg", 1, 1.0, [0, 16]], ["left_leg", 1, 1.0, [0, 16]]],
+	[["head", 1, 1.0, [0, 0], false]],
+	[["body", 1, 1.0, [16, 16], false], ["right_arm", 1, 1.0, [40, 16], false], ["left_arm", 1, 1.0, [40, 16], true]],
+	[["body", 2, 0.5, [16, 16], false], ["right_leg", 2, 0.5, [0, 16], false], ["left_leg", 2, 0.5, [0, 16], true]],
+	[["right_leg", 1, 1.0, [0, 16], false], ["left_leg", 1, 1.0, [0, 16], true]],
 ]
 
 var player: Player
@@ -53,6 +54,7 @@ func _update_armor() -> void:
 			part.texture = "armor_%s_%d" % [item.armor_material, piece[1]]
 			part.inflate = piece[2]
 			part.uv = piece[3]
+			part.mirror = piece[4]
 			var instance := MeshInstance3D.new()
 			instance.mesh = MobModels.part_mesh("player", part)
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

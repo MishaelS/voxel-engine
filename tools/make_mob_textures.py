@@ -5,7 +5,10 @@ like the game's skins (top and bottom squares, then the strip -X, front +Z,
 head's front, a face. Our own simple pixel art, in the spirit of the
 classic game's mobs. Replace any file with a hand-drawn skin (same layout).
 
-Usage: python3 tools/make_mob_textures.py assets/models/mobs.json assets/textures/mobs
+Textures that are already there (drawn by hand or taken from elsewhere)
+are kept; name them after the output folder to redraw them anyway.
+
+Usage: python3 tools/make_mob_textures.py assets/models/mobs.json assets/textures/mobs [texture ...]
 Needs Pillow and numpy.
 """
 import json
@@ -155,12 +158,15 @@ def paint(models, mob, part_list, img, texture):
                 face(img, mob, rects["front"])
 
 
-def main(models_path, out_dir):
+def main(models_path, out_dir, redraw=()):
     models = json.load(open(models_path))
     os.makedirs(out_dir, exist_ok=True)
     for mob, model in models.items():
         textures = {p.get("texture", mob) for p in model["parts"]}
         for texture in textures:
+            path = os.path.join(out_dir, texture + ".png")
+            if texture not in PALETTES or (os.path.exists(path) and texture not in redraw):
+                continue
             img = np.zeros((64, 64, 4), np.uint8)
             paint(models, mob, model["parts"], img, texture)
             Image.fromarray(img).save(os.path.join(out_dir, texture + ".png"))
@@ -168,4 +174,4 @@ def main(models_path, out_dir):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1], sys.argv[2], sys.argv[3:])
