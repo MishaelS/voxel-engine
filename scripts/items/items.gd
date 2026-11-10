@@ -1,10 +1,13 @@
 class_name Items
 extends RefCounted
-## Every item id: blocks are items 0..255 (their block id), other items
-## (ItemType) come after, from FIRST_ITEM. Ids are given in registration
-## order: always append at the end (saved inventories depend on them).
+## Every item id: blocks are items with their block id (below FIRST_ITEM),
+## other items (ItemType) come from FIRST_ITEM on. Ids are given in
+## registration order: always append at the end (saved inventories depend
+## on them).
 
-const FIRST_ITEM := 256
+const FIRST_ITEM := 32768
+## Where items started in saves before block ids went past 256.
+const OLD_FIRST_ITEM := 256
 const ICONS_PATH := "res://assets/textures/items.png"
 const MAX_STACK := 64
 
@@ -53,6 +56,8 @@ static func _register_all() -> bool:
 	# Appended: ids stay stable.
 	register(ItemType.make("seeds", 9))
 	register(ItemType.make("lava_bucket", 76).stack(1).set_fuel(20000))
+	register(ItemType.make("glowstone_dust", 73))
+	register(ItemType.make("flint_and_steel", 5).set_durability(64))
 	return true
 
 
@@ -62,6 +67,13 @@ static func register(item: ItemType) -> int:
 	types.append(item)
 	_ids_by_name[item.name] = item.id
 	return item.id
+
+
+## An id from a save: saves without `item_base` numbered items from 256.
+static func from_save(id: int, saved_base: int) -> int:
+	if saved_base == FIRST_ITEM or id < saved_base:
+		return id
+	return id - saved_base + FIRST_ITEM
 
 
 static func is_block(id: int) -> bool:

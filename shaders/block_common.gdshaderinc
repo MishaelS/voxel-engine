@@ -4,9 +4,10 @@
 //   UV2    - x: base tile layer + AO level (0..3) / 4, y: overlay layer (-1 = none,
 //            -2 = glowing: full bright whatever the light, like lava)
 //   COLOR  - rgb: tint (linear, biome colors included), a: smooth sky light / 15
-// Brightness is computed here like the classic game: the light level, minus
-// the night's darkness (sky_darkness, levels), through the classic light
-// curve; times the corner's ambient occlusion.
+//   CUSTOM0 - r: smooth block light / 15 (torches, lava: BlockLight)
+// Brightness is computed here like the classic game: the brighter of sky
+// light minus the night's darkness (sky_darkness, levels) and block light,
+// through the classic light curve; times the corner's ambient occlusion.
 //
 // Includers may #define before including:
 //   BLOCK_TILE_FILTER   - texture filter of the tiles (default: mipmapped)
@@ -26,9 +27,10 @@ uniform float sky_darkness = 0.0;
 
 varying flat vec2 tile_layers;
 varying float block_ao;
+varying float block_glow;
 
 // The vertex part every block shader runs: tile layers and AO.
-#define BLOCK_VERTEX tile_layers = vec2(floor(UV2.x + 0.01), UV2.y); block_ao = mix(1.0, ao_levels[clamp(int(fract(UV2.x + 0.01) * 4.0 + 0.5), 0, 3)], ao_strength);
+#define BLOCK_VERTEX tile_layers = vec2(floor(UV2.x + 0.01), UV2.y); block_ao = mix(1.0, ao_levels[clamp(int(fract(UV2.x + 0.01) * 4.0 + 0.5), 0, 3)], ao_strength); block_glow = CUSTOM0.r;
 
 #ifndef BLOCK_CUSTOM_VERTEX
 void vertex() {
@@ -39,7 +41,7 @@ void vertex() {
 // Brightness of a light level (0..1 = 0..15), the classic curve: each
 // level a clear step down, level 0 keeps 5%.
 float light_brightness(float level01) {
-	float level = clamp(level01 * 15.0 - sky_darkness, 0.0, 15.0);
+	float level = max(clamp(level01 * 15.0 - sky_darkness, 0.0, 15.0), block_glow * 15.0);
 	float darkness = 1.0 - level / 15.0;
 	float classic = (1.0 - darkness) / (darkness * 3.0 + 1.0);
 	return pow(classic, shadow_contrast) * 0.95 + 0.05;

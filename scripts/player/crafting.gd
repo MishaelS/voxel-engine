@@ -44,6 +44,10 @@ static func _build_recipes() -> Array:
 		{"pattern": ["I I", " I "], "keys": {"I": "iron_ingot"}, "result": "bucket", "count": 1},
 		{"pattern": ["SS", "SS"], "keys": {"S": "sand"}, "result": "sandstone", "count": 1},
 		{"pattern": ["SS", "SS"], "keys": {"S": "snowball"}, "result": "snow", "count": 1},
+		{"pattern": ["C", "S"], "keys": {"C": ["coal", "charcoal"], "S": "stick"}, "result": "torch", "count": 4},
+		{"pattern": ["GG", "GG"], "keys": {"G": "glowstone_dust"}, "result": "glowstone", "count": 1},
+		{"pattern": ["P", "T"], "keys": {"P": "pumpkin", "T": "torch"}, "result": "jack_o_lantern", "count": 1},
+		{"pattern": ["I ", " F"], "keys": {"I": "iron_ingot", "F": "flint"}, "result": "flint_and_steel", "count": 1},
 	]
 	for block: String in ["iron", "gold", "diamond"]:
 		var item := "diamond" if block == "diamond" else block + "_ingot"

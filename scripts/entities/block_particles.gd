@@ -112,6 +112,19 @@ func smoke(point: Vector3, amount: int = 8) -> void:
 			Color(gray, gray, gray, 0.8), _rng.randi_range(15, 30), -0.01, true)
 
 
+## A torch's tip: a wisp of smoke and a small flame.
+func torch(tip: Vector3) -> void:
+	var gray := _rng.randf_range(0.2, 0.35)
+	_add(tip, Vector3(0, 0.01, 0), Color(-2, 0, 0, 0.08), Color(gray, gray, gray, 0.7), _rng.randi_range(8, 16), -0.02, true)
+	_add(tip, Vector3.ZERO, Color(-2, 0, 0, 0.06), Color(1.0, 0.65, 0.2, 1.0), _rng.randi_range(5, 10), 0.0, true)
+
+
+## A lava pop: an orange spark jumps up and falls back.
+func lava_pop(point: Vector3) -> void:
+	var velocity := Vector3(_rng.randf_range(-0.04, 0.04), _rng.randf_range(0.15, 0.3), _rng.randf_range(-0.04, 0.04))
+	_add(point, velocity, Color(-2, 0, 0, 0.1), Color(1.0, 0.5, 0.1, 1.0), _rng.randi_range(16, 30), 0.75, true)
+
+
 ## Smoke and sometimes a flame in front of a lit furnace.
 func furnace(pos: Vector3i, facing: int) -> void:
 	var front := Vector3(Blocks.FACING_DIRECTIONS[facing])
@@ -259,14 +272,4 @@ static func _tint_of(block_id: int) -> Color:
 
 ## Brightness of the light at a point, like the blocks (night darkness too).
 func _brightness(point: Vector3) -> float:
-	var light := SkyLight.MAX
-	if world:
-		light = world.get_light(Vector3i(point.floor()))
-	var atmosphere := Atmosphere.find(get_tree())
-	if atmosphere == null:
-		return ChunkMesher.LIGHT_BRIGHTNESS[light]
-	var level := clampi(roundi(light - atmosphere.sky_darkness), 0, SkyLight.MAX)
-	var brightness := ChunkMesher.LIGHT_BRIGHTNESS[level]
-	if atmosphere.sky_darkness <= 0.0:
-		brightness *= 0.25 + 0.75 * atmosphere.daylight
-	return brightness
+	return world.brightness_at(point) if world else 1.0

@@ -13,7 +13,7 @@ func _init(seed_value: int, block_density: float = 0.3) -> void:
 	density = block_density
 
 
-func generate_blocks(cx: int, cz: int) -> PackedByteArray:
+func generate_blocks(cx: int, cz: int) -> PackedInt32Array:
 	var blocks := super(cx, cz)
 	if cx != 0 or cz != 0:
 		return blocks

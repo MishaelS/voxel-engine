@@ -13,7 +13,7 @@ static var _cache := {} # [id, material] -> ArrayMesh
 
 ## Drawn flat (not as a cube): items and plants.
 static func is_flat(id: int) -> bool:
-	return not Items.is_block(id) or Blocks.shape_table[id] == BlockType.Shape.CROSS
+	return not Items.is_block(id) or Blocks.shape_table[id] == BlockType.Shape.CROSS or Blocks.get_type(id).flat_item
 
 
 ## The texture the flat picture comes from: items.png or the block atlas.

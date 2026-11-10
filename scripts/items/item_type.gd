@@ -43,6 +43,13 @@ func set_tool(kind: String, tool_tier: int, speed: float, uses: int) -> ItemType
 	return self
 
 
+## Uses before it breaks, for non-tools (flint and steel).
+func set_durability(uses: int) -> ItemType:
+	durability = uses
+	max_stack = 1
+	return self
+
+
 func set_food(points: int, saturation_modifier: float) -> ItemType:
 	food = points
 	saturation = saturation_modifier

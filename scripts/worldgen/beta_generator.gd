@@ -234,7 +234,7 @@ func biome_name(x: int, z: int) -> String:
 
 # --- Generation --------------------------------------------------------------------
 
-func generate_blocks(cx: int, cz: int) -> PackedByteArray:
+func generate_blocks(cx: int, cz: int) -> PackedInt32Array:
 	var blocks := super(cx, cz)
 	var climate_values := climate(cx, cz)
 	var biomes := PackedByteArray()
@@ -255,7 +255,7 @@ func generate_blocks(cx: int, cz: int) -> PackedByteArray:
 
 ## Step 1: density field on a coarse grid, interpolated to blocks.
 ## Returns the highest stone block (used to skip ore veins in the air).
-func _shape_terrain(blocks: PackedByteArray, cx: int, cz: int) -> int:
+func _shape_terrain(blocks: PackedInt32Array, cx: int, cz: int) -> int:
 	var stone: int = _id["stone"]
 	var water: int = _id["water"]
 	var top := -1
@@ -353,7 +353,7 @@ func _shape_terrain(blocks: PackedByteArray, cx: int, cz: int) -> int:
 
 ## Step 3: biome surface, beaches and bedrock, top-down per block column.
 ## `stone_top`: the highest stone; above it (and above the sea) is only air.
-func _replace_surface(blocks: PackedByteArray, cx: int, cz: int, biomes: PackedByteArray, stone_top: int) -> void:
+func _replace_surface(blocks: PackedInt32Array, cx: int, cz: int, biomes: PackedByteArray, stone_top: int) -> void:
 	var start_y := mini(maxi(stone_top, SEA_LEVEL - 1), HEIGHT - 1)
 	var rng := column_rng(cx, cz, 1)
 	var stone: int = _id["stone"]
@@ -418,7 +418,7 @@ func _replace_surface(blocks: PackedByteArray, cx: int, cz: int, biomes: PackedB
 
 ## Step 4: worm caves from this and nearby columns, carved where they pass
 ## through this column.
-func _carve_caves(blocks: PackedByteArray, cx: int, cz: int) -> void:
+func _carve_caves(blocks: PackedInt32Array, cx: int, cz: int) -> void:
 	for ox in range(-CAVE_RANGE, CAVE_RANGE + 1):
 		for oz in range(-CAVE_RANGE, CAVE_RANGE + 1):
 			# Only 1 column in 15 starts caves: decide that with an inline hash
@@ -451,7 +451,7 @@ func _carve_caves(blocks: PackedByteArray, cx: int, cz: int) -> void:
 
 ## One tunnel (or a room if step == -1): a random walk that carves
 ## ellipsoids. May split into two branches.
-func _carve_tunnel(blocks: PackedByteArray, cx: int, cz: int, seed_value: int, pos: Vector3,
+func _carve_tunnel(blocks: PackedInt32Array, cx: int, cz: int, seed_value: int, pos: Vector3,
 		width: float, yaw: float, pitch: float, step: int, length: int, height_ratio: float) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
@@ -508,7 +508,7 @@ func _carve_tunnel(blocks: PackedByteArray, cx: int, cz: int, seed_value: int, p
 			return
 
 
-func _carve_ellipsoid(blocks: PackedByteArray, cx: int, cz: int, center: Vector3, radius: float, radius_y: float) -> void:
+func _carve_ellipsoid(blocks: PackedInt32Array, cx: int, cz: int, center: Vector3, radius: float, radius_y: float) -> void:
 	var water := _water
 	var bedrock := _bedrock
 	var min_x := maxi(floori(center.x - radius) - cx * 16 - 1, 0)
@@ -544,7 +544,7 @@ func _carve_ellipsoid(blocks: PackedByteArray, cx: int, cz: int, center: Vector3
 ## `top`: the highest stone in the column; spheres above it only meet air
 ## and are skipped (their random numbers are still drawn, so the result is
 ## the same).
-func _place_ores(blocks: PackedByteArray, rng: RandomNumberGenerator, top: int) -> void:
+func _place_ores(blocks: PackedInt32Array, rng: RandomNumberGenerator, top: int) -> void:
 	var stone: int = _id["stone"]
 	for ore: Array in ORES:
 		var id: int = _id[ore[0]]
@@ -554,7 +554,7 @@ func _place_ores(blocks: PackedByteArray, rng: RandomNumberGenerator, top: int) 
 
 
 ## A vein: spheres along a short random line, like the classic ore veins.
-func _place_vein(blocks: PackedByteArray, rng: RandomNumberGenerator, id: int, stone: int, size: int, start: Vector3, top: int) -> void:
+func _place_vein(blocks: PackedInt32Array, rng: RandomNumberGenerator, id: int, stone: int, size: int, start: Vector3, top: int) -> void:
 	var angle := rng.randf() * PI
 	var half := Vector3(sin(angle), 0.0, cos(angle)) * size / 8.0
 	var a := start + half + Vector3(0, rng.randi_range(0, 2) - 1, 0)
@@ -587,7 +587,7 @@ func _place_vein(blocks: PackedByteArray, rng: RandomNumberGenerator, id: int, s
 
 
 ## Step 6: trees. Kept 2 blocks away from the column edge so the leaves fit.
-func _place_trees(blocks: PackedByteArray, cx: int, cz: int, biomes: PackedByteArray, rng: RandomNumberGenerator) -> void:
+func _place_trees(blocks: PackedInt32Array, cx: int, cz: int, biomes: PackedByteArray, rng: RandomNumberGenerator) -> void:
 	var biome_here := biomes[8 * 16 + 8]
 	var count := int((_tree_noise.get_noise_2d(cx * 16 + 8, cz * 16 + 8) * 4.0 + rng.randf() * 4.0 + 4.0) / 3.0)
 	count += _biome_trees[biome_here]
@@ -622,7 +622,7 @@ func _place_trees(blocks: PackedByteArray, cx: int, cz: int, biomes: PackedByteA
 ## Lava lakes like the classic game: one column in 8 may get one, mostly
 ## deep underground (above sea level only one in 10). A few overlapping
 ## blobs; the lower half fills with lava, the upper half is air.
-func _place_lava_lake(blocks: PackedByteArray, rng: RandomNumberGenerator) -> void:
+func _place_lava_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
 	if rng.randi_range(0, 7) != 0:
 		return
 	var y := rng.randi_range(0, rng.randi_range(0, 119) + 7)
@@ -660,11 +660,11 @@ func _place_lava_lake(blocks: PackedByteArray, rng: RandomNumberGenerator) -> vo
 				blocks[j] = _lava if ly < 4 else Blocks.AIR
 
 
-## Tall grass, ferns, flowers and dead bushes like the classic game: patches
+## Tall grass, ferns, flowers, dead bushes and pumpkins like the classic game: patches
 ## around random spots (grass per biome, rainforests mostly ferns), two
 ## patches of dandelions and sometimes roses everywhere, dead bushes in
 ## deserts. Only on ground they can grow on, inside this column.
-func _place_plants(blocks: PackedByteArray, biomes: PackedByteArray, rng: RandomNumberGenerator) -> void:
+func _place_plants(blocks: PackedInt32Array, biomes: PackedByteArray, rng: RandomNumberGenerator) -> void:
 	var biome := BIOME_NAMES[biomes[8 * 16 + 8]]
 	for patch in GRASS_PATCHES.get(biome, 0):
 		var plant: int = _id["fern"] if biome == "rainforest" and rng.randi_range(0, 2) != 0 else _id["tall_grass"]
@@ -676,9 +676,22 @@ func _place_plants(blocks: PackedByteArray, biomes: PackedByteArray, rng: Random
 	if biome == "desert":
 		for patch in 2:
 			_plant_patch(blocks, rng, _id["dead_bush"], 4)
+	# Pumpkins: one column in 32 gets a patch, facing every way, on grass.
+	if rng.randi_range(0, 31) == 0:
+		var x0 := rng.randi_range(0, 15)
+		var z0 := rng.randi_range(0, 15)
+		var y0 := _surface_y(blocks, x0, z0) + 1
+		for t in 64:
+			var x := x0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
+			var y := y0 + rng.randi_range(0, 3) - rng.randi_range(0, 3)
+			var z := z0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
+			if x < 0 or x > 15 or z < 0 or z > 15 or y < 1 or y >= HEIGHT:
+				continue
+			if blocks[index(x, y, z)] == Blocks.AIR and Blocks.get_type(blocks[index(x, y - 1, z)]).name.begins_with("grass_"):
+				blocks[index(x, y, z)] = Blocks.variant("pumpkin", rng.randi_range(0, 3))
 
 
-func _plant_patch(blocks: PackedByteArray, rng: RandomNumberGenerator, plant: int, tries: int) -> void:
+func _plant_patch(blocks: PackedInt32Array, rng: RandomNumberGenerator, plant: int, tries: int) -> void:
 	var x0 := rng.randi_range(0, 15)
 	var z0 := rng.randi_range(0, 15)
 	var y0 := _surface_y(blocks, x0, z0) + 1
@@ -694,14 +707,14 @@ func _plant_patch(blocks: PackedByteArray, rng: RandomNumberGenerator, plant: in
 			blocks[index(x, y, z)] = plant
 
 
-func _surface_y(blocks: PackedByteArray, x: int, z: int) -> int:
+func _surface_y(blocks: PackedInt32Array, x: int, z: int) -> int:
 	for y in range(HEIGHT - 1, 0, -1):
 		if blocks[index(x, y, z)] != Blocks.AIR:
 			return y
 	return -1
 
 
-func _set_if_air(blocks: PackedByteArray, x: int, y: int, z: int, id: int) -> void:
+func _set_if_air(blocks: PackedInt32Array, x: int, y: int, z: int, id: int) -> void:
 	if x < 0 or x > 15 or z < 0 or z > 15 or y < 0 or y >= HEIGHT:
 		return
 	var i := index(x, y, z)
@@ -709,7 +722,7 @@ func _set_if_air(blocks: PackedByteArray, x: int, y: int, z: int, id: int) -> vo
 		blocks[i] = id
 
 
-func _trunk_fits(blocks: PackedByteArray, x: int, y: int, z: int, height: int) -> bool:
+func _trunk_fits(blocks: PackedInt32Array, x: int, y: int, z: int, height: int) -> bool:
 	if y + height + 2 >= HEIGHT:
 		return false
 	for dy in height:
@@ -720,7 +733,7 @@ func _trunk_fits(blocks: PackedByteArray, x: int, y: int, z: int, height: int) -
 
 ## Oak and birch: a trunk with two wide leaf layers and two narrow ones;
 ## corner leaves are randomly left out.
-func _round_tree(blocks: PackedByteArray, rng: RandomNumberGenerator, x: int, y: int, z: int, log_id: int, leaves: int, min_height: int) -> void:
+func _round_tree(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: int, z: int, log_id: int, leaves: int, min_height: int) -> void:
 	var height := rng.randi_range(min_height, min_height + 2)
 	if not _trunk_fits(blocks, x, y, z, height):
 		return
@@ -739,7 +752,7 @@ func _round_tree(blocks: PackedByteArray, rng: RandomNumberGenerator, x: int, y:
 
 
 ## Spruce: a cone of leaf rings that widen and narrow going down.
-func _spruce(blocks: PackedByteArray, rng: RandomNumberGenerator, x: int, y: int, z: int) -> void:
+func _spruce(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: int, z: int) -> void:
 	var height := rng.randi_range(6, 9)
 	if not _trunk_fits(blocks, x, y, z, height):
 		return
@@ -763,7 +776,7 @@ func _spruce(blocks: PackedByteArray, rng: RandomNumberGenerator, x: int, y: int
 
 
 ## Pine: a tall bare trunk with a small cap of leaves.
-func _pine(blocks: PackedByteArray, rng: RandomNumberGenerator, x: int, y: int, z: int) -> void:
+func _pine(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: int, z: int) -> void:
 	var height := rng.randi_range(7, 11)
 	if not _trunk_fits(blocks, x, y, z, height):
 		return
@@ -781,7 +794,7 @@ func _pine(blocks: PackedByteArray, rng: RandomNumberGenerator, x: int, y: int, 
 
 
 ## Ice on the sea surface of cold biomes.
-func _freeze(blocks: PackedByteArray, biomes: PackedByteArray) -> void:
+func _freeze(blocks: PackedInt32Array, biomes: PackedByteArray) -> void:
 	var water: int = _id["water"]
 	var ice: int = _id["ice"]
 	var y := SEA_LEVEL - 1

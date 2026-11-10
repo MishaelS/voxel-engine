@@ -36,3 +36,5 @@ desktop.ini
 # --- Временные файлы и логи ---
 *.tmp
 *.log
+
+ROADMAP.md

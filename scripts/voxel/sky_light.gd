@@ -24,32 +24,20 @@ const H := WorldGenerator.HEIGHT
 const WW := W * W
 
 
+## Block ids of a 3x3 column area, index x + W * (z + W * y), from
 ## `chunks`: 9 arrays (index (dx + 1) * 3 + (dz + 1)) of the 8 chunk block
-## arrays of each column; `heights`: the 9 heightmaps. Returns the 8 light
-## arrays of the center column, bottom to top.
-static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArray]:
-	var opacity_of := Blocks.light_opacity_table
-	var stored := PackedByteArray()
-	stored.resize(WW * H)
-	var area_heights := PackedInt32Array()
-	area_heights.resize(WW)
+## arrays of each column. Built in index order from 16-block rows (native
+## copies; a per-block loop here was most of the time). Shared by sky light
+## and block light (BlockLight).
+static func area_of(chunks: Array) -> PackedInt32Array:
 	# Each column as one array (index x + 16 * (z + 16 * y)): 8 appends each.
-	var columns: Array[PackedByteArray] = []
+	var columns: Array[PackedInt32Array] = []
 	for c in 9:
-		var ox := (c / 3) * 16
-		var oz := (c % 3) * 16
-		var column_heights: PackedInt32Array = heights[c]
-		for z in 16:
-			for x in 16:
-				area_heights[(ox + x) + W * (oz + z)] = column_heights[x + 16 * z]
-		var whole := PackedByteArray()
-		for chunk: PackedByteArray in chunks[c]:
+		var whole := PackedInt32Array()
+		for chunk: PackedInt32Array in chunks[c]:
 			whole.append_array(chunk)
 		columns.append(whole)
-	# Block ids of the whole area, index x + W * (z + W * y), built in index
-	# order from 16-block rows (native copies; a per-block loop here was most
-	# of the time). Opacity is looked up from the id where needed.
-	var area := PackedByteArray()
+	var area := PackedInt32Array()
 	for y in H:
 		for cz in 3:
 			var west := columns[cz]
@@ -60,6 +48,24 @@ static func compute_column(chunks: Array, heights: Array) -> Array[PackedByteArr
 				area.append_array(west.slice(row, row + 16))
 				area.append_array(middle.slice(row, row + 16))
 				area.append_array(east.slice(row, row + 16))
+	return area
+
+
+## `area`: block ids of the 3x3 columns (area_of()); `heights`: the 9
+## heightmaps. Returns the 8 light arrays of the center column, bottom to top.
+static func compute_column(area: PackedInt32Array, heights: Array) -> Array[PackedByteArray]:
+	var opacity_of := Blocks.light_opacity_table
+	var stored := PackedByteArray()
+	stored.resize(WW * H)
+	var area_heights := PackedInt32Array()
+	area_heights.resize(WW)
+	for c in 9:
+		var ox := (c / 3) * 16
+		var oz := (c % 3) * 16
+		var column_heights: PackedInt32Array = heights[c]
+		for z in 16:
+			for x in 16:
+				area_heights[(ox + x) + W * (oz + z)] = column_heights[x + 16 * z]
 
 	# 1. Straight down from the sky through leaves / water.
 	for column_index in WW:

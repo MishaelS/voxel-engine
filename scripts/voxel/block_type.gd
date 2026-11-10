@@ -88,9 +88,11 @@ var liquid_level := -1
 ## east (-1 = not oriented); `family` groups the facings and states.
 var facing := -1
 var family := ""
-## Shape: CUBE, CROSS (two crossed squares: tall grass, flowers) or CHEST
-## (the chest model, ChestModel; `chest_part`: single or a large chest's half).
-enum Shape { CUBE, CROSS, CHEST }
+## Shape: CUBE, CROSS (two crossed squares: tall grass, flowers) or MODEL
+## (boxes: `model`, a BlockModel index; chests, later stairs, torches...).
+enum Shape { CUBE, CROSS, MODEL }
+var model := -1
+## Chests: single or a large chest's half (ChestModel.Part).
 var chest_part := 0
 var shape: int = Shape.CUBE
 ## Placing a block or pouring a liquid into it simply replaces it (plants).
@@ -100,6 +102,12 @@ var replaceable := false
 var placed_as := ""
 ## Shown at full brightness whatever the light (lava).
 var emissive := false
+## Sound material (assets/sounds/dig, step): "stone", "wood", "gravel",
+## "grass", "sand", "cloth", "snow", "glass"; "" = silent (liquids).
+var sound := "stone"
+## Light the block gives off (0..15, BlockLight): torch 14, lava 15,
+## burning furnace 13.
+var light_emission := 0
 
 ## Tick behavior (all optional), each called as f(world: VoxelWorld, pos: Vector3i):
 ## - random_tick: picked at random a few times per chunk per tick
@@ -111,6 +119,17 @@ var emissive := false
 var random_tick := Callable()
 var scheduled_tick := Callable()
 var on_update := Callable()
+## Effects only (particles, sounds) near the player, f(world, pos, rng):
+## picked at random among the blocks around the player every tick, like
+## the game's display ticks (torch flames, smoke, lava pops).
+var display_tick := Callable()
+## Fire like the classic game: how much it encourages fire to spread to
+## the air next to it, and how easily it catches fire and burns away
+## (0 = doesn't burn).
+var fire_spread := 0
+var fire_burn := 0
+## Picture-like items (torches): flat icon, flat in hand and dropped.
+var flat_item := false
 
 
 ## Same texture on every face.
@@ -252,6 +271,11 @@ func set_random_rotation(value: int = Rotation.TURN) -> BlockType:
 	return self
 
 
+func set_light_emission(level: int) -> BlockType:
+	light_emission = level
+	return self
+
+
 func set_fast_tile(tile: int) -> BlockType:
 	fast_tile = tile
 	return self
@@ -269,6 +293,17 @@ func set_random_tick(handler: Callable) -> BlockType:
 
 func set_scheduled_tick(handler: Callable) -> BlockType:
 	scheduled_tick = handler
+	return self
+
+
+func set_display_tick(handler: Callable) -> BlockType:
+	display_tick = handler
+	return self
+
+
+func set_flammable(spread: int, burn: int) -> BlockType:
+	fire_spread = spread
+	fire_burn = burn
 	return self
 
 

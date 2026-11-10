@@ -7,6 +7,10 @@ extends RefCounted
 
 
 ## The direction to the right of a chest's front, seen from the front.
+static func is_chest(id: int) -> bool:
+	return Blocks.family_of(id).begins_with("chest")
+
+
 static func right_of(facing: int) -> Vector3i:
 	return [Vector3i(1, 0, 0), Vector3i(0, 0, 1), Vector3i(-1, 0, 0), Vector3i(0, 0, -1)][facing]
 
@@ -15,14 +19,14 @@ static func right_of(facing: int) -> Vector3i:
 static func partner(world: VoxelWorld, pos: Vector3i) -> Variant:
 	var id := world.get_block(pos)
 	var part := Blocks.chest_part_table[id]
-	if Blocks.shape_table[id] != BlockType.Shape.CHEST or part == ChestModel.Part.SINGLE:
+	if not is_chest(id) or part == ChestModel.Part.SINGLE:
 		return null
 	var facing := Blocks.facing_table[id]
 	# The left half has its partner on the right, the right half on the left.
 	var other: Vector3i = pos + right_of(facing) * (1 if part == ChestModel.Part.LEFT else -1)
 	var other_id := world.get_block(other)
 	var wanted := ChestModel.Part.RIGHT if part == ChestModel.Part.LEFT else ChestModel.Part.LEFT
-	if Blocks.shape_table[other_id] == BlockType.Shape.CHEST and Blocks.chest_part_table[other_id] == wanted \
+	if is_chest(other_id) and Blocks.chest_part_table[other_id] == wanted \
 			and Blocks.facing_table[other_id] == facing:
 		return other
 	return null
@@ -36,7 +40,7 @@ static func place(world: VoxelWorld, pos: Vector3i, facing: int) -> void:
 	for side: int in [1, -1]:
 		var other: Vector3i = pos + right * side
 		var other_id := world.get_block(other)
-		if Blocks.shape_table[other_id] == BlockType.Shape.CHEST \
+		if is_chest(other_id) \
 				and Blocks.chest_part_table[other_id] == ChestModel.Part.SINGLE \
 				and Blocks.facing_table[other_id] == facing:
 			# The new chest is the left half when the other one is on its right.

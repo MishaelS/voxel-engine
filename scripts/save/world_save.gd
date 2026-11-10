@@ -140,15 +140,26 @@ func has_column(column: Vector2i) -> bool:
 
 
 ## The blocks of a saved column (WorldGenerator layout), or empty.
-func load_column(column: Vector2i) -> PackedByteArray:
+## Columns are stored as 32-bit ids (older saves: one byte per block,
+## converted on load).
+func load_column(column: Vector2i) -> PackedInt32Array:
 	var file := FileAccess.open_compressed(_column_path(column), FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
 	if file == null:
-		return PackedByteArray()
-	var blocks := file.get_buffer(WorldGenerator.COLUMN_VOLUME)
-	return blocks if blocks.size() == WorldGenerator.COLUMN_VOLUME else PackedByteArray()
+		return PackedInt32Array()
+	var data := file.get_buffer(WorldGenerator.COLUMN_VOLUME * 4)
+	if data.size() == WorldGenerator.COLUMN_VOLUME * 4:
+		return data.to_int32_array()
+	if data.size() == WorldGenerator.COLUMN_VOLUME:
+		# An older save (one byte per block): converted and written back in
+		# the new format, so this happens only once.
+		var blocks := PackedInt32Array(Array(data))
+		file = null
+		save_column(column, blocks)
+		return blocks
+	return PackedInt32Array()
 
 
-func save_column(column: Vector2i, blocks: PackedByteArray) -> void:
+func save_column(column: Vector2i, blocks: PackedInt32Array) -> void:
 	var file := FileAccess.open_compressed(_column_path(column), FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
 	if file:
-		file.store_buffer(blocks)
+		file.store_buffer(blocks.to_byte_array())

@@ -98,12 +98,34 @@ static func scheduled_tick(world: VoxelWorld, pos: Vector3i) -> void:
 				_flow_into(world, pos + offset, family, spread)
 
 
+## Lava sets things on fire like the classic game: on a random tick it
+## tries a few cells above it; air next to something that burns catches fire.
+static func lava_random_tick(world: VoxelWorld, pos: Vector3i) -> void:
+	var cell := pos
+	for i in world.rng.randi_range(0, 2):
+		cell += Vector3i(world.rng.randi_range(-1, 1), 1, world.rng.randi_range(-1, 1))
+		var id := world.get_block(cell)
+		if id == Blocks.AIR:
+			if FireBehavior._spread_chance(world, cell) > 0:
+				FireBehavior.ignite(world, cell)
+				return
+		elif Blocks.collides_table[id] == 1:
+			return
+
+
+## Lava pops: now and then a spark jumps out of a lava surface.
+static func lava_display_tick(world: VoxelWorld, pos: Vector3i, rng: RandomNumberGenerator) -> void:
+	if world.get_block(pos + Vector3i.UP) == Blocks.AIR and rng.randi_range(0, 99) == 0:
+		world.particles.lava_pop(Vector3(pos) + Vector3(rng.randf(), 1.0, rng.randf()))
+
+
 ## Lava touching water (above or beside) hardens. Returns true if it did.
 static func _harden(world: VoxelWorld, pos: Vector3i) -> bool:
 	for offset: Vector3i in [Vector3i.UP, Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]:
 		if level_at(world, pos + offset, "water") >= 0:
 			var level := Blocks.liquid_level_table[world.get_block(pos)]
 			world.particles.smoke(Vector3(pos) + Vector3(0.5, 1.0, 0.5))
+			Sounds.play("random/fizz", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.5, randf_range(2.6, 3.4) / 1.5)
 			world.set_block(pos, Blocks.id_of("obsidian" if level == 0 else "cobblestone"))
 			return true
 	return false

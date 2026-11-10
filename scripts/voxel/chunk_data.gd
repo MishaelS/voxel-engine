@@ -1,23 +1,29 @@
 class_name ChunkData
 extends RefCounted
-## Block storage of one cubic chunk (SIZE^3 blocks), one byte per block.
-## A flat array is cache-friendly and cheap to copy to worker threads.
+## Block storage of one cubic chunk (SIZE^3 blocks) and its light.
+## Block ids are 32-bit (PackedInt32Array): every block state is its own id
+## (facings, levels, halves...), so there can be far more than 256. Flat
+## arrays are cache-friendly and cheap to copy to worker threads.
 
 const SIZE := 16
 const VOLUME := SIZE * SIZE * SIZE
 
-var blocks := PackedByteArray()
+var blocks := PackedInt32Array()
 ## Number of blocks with a random tick handler (grass...). Chunks with none
 ## are skipped by random ticks.
 var tickable_count := 0
 ## Sky light per block (0..15), same layout as `blocks`. Filled by
 ## SkyLight when the column is lit, then kept up to date by VoxelWorld.
 var light := PackedByteArray()
+## Light from glowing blocks (torches, lava; 0..15), same layout. Filled by
+## BlockLight with the sky light, kept up to date by VoxelWorld.
+var block_light := PackedByteArray()
 
 
 func _init() -> void:
 	blocks.resize(VOLUME) # zero-filled = AIR
 	light.resize(VOLUME)
+	block_light.resize(VOLUME)
 
 
 ## Layout: x changes fastest, then z, then y (horizontal layers).

@@ -98,6 +98,7 @@ func _build_scene() -> void:
 
 	add_child(WaterAnimation.new())
 	add_child(LavaAnimation.new())
+	add_child(FireAnimation.new())
 	var clouds := Clouds.new()
 	clouds.camera = camera
 	add_child(clouds)
@@ -155,7 +156,7 @@ func _generate_column(index: int) -> void:
 func _light_column(index: int) -> void:
 	var x := index % SIZE
 	var z := index / SIZE
-	var air := PackedByteArray()
+	var air := PackedInt32Array()
 	air.resize(ChunkData.VOLUME)
 	var no_height := PackedInt32Array()
 	no_height.resize(256)
@@ -172,7 +173,7 @@ func _light_column(index: int) -> void:
 				column.append(_chunk_blocks[(nx + nz * SIZE) * 8 + k] if inside else air)
 			chunks.append(column)
 			heights.append(_heights[nx + nz * SIZE] if inside else no_height)
-	var light := SkyLight.compute_column(chunks, heights)
+	var light := SkyLight.compute_column(SkyLight.area_of(chunks), heights)
 	for k in WorldGenerator.HEIGHT_CHUNKS:
 		_chunk_light[index * 8 + k] = light[k]
 
@@ -197,8 +198,8 @@ func _mesh_chunk(index: int) -> void:
 				neighbors[Vector3i(dx, dy, dz)] = _chunk_blocks[other]
 				neighbor_light[Vector3i(dx, dy, dz)] = _chunk_light[other]
 	var colors: Array = _colors[column]
-	_surfaces[index] = ChunkMesher.build(ChunkMesher.pad(_chunk_blocks[index], neighbors),
-		ChunkMesher.pad(_chunk_light[index], neighbor_light, SkyLight.MAX), colors[0], colors[1],
+	_surfaces[index] = ChunkMesher.build(ChunkMesher.pad_blocks(_chunk_blocks[index], neighbors),
+		ChunkMesher.pad_light(_chunk_light[index], neighbor_light, SkyLight.MAX), colors[0], colors[1],
 		Vector3i(TITLE_COLUMN.x + x - RADIUS, k, TITLE_COLUMN.y + z - RADIUS) * ChunkData.SIZE)
 
 

@@ -147,7 +147,42 @@ static func _build_ao_deltas() -> PackedInt32Array:
 ## Builds the padded volume of a chunk. `neighbors` maps each of the 26
 ## offsets (Vector3i, components -1..1) to that chunk's array; missing
 ## neighbors get `fill` (air for blocks, full light for light).
-static func pad(center: PackedByteArray, neighbors: Dictionary, fill: int = 0) -> PackedByteArray:
+static func pad_blocks(center: PackedInt32Array, neighbors: Dictionary, fill: int = 0) -> PackedInt32Array:
+	var padded := PackedInt32Array()
+	padded.resize(PADDED_VOLUME)
+	if fill != 0:
+		padded.fill(fill)
+	var src := 0
+	for y in SIZE:
+		for z in SIZE:
+			var dst := 1 + P * ((z + 1) + P * (y + 1))
+			for x in SIZE:
+				padded[dst + x] = center[src]
+				src += 1
+	for offset: Vector3i in neighbors:
+		var blocks: PackedInt32Array = neighbors[offset]
+		if blocks.is_empty():
+			continue
+		# Which cells of the border this neighbor fills, in its own coordinates.
+		var x0 := SIZE - 1 if offset.x < 0 else 0
+		var x1 := 0 if offset.x > 0 else SIZE - 1
+		var y0 := SIZE - 1 if offset.y < 0 else 0
+		var y1 := 0 if offset.y > 0 else SIZE - 1
+		var z0 := SIZE - 1 if offset.z < 0 else 0
+		var z1 := 0 if offset.z > 0 else SIZE - 1
+		var shift := (1 + offset.x * SIZE) + P * (1 + offset.z * SIZE) + P2 * (1 + offset.y * SIZE)
+		for y in range(y0, y1 + 1):
+			for z in range(z0, z1 + 1):
+				var row := SIZE * (z + SIZE * y)
+				var dst := shift + P * z + P2 * y
+				for x in range(x0, x1 + 1):
+					padded[dst + x] = blocks[row + x]
+	return padded
+
+
+## The same for a light array (sky light: missing neighbors full, block
+## light: dark).
+static func pad_light(center: PackedByteArray, neighbors: Dictionary, fill: int = 0) -> PackedByteArray:
 	var padded := PackedByteArray()
 	padded.resize(PADDED_VOLUME)
 	if fill != 0:
@@ -181,8 +216,8 @@ static func pad(center: PackedByteArray, neighbors: Dictionary, fill: int = 0) -
 
 
 ## Padded volume holding one block at local (0, 0, 0) (falling blocks).
-static func single_block(block_id: int) -> PackedByteArray:
-	var padded := PackedByteArray()
+static func single_block(block_id: int) -> PackedInt32Array:
+	var padded := PackedInt32Array()
 	padded.resize(PADDED_VOLUME)
 	padded[1 + P + P2] = block_id # local (0, 0, 0)
 	return padded
@@ -206,7 +241,7 @@ const ALL_CONNECTED := (1 << 36) - 1
 ## face b through the chunk. Faces in BlockType order (+Y, -Y, +X, -X, +Z,
 ## -Z). Empty chunks connect everything, solid ones nothing. Inline flood
 ## fill on packed arrays (runs on worker threads).
-static func connectivity(padded: PackedByteArray) -> int:
+static func connectivity(padded: PackedInt32Array) -> int:
 	var opaque := Blocks.is_opaque_table
 	var open := PackedByteArray()
 	open.resize(4096)
@@ -302,7 +337,9 @@ static func connectivity(padded: PackedByteArray) -> int:
 
 ## Vertex data is stored compressed on the GPU (16-bit positions and UVs,
 ## octahedral normals): half the memory and vertex bandwidth.
-const MESH_FLAGS := Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES
+## CUSTOM0 holds the block light (one byte per vertex used).
+const MESH_FLAGS := Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES \
+	| (Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 
 
 ## ArrayMesh from build() output: one surface per layer with that layer's
@@ -328,9 +365,13 @@ static func block_mesh(block_id: int, material: Material = null) -> ArrayMesh:
 ## tints.
 ## `origin`: world position of the chunk's first block, which picks each
 ## block's random texture rotation (null = no random rotation: single blocks).
-static func build(padded: PackedByteArray, light: PackedByteArray,
-		grass := PackedColorArray(), foliage := PackedColorArray(), origin: Variant = null) -> Dictionary:
+## `block_light`: the padded block light (glowing blocks); empty = none.
+static func build(padded: PackedInt32Array, light: PackedByteArray,
+		grass := PackedColorArray(), foliage := PackedColorArray(), origin: Variant = null,
+		block_light := PackedByteArray()) -> Dictionary:
 	var opaque := Blocks.is_opaque_table
+	if block_light.is_empty():
+		block_light.resize(PADDED_VOLUME)
 	# Fully buried chunk (no see-through block anywhere, border included):
 	# nothing can be visible.
 	var see_through := false
@@ -368,13 +409,13 @@ static func build(padded: PackedByteArray, light: PackedByteArray,
 	var at: Vector3i = origin if rotate else Vector3i.ZERO
 	var smooth := smooth_lighting > 0
 	var use_ao := smooth_lighting >= 2
-	var arrays := _build_layer(padded, light, opaque_cells, smooth, use_ao, grass, foliage, rotate, at)
+	var arrays := _build_layer(padded, light, opaque_cells, smooth, use_ao, grass, foliage, rotate, at, block_light)
 	if not arrays.is_empty():
 		result[Blocks.Layer.OPAQUE] = arrays
-	arrays = _build_layer(padded, light, cutout_cells, smooth, use_ao, grass, foliage, rotate, at)
+	arrays = _build_layer(padded, light, cutout_cells, smooth, use_ao, grass, foliage, rotate, at, block_light)
 	if not arrays.is_empty():
 		result[Blocks.Layer.CUTOUT] = arrays
-	arrays = _build_layer(padded, light, translucent_cells, false, false, grass, foliage, rotate, at)
+	arrays = _build_layer(padded, light, translucent_cells, false, false, grass, foliage, rotate, at, block_light)
 	if not arrays.is_empty():
 		result[Blocks.Layer.TRANSLUCENT] = arrays
 	return result
@@ -393,9 +434,9 @@ static func build(padded: PackedByteArray, light: PackedByteArray,
 ## Vertex data: COLOR.rgb = tint, COLOR.a = smooth sky light level / 15 (the
 ## shader turns it into brightness, minus the night's darkness like the
 ## classic game); UV2.x = base tile + AO level (0..3) / 4, UV2.y = overlay.
-static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells: PackedInt32Array,
+static func _build_layer(padded: PackedInt32Array, light: PackedByteArray, cells: PackedInt32Array,
 		smooth: bool, use_ao: bool, grass: PackedColorArray, foliage: PackedColorArray,
-		rotate := false, at := Vector3i.ZERO) -> Array:
+		rotate := false, at := Vector3i.ZERO, block_light := PackedByteArray()) -> Array:
 	if cells.is_empty():
 		return []
 	var opaque := Blocks.is_opaque_table
@@ -419,8 +460,7 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 	var collides := Blocks.collides_table
 	var corner_heights := PackedFloat32Array([1.0, 1.0, 1.0, 1.0])
 	var shapes := Blocks.shape_table
-	var chest_parts := Blocks.chest_part_table
-	var facings := Blocks.facing_table
+	var models := Blocks.model_table
 	var has_colors := grass.size() == 256 and foliage.size() == 256
 
 	var vertices := PackedVector3Array()
@@ -428,6 +468,8 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 	var uvs := PackedVector2Array()
 	var layers := PackedVector2Array()
 	var colors := PackedColorArray()
+	# Block light per vertex (CUSTOM0.r in the shaders, 0..255 = 0..15).
+	var glow := PackedByteArray()
 	var indices := PackedInt32Array()
 
 	for i in cells:
@@ -437,35 +479,46 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 		if has_colors and biome_tint[id] != 0:
 			var column := (i % P - 1) + 16 * ((i / P) % P - 1)
 			tint = grass[column] if biome_tint[id] == 1 else foliage[column]
-		if shapes[id] == BlockType.Shape.CHEST:
-			# The chest model: lit by the light in the cell, shaded by side.
-			var chest_color := Color(1, 1, 1, float(light[i]) / SkyLight.MAX)
-			for quad: Array in ChestModel.quads(chest_parts[id], maxi(facings[id], 0)):
+		if shapes[id] == BlockType.Shape.MODEL:
+			# A block model (BlockModel): lit by the light in the cell, shaded by side.
+			var model_color := Color(tint.r, tint.g, tint.b, float(light[i]) / SkyLight.MAX)
+			var model_glow := block_light[i] * 17
+			for quad: Array in BlockModel.quads(models[id]):
 				var corners: PackedVector3Array = quad[0]
 				var quad_uvs: PackedVector2Array = quad[2]
-				var chest_layer := float(quad[3]) + 0.75
+				var model_layer := float(quad[3]) + 0.75
 				var start := vertices.size()
 				for c in 4:
 					vertices.append(origin + corners[c])
 					normals.append(quad[1])
 					uvs.append(quad_uvs[c])
-					layers.append(Vector2(chest_layer, -1.0))
-					colors.append(chest_color)
+					layers.append(Vector2(model_layer, -1.0))
+					colors.append(model_color)
+					glow.append(model_glow)
+					glow.append(0)
+					glow.append(0)
+					glow.append(0)
 				indices.append_array(PackedInt32Array([start, start + 1, start + 2, start, start + 2, start + 3]))
 			continue
 		if shapes[id] == BlockType.Shape.CROSS:
 			# Two crossed squares, both sides, lit by the light in the cell
 			# (no face shading or AO, like the classic game's plants).
 			var cross_tile := float(face_tiles[id * 6 + 2]) + 0.75
+			var cross_overlay := -2.0 if face_overlays[id * 6 + 2] == -2 else -1.0 # -2: glowing (fire)
 			var cross_color := Color(tint.r, tint.g, tint.b, float(light[i]) / SkyLight.MAX)
+			var cross_glow := block_light[i] * 17
 			for quad: PackedVector3Array in CROSS_QUADS:
 				var start := vertices.size()
 				for c in 4:
 					vertices.append(origin + quad[c])
 					normals.append(Vector3.UP)
 					uvs.append(corner_uvs[c])
-					layers.append(Vector2(cross_tile, -1.0))
+					layers.append(Vector2(cross_tile, cross_overlay))
 					colors.append(cross_color)
+					glow.append(cross_glow)
+					glow.append(0)
+					glow.append(0)
+					glow.append(0)
 				indices.append_array(PackedInt32Array([start, start + 1, start + 2, start, start + 2, start + 3]))
 			continue
 		var self_culls := cull_self[id] == 1
@@ -540,11 +593,13 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 			var normal := normals_table[face]
 			var start := vertices.size()
 			var front_light := light[front]
+			var front_glow := block_light[front]
 			var ao_sum_02 := 0
 			var ao_sum_13 := 0
 			for c in 4:
 				var ao := 3
 				var level := float(front_light)
+				var glow_level := float(front_glow)
 				if smooth:
 					var base := face * 12 + c * 3
 					var a := front + ao_deltas[base]
@@ -552,12 +607,15 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 					var side_a := opaque[padded[a]] == 1
 					var side_b := opaque[padded[b]] == 1
 					var total := front_light
+					var total_glow := front_glow
 					var count := 1
 					if not side_a:
 						total += light[a]
+						total_glow += block_light[a]
 						count += 1
 					if not side_b:
 						total += light[b]
+						total_glow += block_light[b]
 						count += 1
 					if side_a and side_b:
 						ao = 0 # both sides block it: corner fully occluded
@@ -566,9 +624,11 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 						var diagonal := opaque[padded[d]] == 1
 						if not diagonal:
 							total += light[d]
+							total_glow += block_light[d]
 							count += 1
 						ao = 3 - int(side_a) - int(side_b) - int(diagonal)
 					level = float(total) / count
+					glow_level = float(total_glow) / count
 					if not use_ao:
 						ao = 3
 				if c == 0 or c == 2:
@@ -587,6 +647,10 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 				normals.append(normal)
 				layers.append(Vector2(tile + ao * 0.25, overlay))
 				colors.append(Color(tint.r, tint.g, tint.b, level / SkyLight.MAX))
+				glow.append(roundi(glow_level * 17.0))
+				glow.append(0)
+				glow.append(0)
+				glow.append(0)
 			# Texture coordinates: the block's own orientation (beds) or its
 			# random rotation; lowered tops (beds) and raised bottoms (ice
 			# strips) show the matching part of the texture.
@@ -628,6 +692,7 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 					normals.append(Vector3.DOWN)
 					layers.append(layers[start + c])
 					colors.append(colors[start + c])
+					glow.append_array(glow.slice((start + c) * 4, (start + c) * 4 + 4))
 					uvs.append(uvs[start + c])
 				indices.append_array(PackedInt32Array([below, below + 2, below + 1, below, below + 3, below + 2]))
 
@@ -640,5 +705,6 @@ static func _build_layer(padded: PackedByteArray, light: PackedByteArray, cells:
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_TEX_UV2] = layers
 	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_CUSTOM0] = glow
 	arrays[Mesh.ARRAY_INDEX] = indices
 	return arrays

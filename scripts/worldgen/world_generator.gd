@@ -17,9 +17,10 @@ func _init(seed_value: int) -> void:
 
 
 ## Fills a column: index = x + 16 * (z + 16 * y), the same layout as chunks,
-## so chunk k is the byte range [k * 4096, (k + 1) * 4096).
-func generate_blocks(_cx: int, _cz: int) -> PackedByteArray:
-	var blocks := PackedByteArray()
+## so chunk k is the range [k * 4096, (k + 1) * 4096). Block ids are 32-bit
+## (ChunkData).
+func generate_blocks(_cx: int, _cz: int) -> PackedInt32Array:
+	var blocks := PackedInt32Array()
 	blocks.resize(COLUMN_VOLUME)
 	return blocks
 
@@ -37,7 +38,7 @@ func biome_name(_x: int, _z: int) -> String:
 
 ## Highest block that affects sky light (light opacity > 0) per block
 ## column, index x + 16 * z; -1 if none. Everything above it gets full sky.
-static func heightmap(blocks: PackedByteArray) -> PackedInt32Array:
+static func heightmap(blocks: PackedInt32Array) -> PackedInt32Array:
 	var opacity := Blocks.light_opacity_table
 	var heights := PackedInt32Array()
 	heights.resize(256)
@@ -59,7 +60,7 @@ func generate_column(cx: int, cz: int) -> Array[ChunkData]:
 
 
 ## Chunks of a generated column, bottom to top.
-static func split_column(blocks: PackedByteArray) -> Array[ChunkData]:
+static func split_column(blocks: PackedInt32Array) -> Array[ChunkData]:
 	var chunks: Array[ChunkData] = []
 	for k in HEIGHT_CHUNKS:
 		var chunk := ChunkData.new()

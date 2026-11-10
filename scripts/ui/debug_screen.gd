@@ -114,7 +114,7 @@ func _left_lines() -> PackedStringArray:
 				Player.MAX_HEALTH, player.food.food, player.food.saturation, player.food.exhaustion])
 		if world:
 			lines.append("Biome: %s" % world.biome_at(block.x, block.z))
-			lines.append("Sky light: %d" % world.get_light(block))
+			lines.append("Sky light: %d, block light: %d" % [world.get_light(block), world.get_block_light(block)])
 	lines.append("")
 
 	if world:

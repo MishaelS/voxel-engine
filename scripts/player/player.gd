@@ -139,6 +139,7 @@ var _forward_tap := 0 # ticks left to double-tap forward (sprint)
 var _eye := EYE_HEIGHT
 # View bobbing and FOV (previous / current tick values, interpolated).
 var _walked := 0.0
+var _next_step := 1.0
 var _prev_walked := 0.0
 var _bob := 0.0
 var _prev_bob := 0.0
@@ -439,7 +440,11 @@ func _tick() -> void:
 		sprinting = false
 	forward *= 0.98
 	strafe *= 0.98
+	var was_in_water := in_water
 	in_water = _touches_liquid_at(_x, _y, _z, "water")
+	if in_water and not was_in_water and velocity.y < -0.2:
+		# Falling into water: a splash, louder the faster.
+		Sounds.play("random/splash", Vector3(_x, _y, _z), clampf(-velocity.y, 0.2, 1.0), randf_range(0.6, 1.4))
 	in_lava = _touches_liquid_at(_x, _y, _z, "lava")
 	_burn()
 
@@ -500,6 +505,12 @@ func _tick() -> void:
 	elif on_ground:
 		_exhaust(moved * (FoodStats.SPRINT_PER_BLOCK if sprinting else FoodStats.WALK_PER_BLOCK))
 	_walked += moved * 0.6
+	# A step sound every whole step (the classic distance), not while sneaking.
+	if on_ground and not sneaking and not in_water and _walked > _next_step:
+		_next_step = floorf(_walked) + 1.0
+		var below := world.get_block(Vector3i(floori(_x), floori(_y - 0.2), floori(_z))) if world else Blocks.AIR
+		if below != Blocks.AIR:
+			Sounds.play_block("step", below, Vector3(_x, _y, _z))
 	var bob_target := minf(0.1, sqrt(velocity.x * velocity.x + velocity.z * velocity.z))
 	if not on_ground or flying:
 		bob_target = 0.0
@@ -574,63 +585,14 @@ func _move(motion: Vector3) -> void:
 		velocity.y = 0.0
 
 
-## The part of the move (dx, dy, dz) possible from feet (x, y, z): clipped
-## against every solid block on the way, Y first, then X, then Z.
-## Returned as 64-bit floats: Vector3 would round the clipped distances and
-## let the box sink into blocks.
+## The part of the move (dx, dy, dz) possible from feet (x, y, z), see
+## EntityPhysics.sweep().
 func _sweep(x: float, y: float, z: float, dx: float, dy: float, dz: float) -> PackedFloat64Array:
-	var min_x := x - HALF_WIDTH
-	var max_x := x + HALF_WIDTH
-	var min_y := y
-	var max_y := y + HEIGHT
-	var min_z := z - HALF_WIDTH
-	var max_z := z + HALF_WIDTH
-	var boxes := _solid_blocks(
-		minf(min_x, min_x + dx), minf(min_y, min_y + dy), minf(min_z, min_z + dz),
-		maxf(max_x, max_x + dx), maxf(max_y, max_y + dy), maxf(max_z, max_z + dz))
-
-	for b in boxes:
-		if max_x > b.x and min_x < b.x + 1 and max_z > b.z and min_z < b.z + 1:
-			if dy > 0.0 and max_y <= b.y:
-				dy = minf(dy, b.y - max_y)
-			elif dy < 0.0 and min_y >= b.y + b.w - 1e-7:
-				dy = maxf(dy, b.y + b.w - min_y)
-	min_y += dy
-	max_y += dy
-	for b in boxes:
-		if max_y > b.y and min_y < b.y + b.w and max_z > b.z and min_z < b.z + 1:
-			if dx > 0.0 and max_x <= b.x:
-				dx = minf(dx, b.x - max_x)
-			elif dx < 0.0 and min_x >= b.x + 1:
-				dx = maxf(dx, b.x + 1 - min_x)
-	min_x += dx
-	max_x += dx
-	for b in boxes:
-		if max_x > b.x and min_x < b.x + 1 and max_y > b.y and min_y < b.y + b.w:
-			if dz > 0.0 and max_z <= b.z:
-				dz = minf(dz, b.z - max_z)
-			elif dz < 0.0 and min_z >= b.z + 1:
-				dz = maxf(dz, b.z + 1 - min_z)
-	return PackedFloat64Array([dx, dy, dz])
+	return EntityPhysics.sweep(world, x, y, z, HALF_WIDTH, HEIGHT, dx, dy, dz)
 
 
-## The colliding blocks touching the given box: (x, y, z, height of the
-## block's top above y; 1 for full blocks, 9/16 for beds).
 func _solid_blocks(min_x: float, min_y: float, min_z: float, max_x: float, max_y: float, max_z: float) -> Array[Vector4]:
-	var result: Array[Vector4] = []
-	if world == null:
-		return result
-	var collides := Blocks.collides_table
-	var heights := Blocks.height_table
-	for y in range(floori(min_y), floori(max_y) + 1):
-		if y < 0 or y >= WorldGenerator.HEIGHT:
-			continue
-		for z in range(floori(min_z), floori(max_z) + 1):
-			for x in range(floori(min_x), floori(max_x) + 1):
-				var id := world.get_block(Vector3i(x, y, z))
-				if collides[id] == 1 and min_y < y + heights[id]:
-					result.append(Vector4(x, y, z, heights[id]))
-	return result
+	return EntityPhysics.solid_boxes(world, min_x, min_y, min_z, max_x, max_y, max_z)
 
 
 ## True if the player's box at feet (x, y, z) touches no solid block.
@@ -676,6 +638,10 @@ func _burn() -> void:
 	if in_lava and not is_creative():
 		damage(LAVA_DAMAGE)
 		fire_ticks = FIRE_TICKS
+	if not in_lava and not is_creative() and EntityPhysics.touches_fire(world, _x, _y, _z, HALF_WIDTH, HEIGHT):
+		# Walking in fire: 1 damage and 8 seconds of burning (the classic game).
+		damage(1)
+		fire_ticks = maxi(fire_ticks, 160)
 	if in_water:
 		fire_ticks = 0
 	if fire_ticks > 0:
@@ -714,6 +680,7 @@ func damage(amount: int, always: bool = false) -> void:
 		_invulnerable = INVULNERABLE_TICKS
 		hurt_ticks = HURT_TICKS
 	_exhaust(FoodStats.DAMAGE)
+	Sounds.play("damage/hurt", null, 1.0, randf_range(0.8, 1.2))
 	if health == 0:
 		_die()
 

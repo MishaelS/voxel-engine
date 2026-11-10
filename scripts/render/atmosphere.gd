@@ -55,6 +55,7 @@ func _ready() -> void:
 
 	add_child(WaterAnimation.new())
 	add_child(LavaAnimation.new())
+	add_child(FireAnimation.new())
 	_clouds = Clouds.new()
 	_clouds.name = "Clouds"
 	_clouds.camera = player.camera if player else null

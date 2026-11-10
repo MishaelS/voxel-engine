@@ -9,8 +9,8 @@ extends RefCounted
 ##
 ## Every face's pixels become an extra layer of the block tile array (after
 ## the 256 atlas tiles; edges extended so distant mipmaps don't bleed), and
-## the mesher draws the boxes with those layers (quads()).
-## The model is built facing south (+Z) and turned for the other facings.
+## the chest is a block model (BlockModel) using those layers, registered
+## for each part and facing (model_index()).
 ##
 ## Face orientation in the textures (the game's): side faces are upside
 ## down (their bottom row is the face's top), seen from outside left to
@@ -57,8 +57,32 @@ static var _boxes := {
 ## Faces and their texture rectangles, filled by _layout().
 static var _faces: Array = []        # [part][box] -> {face: [layer, Rect2i]}
 static var _rects: Array[Rect2i] = [] # layer - FIRST_LAYER -> rect in the atlas
-static var _quads := {}               # [part, facing] -> Array of quads
+static var _models := {}              # part * 4 + facing -> BlockModel index
 static var _ready := _layout()
+
+
+## The block model of a chest part facing `facing` (0 south .. 3 east).
+static func model_index(part: int, facing: int) -> int:
+	var key := part * 4 + facing
+	if not _models.has(key):
+		_models[key] = BlockModel.register(_model_boxes(part), facing)
+	return _models[key]
+
+
+## The chest's boxes as BlockModel boxes: each face shows its own layer,
+## side faces upside down and the squares mirrored, like the game.
+static func _model_boxes(part: int) -> Array:
+	var result := []
+	var boxes: Array = _boxes[part]
+	for b in boxes.size():
+		var faces := {}
+		var part_faces: Dictionary = _faces[part][b]
+		for face: int in part_faces:
+			var rect: Rect2i = part_faces[face][1]
+			faces[face] = {"layer": part_faces[face][0], "uv": Rect2(Vector2.ZERO, Vector2(rect.size)),
+				"flip_v": face != UP and face != DOWN, "mirror_u": face == UP or face == DOWN}
+		result.append({"from": boxes[b][0], "to": boxes[b][1], "faces": faces})
+	return result
 
 
 ## The tile layers of the chest faces, as 16 x 16 images (for the tile array).
@@ -117,48 +141,3 @@ static func _layout() -> bool:
 			part_faces.append(faces)
 		_faces.append(part_faces)
 	return true
-
-
-## The quads of a chest part facing `facing` (0 south, 1 west, 2 north,
-## 3 east), in block units: [corners (4, clockwise from the top left seen
-## from outside), normal, uvs (4, inside the layer), layer].
-static func quads(part: int, facing: int) -> Array:
-	var key := part * 4 + facing
-	if _quads.has(key):
-		return _quads[key]
-	var turn := deg_to_rad([0.0, -90.0, 180.0, 90.0][facing])
-	var rotation := Basis(Vector3.UP, turn)
-	var result := []
-	var boxes: Array = _boxes[part]
-	for b in boxes.size():
-		var box: Array = boxes[b]
-		var from: Vector3 = box[0] / 16.0
-		var to: Vector3 = box[1] / 16.0
-		var faces: Dictionary = _faces[part][b]
-		for face: int in faces:
-			var layer: int = faces[face][0]
-			var rect: Rect2i = faces[face][1]
-			var corners := _corners(face, from, to)
-			var size := Vector2(rect.size) / 16.0
-			var uvs := PackedVector2Array()
-			for c in 4:
-				var uv := Vector2(ChunkMesher.CORNER_UVS[c])
-				if face == UP or face == DOWN:
-					uv.x = 1.0 - uv.x # the squares run along -X
-				else:
-					uv.y = 1.0 - uv.y # side faces are upside down
-				uvs.append(uv * size)
-			var turned := PackedVector3Array()
-			for corner in corners:
-				turned.append(rotation * (corner - Vector3(0.5, 0.0, 0.5)) + Vector3(0.5, 0.0, 0.5))
-			result.append([turned, rotation * ChunkMesher.FACE_NORMALS[face], uvs, layer])
-	_quads[key] = result
-	return result
-
-
-## The 4 corners of a box face, in the same order as ChunkMesher.FACE_CORNERS.
-static func _corners(face: int, from: Vector3, to: Vector3) -> PackedVector3Array:
-	var result := PackedVector3Array()
-	for corner: Vector3 in ChunkMesher.FACE_CORNERS[face]:
-		result.append(Vector3(lerpf(from.x, to.x, corner.x), lerpf(from.y, to.y, corner.y), lerpf(from.z, to.z, corner.z)))
-	return result

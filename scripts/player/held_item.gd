@@ -133,16 +133,6 @@ func _pose() -> void:
 
 
 func _brightness() -> float:
-	var light := SkyLight.MAX
-	if player.world:
-		light = player.world.get_light(Vector3i(player.eye_position().floor()))
-	var atmosphere := Atmosphere.find(get_tree())
-	if atmosphere == null:
-		return ChunkMesher.LIGHT_BRIGHTNESS[light]
-	# Like the blocks: Classic takes light levels away at night, Dynamic
-	# Lighting dims with the daylight.
-	var level := clampi(roundi(light - atmosphere.sky_darkness), 0, SkyLight.MAX)
-	var brightness := ChunkMesher.LIGHT_BRIGHTNESS[level]
-	if atmosphere.sky_darkness <= 0.0:
-		brightness *= 0.25 + 0.75 * atmosphere.daylight
-	return brightness
+	if player.world == null:
+		return 1.0
+	return player.world.brightness_at(player.eye_position())

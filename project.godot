@@ -25,6 +25,7 @@ WindowControls="*res://scripts/window_controls.gd"
 TickLoop="*res://scripts/core/tick_loop.gd"
 Settings="*res://scripts/settings/settings.gd"
 ShaderPacks="*res://scripts/render/shader_packs.gd"
+Sounds="*res://scripts/core/sounds.gd"
 
 [display]
 

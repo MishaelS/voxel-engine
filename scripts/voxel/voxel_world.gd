@@ -63,6 +63,8 @@ var falling_blocks: FallingBlocks
 ## Dropped items and particles in this world.
 var items: ItemEntities
 var particles: BlockParticles
+## Mobs and other moving things (Entity).
+var entities: EntityManager
 ## The active world generator.
 var world_generator: WorldGenerator
 ## keepInventory game rule: the player keeps the items on death.
@@ -136,10 +138,12 @@ var _opacity := Blocks.light_opacity_table
 ## do not affect the job).
 class MeshJob:
 	var coord: Vector3i
-	var center: PackedByteArray
+	var center: PackedInt32Array
 	var neighbors := {}
 	var center_light: PackedByteArray
 	var neighbor_light := {}
+	var center_block_light: PackedByteArray
+	var neighbor_block_light := {}
 	## Grass / foliage colors of the column (WorldGenerator.column_colors).
 	var colors: Array = [PackedColorArray(), PackedColorArray()]
 	var surfaces := {}
@@ -150,24 +154,27 @@ class MeshJob:
 
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
-		var padded := ChunkMesher.pad(center, neighbors)
-		surfaces = ChunkMesher.build(padded, ChunkMesher.pad(center_light, neighbor_light, SkyLight.MAX),
-			colors[0], colors[1], coord * ChunkData.SIZE)
+		var padded := ChunkMesher.pad_blocks(center, neighbors)
+		surfaces = ChunkMesher.build(padded, ChunkMesher.pad_light(center_light, neighbor_light, SkyLight.MAX),
+			colors[0], colors[1], coord * ChunkData.SIZE, ChunkMesher.pad_light(center_block_light, neighbor_block_light))
 		connectivity = ChunkMesher.connectivity(padded)
 		mesh_ms = (Time.get_ticks_usec() - start_us) / 1000.0
 
 
-## Sky light of a column, computed on a worker thread from the 3x3 columns
-## around it.
+## Sky light and block light of a column, computed on a worker thread from
+## the 3x3 columns around it.
 class LightJob:
 	var column: Vector2i
 	var chunks := []   # 9 arrays of 8 block arrays
 	var heights := []  # 9 heightmaps
 	var light: Array[PackedByteArray] = []
+	var block_light: Array[PackedByteArray] = []
 	var task_id := -1
 
 	func run() -> void:
-		light = SkyLight.compute_column(chunks, heights)
+		var area := SkyLight.area_of(chunks)
+		light = SkyLight.compute_column(area, heights)
+		block_light = BlockLight.compute_column(area)
 
 
 ## A column generated on a worker thread.
@@ -183,7 +190,7 @@ class GenerationJob:
 
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
-		var blocks := PackedByteArray()
+		var blocks := PackedInt32Array()
 		if save and save.has_column(column):
 			blocks = save.load_column(column) # generated or changed before: saved
 		if blocks.is_empty():
@@ -215,6 +222,10 @@ func _ready() -> void:
 	particles.name = "Particles"
 	particles.world = self
 	add_child(particles)
+	entities = EntityManager.new()
+	entities.name = "Entities"
+	entities.world = self
+	add_child(entities)
 	generate()
 	TickLoop.add_listener(_tick, TickLoop.Phase.WORLD)
 
@@ -264,6 +275,7 @@ func generate() -> void:
 	clock = WorldClock.new(start_day_time)
 	falling_blocks.clear()
 	items.clear()
+	entities.clear()
 	_block_entities.clear()
 	_scheduled.clear()
 	_scheduled_count = 0
@@ -519,6 +531,7 @@ func _finish_light_jobs() -> void:
 			var data: ChunkData = _chunks.get(Vector3i(column.x, k, column.y))
 			if data:
 				data.light = job.light[k]
+				data.block_light = job.block_light[k]
 		_lit[column] = true
 		_mesh_scan_needed = true
 
@@ -528,11 +541,11 @@ func _in_load_radius(column: Vector2i) -> bool:
 	return absi(column.x - _player_column.x) <= radius and absi(column.y - _player_column.y) <= radius
 
 
-static var _solid_chunk_cache := PackedByteArray()
+static var _solid_chunk_cache := PackedInt32Array()
 static var _solid_heights_cache := PackedInt32Array()
 
 
-static func _solid_chunk() -> PackedByteArray:
+static func _solid_chunk() -> PackedInt32Array:
 	if _solid_chunk_cache.is_empty():
 		_solid_chunk_cache.resize(ChunkData.VOLUME)
 		_solid_chunk_cache.fill(Blocks.id_of("stone"))
@@ -632,6 +645,103 @@ func _relight(pos: Vector3i) -> void:
 				else level - maxi(neighbor_opacity, 1)
 			if candidate > get_light(neighbor):
 				_set_light(neighbor, candidate)
+				spread.append(neighbor)
+
+
+## Block light (glowing blocks) at a world position; 0 where nothing is loaded.
+func get_block_light(pos: Vector3i) -> int:
+	if pos.y < 0 or pos.y >= WorldGenerator.HEIGHT:
+		return 0
+	var coord := chunk_coord_of(pos)
+	var data: ChunkData = _chunks.get(coord)
+	if data == null:
+		return 0
+	var local := pos - coord * ChunkData.SIZE
+	return data.block_light[ChunkData.index(local.x, local.y, local.z)]
+
+
+## Brightness (linear, the classic light curve) of the light at a point,
+## for things drawn there like blocks (the held item, dropped items,
+## particles): sky light minus the night (Classic) or dimmed by the daylight
+## (Dynamic Lighting), or block light if brighter.
+func brightness_at(point: Vector3) -> float:
+	var cell := Vector3i(point.floor())
+	var atmosphere := Atmosphere.find(get_tree())
+	var darkness := atmosphere.sky_darkness if atmosphere else 0.0
+	var sky := ChunkMesher.LIGHT_BRIGHTNESS[clampi(roundi(get_light(cell) - darkness), 0, SkyLight.MAX)]
+	if atmosphere and atmosphere.sky_darkness <= 0.0:
+		sky *= 0.25 + 0.75 * atmosphere.daylight
+	return maxf(sky, ChunkMesher.LIGHT_BRIGHTNESS[get_block_light(cell)])
+
+
+## The brighter of sky light minus `sky_darkness` levels and block light.
+func get_combined_light(pos: Vector3i, sky_darkness: float = 0.0) -> int:
+	return maxi(clampi(roundi(get_light(pos) - sky_darkness), 0, SkyLight.MAX), get_block_light(pos))
+
+
+func _set_block_light(pos: Vector3i, level: int) -> void:
+	var coord := chunk_coord_of(pos)
+	var data: ChunkData = _chunks.get(coord)
+	if data == null:
+		return
+	var local := pos - coord * ChunkData.SIZE
+	var i := ChunkData.index(local.x, local.y, local.z)
+	if data.block_light[i] != level:
+		data.block_light[i] = level
+		_mark_dirty_around(coord, local)
+
+
+## Re-lights block light around a changed block: removes the light that
+## came through or from the old block (flooding out, re-queueing brighter
+## cells found at the edge), then spreads again from those cells and from
+## the block itself if it glows.
+func _relight_block_light(pos: Vector3i) -> void:
+	var removal: Array = [[pos, get_block_light(pos)]]
+	var spread: Array[Vector3i] = []
+	_set_block_light(pos, 0)
+	var head := 0
+	while head < removal.size():
+		var entry: Array = removal[head]
+		head += 1
+		var cell: Vector3i = entry[0]
+		var level: int = entry[1]
+		for offset in NEIGHBORS:
+			var neighbor := cell + offset
+			var neighbor_level := get_block_light(neighbor)
+			if neighbor_level == 0:
+				continue
+			if neighbor_level < level and Blocks.light_emission_table[get_block(neighbor)] < neighbor_level:
+				_set_block_light(neighbor, 0)
+				removal.append([neighbor, neighbor_level])
+			else:
+				spread.append(neighbor) # lit from elsewhere (or glowing): spreads again
+	# The block itself: its own glow, or light from its neighbors.
+	var id := get_block(pos)
+	var best: int = Blocks.light_emission_table[id]
+	var opacity: int = _opacity[id]
+	if opacity < SkyLight.MAX:
+		for offset in NEIGHBORS:
+			best = maxi(best, get_block_light(pos + offset) - maxi(opacity, 1))
+	if best > 0:
+		_set_block_light(pos, best)
+		spread.append(pos)
+	head = 0
+	while head < spread.size():
+		var cell := spread[head]
+		head += 1
+		var level := get_block_light(cell)
+		if level <= 1:
+			continue
+		for offset in NEIGHBORS:
+			var neighbor := cell + offset
+			if neighbor.y < 0 or neighbor.y >= WorldGenerator.HEIGHT or not is_inside(neighbor):
+				continue
+			var neighbor_opacity: int = _opacity[get_block(neighbor)]
+			if neighbor_opacity >= SkyLight.MAX:
+				continue
+			var candidate := level - maxi(neighbor_opacity, 1)
+			if candidate > get_block_light(neighbor):
+				_set_block_light(neighbor, candidate)
 				spread.append(neighbor)
 
 
@@ -738,6 +848,7 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 	_update_heightmap(pos, id)
 	if _lit.has(Vector2i(coord.x, coord.z)):
 		_relight(pos)
+		_relight_block_light(pos)
 	if notify:
 		_update_block(pos)
 		for offset in NEIGHBORS:
@@ -790,6 +901,7 @@ func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true, e
 		return
 	if effects:
 		particles.break_block(pos, id)
+		Sounds.play_block("break", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
 	if drop:
 		for entry: Array in Blocks.drops_of(id, rng, can_harvest):
 			items.drop_from_block(pos, entry[0], entry[1])
@@ -834,14 +946,11 @@ func block_entity(pos: Vector3i) -> Dictionary:
 
 
 func _tick_block_entities() -> void:
-	var eye := player.global_position if player else Vector3.ZERO
 	for pos: Vector3i in _block_entities.keys():
 		var entity: Dictionary = _block_entities[pos]
 		if entity.type != "furnace" or not is_inside(pos):
 			continue
 		_tick_furnace(pos, entity)
-		if entity.burn > 0 and rng.randf() < 0.25 and eye.distance_squared_to(Vector3(pos)) < 32.0 * 32.0:
-			particles.furnace(pos, maxi(Blocks.facing_table[get_block(pos)], 0))
 
 
 ## A furnace tick like the classic game: fuel burns down; when something
@@ -909,6 +1018,33 @@ func _tick(_tick_index: int) -> void:
 	_run_scheduled_ticks()
 	_run_random_ticks()
 	_tick_block_entities()
+	_run_display_ticks()
+
+
+## Display ticks like the game: random blocks around the player show their
+## effects (torch flames and smoke, fire, lava pops, burning furnaces).
+const DISPLAY_TICKS := 1000
+const DISPLAY_RANGE := 16
+var _display_rng := RandomNumberGenerator.new()
+
+
+## A burning furnace's smoke and flames in front.
+static func furnace_display_tick(world: VoxelWorld, pos: Vector3i, rng: RandomNumberGenerator) -> void:
+	if rng.randf() < 0.5:
+		world.particles.furnace(pos, maxi(Blocks.facing_table[world.get_block(pos)], 0))
+
+
+func _run_display_ticks() -> void:
+	if player == null:
+		return
+	var center := Vector3i(player.global_position.floor())
+	var handlers := Blocks.display_table
+	for i in DISPLAY_TICKS:
+		var pos := center + Vector3i(_display_rng.randi_range(-DISPLAY_RANGE, DISPLAY_RANGE),
+			_display_rng.randi_range(-DISPLAY_RANGE, DISPLAY_RANGE), _display_rng.randi_range(-DISPLAY_RANGE, DISPLAY_RANGE))
+		var id := get_block(pos)
+		if handlers[id] == 1:
+			Blocks.get_type(id).display_tick.call(self, pos, _display_rng)
 
 
 func _run_scheduled_ticks() -> void:
@@ -969,6 +1105,7 @@ func _start_mesh_jobs() -> void:
 		var data: ChunkData = _chunks[coord]
 		job.center = data.blocks # copy-on-write snapshots
 		job.center_light = data.light
+		job.center_block_light = data.block_light
 		job.colors = _column_colors.get(Vector2i(coord.x, coord.z), job.colors)
 		for dx in range(-1, 2):
 			for dy in range(-1, 2):
@@ -978,8 +1115,9 @@ func _start_mesh_jobs() -> void:
 						var neighbor: ChunkData = _chunks.get(coord + offset)
 						if open_edges and not _in_render_radius(Vector2i(coord.x + dx, coord.z + dz)):
 							neighbor = null # beyond the edge counts as air: solid side walls
-						job.neighbors[offset] = neighbor.blocks if neighbor else PackedByteArray()
+						job.neighbors[offset] = neighbor.blocks if neighbor else PackedInt32Array()
 						job.neighbor_light[offset] = neighbor.light if neighbor else PackedByteArray()
+						job.neighbor_block_light[offset] = neighbor.block_light if neighbor else PackedByteArray()
 		job.task_id = WorkerThreadPool.add_task(job.run, false, "Chunk mesh")
 		_mesh_jobs[coord] = job
 
@@ -1191,7 +1329,7 @@ func _save_column(column: Vector2i) -> void:
 	_modified.erase(column)
 	if save == null:
 		return
-	var blocks := PackedByteArray()
+	var blocks := PackedInt32Array()
 	for k in WorldGenerator.HEIGHT_CHUNKS:
 		blocks.append_array((_chunks[Vector3i(column.x, k, column.y)] as ChunkData).blocks)
 	save.save_column(column, blocks)
@@ -1202,13 +1340,13 @@ func save_state() -> Dictionary:
 	var rules := {}
 	for rule_name in GameRules.names():
 		rules[rule_name] = GameRules.rules[rule_name].get.call(self)
-	var entities := {}
+	var saved_block_entities := {}
 	for pos: Vector3i in _block_entities:
 		var entity: Dictionary = _block_entities[pos].duplicate()
 		entity.inventory = (entity.inventory as Inventory).save_state()
-		entities[pos] = entity
+		saved_block_entities[pos] = entity
 	return {"game_time": clock.game_time, "day_time": clock.day_time, "rules": rules,
-		"block_entities": entities, "items": items.save_state()}
+		"block_entities": saved_block_entities, "items": items.save_state(), "entities": entities.save_state()}
 
 
 func _restore_state() -> void:
@@ -1216,14 +1354,15 @@ func _restore_state() -> void:
 	if world_state.is_empty():
 		return
 	clock.game_time = world_state.get("game_time", 0)
-	var entities: Dictionary = world_state.get("block_entities", {})
-	for pos: Vector3i in entities:
-		var entity: Dictionary = entities[pos].duplicate()
+	var saved_block_entities: Dictionary = world_state.get("block_entities", {})
+	for pos: Vector3i in saved_block_entities:
+		var entity: Dictionary = saved_block_entities[pos].duplicate()
 		var inventory := Inventory.new(CHEST_SIZE if entity.type == "chest" else FURNACE_SIZE)
 		inventory.load_state(entity.inventory)
 		entity.inventory = inventory
 		_block_entities[pos] = entity
 	items.load_state(world_state.get("items", []))
+	entities.load_state(world_state.get("entities", []))
 	clock.day_time = world_state.get("day_time", start_day_time)
 	var rules: Dictionary = world_state.get("rules", {})
 	for rule_name: String in rules:

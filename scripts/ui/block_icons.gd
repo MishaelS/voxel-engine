@@ -28,7 +28,7 @@ static func get_icon(id: int) -> Texture2D:
 		return null
 	if not Items.is_block(id):
 		return Items.icon(id) # flat items: their items.png tile
-	if Blocks.shape_table[id] == BlockType.Shape.CROSS:
+	if Blocks.shape_table[id] == BlockType.Shape.CROSS or Blocks.get_type(id).flat_item:
 		return _flat_icon(id) # plants: their picture, like the classic game
 	var pixels := icon_pixels()
 	if pixels != _pixels:

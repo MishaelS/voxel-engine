@@ -2,6 +2,8 @@
 
 A voxel engine for Godot 4.5 by MishaelS.
 
+What is planned next (everything Minecraft Beta 1.7.3 has that is not here yet): [ROADMAP.md](ROADMAP.md).
+
 ## Running
 Open the project folder in Godot 4.5+ (Import → `project.godot`) and press F5: the title screen
 opens (Singleplayer → select or create a world). Worlds are saved in `user://saves/<world>/`.
@@ -100,6 +102,9 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 * `scripts/voxel/blocks.gd` - block registry: all block types and their atlas tiles (with facings, flowing water levels, bed halves)
 * `scripts/items/` - item registry (tools, ingots, food, buckets, the bed) and the 3D shapes of flat items in hand
 * `scripts/player/crafting.gd`, `scripts/player/smelting.gd` - crafting and furnace recipes
+* `scripts/voxel/block_model.gd` - block models made of boxes; `scripts/voxel/block_light.gd` - light from glowing blocks
+* `scripts/entities/entity.gd`, `entity_manager.gd`, `entity_physics.gd` - entities (base for mobs) and box collision
+* `scripts/core/sounds.gd` - sound effects and music; `tools/make_sounds.py` - the placeholder sounds
 * `scripts/voxel/chest_model.gd` - the chest model (single and large) from `assets/textures/chest-atlas.png`
 * `scripts/entities/item_entities.gd`, `scripts/entities/block_particles.gd` - dropped items and particles
 * `scripts/voxel/behaviors/` - block behaviors: flowing water and lava, falling sand, grass, plants, leaf decay

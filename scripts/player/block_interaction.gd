@@ -49,6 +49,7 @@ var _break_delay := 0.0 # ticks
 var _place_delay := 0.0 # ticks
 var _tick_time := 0.0
 var _eating := -1.0 # ticks eaten, -1 = not eating
+var _hit_ticks := 0
 var _inventory_screen: InventoryScreen
 
 
@@ -162,11 +163,14 @@ func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 	var can_harvest := Items.can_harvest(tool, id)
 	var factor := HAND_BREAK_FACTOR if can_harvest else WRONG_TOOL_FACTOR
 	break_progress += ticks * Items.break_speed(tool, id) / maxf(hardness * factor, 0.001)
-	# Bits chip off the face every tick.
+	# Bits chip off the face every tick, a hit sound every 4 ticks.
 	_tick_time += ticks
 	while _tick_time >= 1.0:
 		_tick_time -= 1.0
+		_hit_ticks += 1
 		world.particles.hit_block(pos, target.get("normal", Vector3i.UP), id)
+		if _hit_ticks % 4 == 0:
+			Sounds.play_block("hit", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
 	if break_progress >= 1.0:
 		world.destroy_block(pos, true, can_harvest)
 		player.block_broken()
@@ -213,6 +217,8 @@ func _use() -> void:
 			_empty_bucket("lava")
 		"bed":
 			_place_bed()
+		"flint_and_steel":
+			_strike_flint()
 
 
 ## Crafting table, chest, furnace and bed react to RMB. Returns true if used.
@@ -276,14 +282,27 @@ func _place_block(id: int) -> void:
 	var block := Blocks.get_type(id)
 	if block.shape == BlockType.Shape.CROSS and not PlantBehavior.can_stay(id, world.get_block(pos + Vector3i.DOWN)):
 		return # plants only on their ground
+	if family == "torch":
+		# On the floor, or on the wall that was clicked (leaning away from it).
+		var normal: Vector3i = target.normal if Blocks.replaceable_table[target.block] == 0 else Vector3i.UP
+		if normal == Vector3i.DOWN:
+			return
+		if normal == Vector3i.UP:
+			if not TorchBehavior.can_hold(world, pos + Vector3i.DOWN):
+				return
+		else:
+			if not TorchBehavior.can_hold(world, pos - normal):
+				return
+			id = Blocks.variant("wall_torch", Blocks.FACING_DIRECTIONS.find(normal))
 	if block.placed_as != "":
 		id = Blocks.id_of(block.placed_as) # placed leaves never decay
 	if world.get_block(pos) != Blocks.AIR:
 		world.destroy_block(pos, true, true, false) # a plant or liquid in the way
-	if block.shape == BlockType.Shape.CHEST:
+	if ChestBehavior.is_chest(id):
 		ChestBehavior.place(world, pos, Blocks.facing_table[id]) # may join a large chest
 	else:
 		world.set_block(pos, id)
+	Sounds.play_block("place", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
 	player.swing()
 	if not player.is_creative():
 		player.inventory.take(player.selected_slot)
@@ -308,9 +327,22 @@ func _place_bed() -> void:
 			return
 	world.set_block(foot, Blocks.variant("bed_foot", facing))
 	world.set_block(head, Blocks.variant("bed_head", facing))
+	Sounds.play_block("place", world.get_block(foot), Vector3(foot) + Vector3(0.5, 0.5, 0.5))
 	player.swing()
 	if not player.is_creative():
 		player.inventory.take(player.selected_slot)
+
+
+## Flint and steel lights a fire next to the clicked face (it wears out).
+func _strike_flint() -> void:
+	var cell: Variant = _place_cell()
+	if cell == null:
+		return
+	player.swing()
+	if FireBehavior.ignite(world, cell):
+		Sounds.play("fire/ignite", Vector3(cell) + Vector3(0.5, 0.5, 0.5), 1.0, randf_range(0.8, 1.2))
+		if not player.is_creative():
+			player.inventory.wear(player.selected_slot)
 
 
 ## An empty bucket scoops up a water or lava source.
@@ -359,8 +391,10 @@ func _continue_eating(ticks: float) -> void:
 	if int(_eating) / 4 != before / 4 and _eating > 6.0:
 		var mouth := player.eye_position() + player.look_direction() * 0.4 - Vector3(0, 0.15, 0)
 		world.particles.item_crumbs(id, mouth, player.look_direction())
+		Sounds.play("random/eat", null, 0.5 + 0.5 * randi_range(0, 1), randf_range(0.8, 1.2))
 	if _eating >= EAT_TICKS:
 		player.eat(id)
+		Sounds.play("random/burp", null, 0.5, randf_range(0.9, 1.0))
 		if not player.is_creative():
 			player.inventory.take(player.selected_slot)
 		_stop_eating()

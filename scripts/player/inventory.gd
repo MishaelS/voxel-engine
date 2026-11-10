@@ -154,7 +154,7 @@ func swap(a: int, b: int) -> void:
 
 ## For saves: {"ids", "counts", "damages"}.
 func save_state() -> Dictionary:
-	return {"ids": ids, "counts": counts, "damages": damages}
+	return {"ids": ids, "counts": counts, "damages": damages, "item_base": Items.FIRST_ITEM}
 
 
 ## Restores a saved state; items that no longer exist are dropped.
@@ -162,8 +162,11 @@ func load_state(saved: Dictionary) -> void:
 	var saved_ids: PackedInt32Array = saved.get("ids", PackedInt32Array())
 	var saved_counts: PackedInt32Array = saved.get("counts", PackedInt32Array())
 	var saved_damages: PackedInt32Array = saved.get("damages", PackedInt32Array())
+	var base: int = saved.get("item_base", Items.OLD_FIRST_ITEM)
 	for slot in mini(saved_ids.size(), ids.size()):
-		var id := saved_ids[slot] if Items.exists(saved_ids[slot]) else Blocks.AIR
+		var id := Items.from_save(saved_ids[slot], base)
+		if not Items.exists(id):
+			id = Blocks.AIR
 		ids[slot] = id
 		counts[slot] = mini(saved_counts[slot] if slot < saved_counts.size() else 0, Items.max_stack(id)) if id != Blocks.AIR else 0
 		damages[slot] = saved_damages[slot] if slot < saved_damages.size() else 0

@@ -1,7 +1,7 @@
 class_name Blocks
 extends RefCounted
-## Block registry. A block is stored in chunks as a single byte (its id),
-## so there can be up to 255 types plus air.
+## Block registry. A block is stored in chunks as a 32-bit id (ChunkData);
+## every state of a block (facing, level, half) is its own id.
 ##
 ## To add a block: append a register() call in _register_all(). Ids are given
 ## in registration order, so always append at the end to keep ids stable
@@ -69,8 +69,15 @@ static var facing_table := PackedInt32Array()
 static var shape_table := PackedByteArray()
 ## 1 for blocks that placing or flowing liquids replace (plants).
 static var replaceable_table := PackedByteArray()
-## Chest part per block (ChestModel.Part; only for Shape.CHEST).
+## Block model per block (BlockModel index; Shape.MODEL), -1 = none.
+static var model_table := PackedInt32Array()
+## Chest part per block (ChestModel.Part; chests only).
 static var chest_part_table := PackedByteArray()
+## 1 if the block has display effects (BlockType.display_tick).
+static var display_table := PackedByteArray()
+## Light given off per block (BlockType.light_emission) and the ids that glow.
+static var light_emission_table := PackedByteArray()
+static var glowing_ids := PackedInt32Array()
 ## family -> [ids by facing] (or [id] for blocks without facing).
 static var _families := {}
 
@@ -188,7 +195,102 @@ static func _register_all() -> bool:
 	for half in ["chest_left", "chest_right"]:
 		for facing in 4:
 			register(_chest(facing, half))
+
+	# Light and fire (appended: ids stay stable).
+	register(_torch(-1))
+	for facing in 4:
+		register(_torch(facing))
+	register(BlockType.cube("glowstone", 105).set_hardness(0.3).set_light_emission(15) \
+		.set_drops([{"item": "glowstone_dust", "min": 2, "max": 4}]))
+	for facing in 4:
+		register(_oriented("pumpkin", facing, 102, 102, 119, 118).set_hardness(1.0).set_tool("axe"))
+	for facing in 4:
+		register(_oriented("jack_o_lantern", facing, 102, 102, 120, 118).set_hardness(1.0).set_tool("axe") \
+			.set_light_emission(15))
+	for age in FireBehavior.MAX_AGE + 1:
+		register(_fire(age))
+	_set_flammability()
 	return true
+
+
+## A torch: on the floor (facing -1) or on a wall (facing away from it,
+## leaning 22.5 degrees), like the game's torch models; light 14.
+static func _torch(facing: int) -> BlockType:
+	var on_wall := facing >= 0
+	var block_name := "torch" if not on_wall else ("wall_torch" if facing == 0 else "wall_torch_" + FACING_NAMES[facing])
+	var block := BlockType.cube(block_name, 80).set_layer(Layer.CUTOUT).set_collides(false).set_hardness(0.0) \
+		.set_light_opacity(0).set_light_emission(14).set_height(0.625) \
+		.set_on_update(Callable(TorchBehavior, "on_update")).set_display_tick(Callable(TorchBehavior, "display_tick"))
+	block.flat_item = true
+	block.shape = BlockType.Shape.MODEL
+	var faces := {
+		BlockModel.UP: {"layer": 80, "uv": Rect2(7, 6, 2, 2)},
+		BlockModel.DOWN: {"layer": 80, "uv": Rect2(7, 13, 2, 2)},
+	}
+	for side in [BlockModel.EAST, BlockModel.WEST, BlockModel.SOUTH, BlockModel.NORTH]:
+		faces[side] = {"layer": 80, "uv": Rect2(7, 6, 2, 10)}
+	if on_wall:
+		block.family = "wall_torch"
+		block.facing = facing
+		block.item = "torch"
+		block.in_catalog = false
+		block.model = BlockModel.register([{"from": Vector3(7, 3.5, -1), "to": Vector3(9, 13.5, 1), "faces": faces,
+			"rotation": {"axis": "x", "angle": 22.5, "origin": Vector3(8, 3.5, 0)}}], facing)
+	else:
+		block.model = BlockModel.register([{"from": Vector3(7, 0, 7), "to": Vector3(9, 10, 9), "faces": faces}])
+	return block
+
+
+## Fire of an age 0..15 (FireBehavior): crossed burning pictures, glowing.
+static func _fire(age: int) -> BlockType:
+	var block := BlockType.cube("fire" if age == 0 else "fire_%d" % age, 31).as_plant().set_drop("none") \
+		.set_light_emission(15).set_on_update(Callable(FireBehavior, "on_update")) \
+		.set_scheduled_tick(Callable(FireBehavior, "scheduled_tick")) \
+		.set_display_tick(Callable(FireBehavior, "display_tick")).hidden_from_catalog()
+	block.emissive = true
+	block.height = 1.0
+	block.family = "fire"
+	return block
+
+
+## Which blocks burn, like the classic game (spread encouragement, burn
+## chance): planks 5 / 20, logs 5 / 5, leaves and wool 30 / 60, tall grass
+## and flowers 60 / 100.
+static func _set_flammability() -> void:
+	for block in types:
+		var n := block.name
+		if n.ends_with("_planks"):
+			block.set_flammable(5, 20)
+		elif n.ends_with("_log"):
+			block.set_flammable(5, 5)
+		elif n.contains("_leaves") or n.ends_with("_wool"):
+			block.set_flammable(30, 60)
+		elif n in ["tall_grass", "fern", "dead_bush", "dandelion", "rose"]:
+			block.set_flammable(60, 100)
+
+
+## The sound material of a block (BlockType.sound), from its kind.
+static func _sound_material(block: BlockType) -> String:
+	var n := block.name
+	if block.liquid or n == "air" or n.begins_with("fire"):
+		return ""
+	if n.contains("glass") or n == "ice" or n == "glowstone":
+		return "glass"
+	if n.ends_with("_wool"):
+		return "cloth"
+	for wood in ["_log", "_planks", "crafting_table", "chest", "bed_", "torch", "pumpkin", "jack_o_lantern"]:
+		if n.contains(wood):
+			return "wood"
+	if n.contains("leaves") or n.begins_with("grass_") or n.ends_with("_sapling") or n == "snowy_grass" \
+			or block.shape == BlockType.Shape.CROSS:
+		return "grass"
+	if n == "gravel" or n == "dirt":
+		return "gravel"
+	if n == "sand":
+		return "sand"
+	if n == "snow":
+		return "snow"
+	return "stone"
 
 
 ## Leaves drop like the classic game: a sapling of their tree 1 time in 20,
@@ -227,6 +329,8 @@ static func _furnace(family: String, front: int, facing: int) -> BlockType:
 	if family == "furnace_lit":
 		block.item = "furnace"
 		block.in_catalog = false
+		block.light_emission = 13
+		block.display_tick = Callable(VoxelWorld, "furnace_display_tick")
 	return block
 
 
@@ -236,9 +340,10 @@ static func _chest(facing: int, family: String = "chest") -> BlockType:
 	var planks := ChestModel.particle_layer()
 	var block := _oriented(family, facing, planks, planks, planks, planks).set_hardness(2.5).set_tool("axe") \
 		.set_height(0.875).set_on_update(Callable(ChestBehavior, "on_update"))
-	block.shape = BlockType.Shape.CHEST
 	block.chest_part = {"chest": ChestModel.Part.SINGLE, "chest_left": ChestModel.Part.LEFT,
 		"chest_right": ChestModel.Part.RIGHT}[family]
+	block.shape = BlockType.Shape.MODEL
+	block.model = ChestModel.model_index(block.chest_part, facing)
 	if family != "chest":
 		block.item = "chest"
 		block.in_catalog = false
@@ -254,6 +359,9 @@ static func _liquid(block_name: String, level: int, family: String = "water") ->
 	if family == "lava":
 		block = BlockType.column(block_name, 237, 238).set_cull_self().set_light_opacity(15)
 		block.emissive = true
+		block.light_emission = 15
+		block.random_tick = Callable(LiquidBehavior, "lava_random_tick")
+		block.display_tick = Callable(LiquidBehavior, "lava_display_tick")
 	else:
 		block = BlockType.column(block_name, 205, 206).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2)
 	block.set_collides(false).set_hardness(-1).set_liquid().set_drop("none") \
@@ -309,9 +417,10 @@ static func _falling(block: BlockType) -> BlockType:
 
 static func register(block: BlockType) -> int:
 	var id := types.size()
-	assert(id < 256, "Block ids are stored as bytes: at most 256 types.")
+	assert(id < 65536, "Block ids are kept below 65536 (saves and tables).")
 	assert(not _ids_by_name.has(block.name), "Duplicate block name: " + block.name)
 	block.id = id
+	block.sound = _sound_material(block)
 	types.append(block)
 	_ids_by_name[block.name] = id
 
@@ -337,6 +446,11 @@ static func register(block: BlockType) -> int:
 	shape_table.append(block.shape)
 	replaceable_table.append(1 if block.replaceable else 0)
 	chest_part_table.append(block.chest_part)
+	model_table.append(block.model)
+	display_table.append(1 if block.display_tick.is_valid() else 0)
+	light_emission_table.append(block.light_emission)
+	if block.light_emission > 0:
+		glowing_ids.append(id)
 	var family := block.family if block.family != "" else block.name
 	if not _families.has(family):
 		_families[family] = []

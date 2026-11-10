@@ -90,7 +90,7 @@ func clear() -> void:
 
 ## For the save: [[id, count, damage, position, age], ...].
 func save_state() -> Array:
-	var result := []
+	var result := [Items.FIRST_ITEM] # the item numbering of this save
 	for item in _items:
 		if item.picked < 0:
 			result.append([item.id, item.count, item.damage, item.pos, item.age])
@@ -98,9 +98,14 @@ func save_state() -> Array:
 
 
 func load_state(saved: Array) -> void:
-	for entry: Array in saved:
-		if entry.size() >= 5 and Items.exists(entry[0]):
-			spawn(entry[0], entry[1], entry[3], Vector3.ZERO, 0, entry[2])
+	var base := Items.OLD_FIRST_ITEM
+	for entry: Variant in saved:
+		if entry is int:
+			base = entry
+			continue
+		var id := Items.from_save(entry[0], base)
+		if (entry as Array).size() >= 5 and Items.exists(id):
+			spawn(id, entry[1], entry[3], Vector3.ZERO, 0, entry[2])
 			_items.back().age = entry[4]
 
 
@@ -217,6 +222,8 @@ func _try_pickup(item: Dictionary) -> void:
 		return
 	var taken := mini(room, item.count)
 	player.inventory.add(item.id, taken, item.damage)
+	# The classic pickup "pop", a little different every time.
+	Sounds.play("random/pop", null, 0.2, ((randf() - randf()) * 0.7 + 1.0) * 2.0)
 	item.count -= taken
 	if item.count <= 0:
 		item.picked = 0 # fly to the player, then disappear
@@ -328,12 +335,5 @@ func _process(_delta: float) -> void:
 				(child as GeometryInstance3D).set_instance_shader_parameter("brightness", brightness)
 
 
-func _brightness(point: Vector3, atmosphere: Atmosphere) -> float:
-	var light := world.get_light(Vector3i(point.floor())) if world else SkyLight.MAX
-	if atmosphere == null:
-		return ChunkMesher.LIGHT_BRIGHTNESS[light]
-	var level := clampi(roundi(light - atmosphere.sky_darkness), 0, SkyLight.MAX)
-	var brightness := ChunkMesher.LIGHT_BRIGHTNESS[level]
-	if atmosphere.sky_darkness <= 0.0:
-		brightness *= 0.25 + 0.75 * atmosphere.daylight
-	return brightness
+func _brightness(point: Vector3, _atmosphere: Atmosphere) -> float:
+	return world.brightness_at(point) if world else 1.0
