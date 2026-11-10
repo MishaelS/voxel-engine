@@ -42,7 +42,7 @@ static func _register_all() -> bool:
 	register(ItemType.make("redstone", 56))
 	register(ItemType.make("flint", 6))
 	register(ItemType.make("snowball", 14).stack(16))
-	register(ItemType.make("apple", 10).set_food(4, 0.3))
+	register(ItemType.make("apple", 10).set_food(4, 0.3, 4))
 	register(ItemType.make("bucket", 74).stack(16))
 	register(ItemType.make("water_bucket", 75).stack(1))
 	register(ItemType.make("bed", 45).stack(1))
@@ -54,7 +54,7 @@ static func _register_all() -> bool:
 				tool.set_fuel(200)
 			register(tool)
 	# Appended: ids stay stable.
-	register(ItemType.make("seeds", 9))
+	register(ItemType.make("seeds", 9).set_places("wheat_crop"))
 	register(ItemType.make("lava_bucket", 76).stack(1).set_fuel(20000))
 	register(ItemType.make("glowstone_dust", 73))
 	register(ItemType.make("flint_and_steel", 5).set_durability(64))
@@ -69,8 +69,20 @@ static func _register_all() -> bool:
 	register(ItemType.make("sugar_cane", 27).set_places("sugar_cane_block"))
 	register(ItemType.make("sugar", 13))
 	register(ItemType.make("bowl", 71))
-	register(ItemType.make("mushroom_stew", 72).stack(1).set_food(6, 0.6).set_container("bowl"))
+	register(ItemType.make("mushroom_stew", 72).stack(1).set_food(6, 0.6, 10).set_container("bowl"))
 	register(ItemType.make("cactus_green", 110))
+	for material: Array in TOOL_MATERIALS:
+		register(ItemType.make(material[0] + "_hoe", 128 + material[4]).set_tool("hoe", material[1], 1.0, material[3]))
+	register(ItemType.make("wheat", 25))
+	register(ItemType.make("bread", 41).set_food(5, 0.6, 5))
+	register(ItemType.make("bone", 28))
+	register(ItemType.make("bone_meal", 191))
+	register(ItemType.make("cake", 29).stack(1).set_places("cake"))
+	register(ItemType.make("cookie", 92).set_food(2, 0.1, 1))
+	register(ItemType.make("cocoa_beans", 126))
+	register(ItemType.make("golden_apple", 11).set_food(4, 1.2, 20))
+	register(ItemType.make("milk_bucket", 77).stack(1).set_container("bucket"))
+	register(ItemType.make("egg", 12).stack(16))
 	return true
 
 

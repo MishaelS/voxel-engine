@@ -761,11 +761,12 @@ func _update_health() -> void:
 	if _y < VOID_Y:
 		damage(4, true)
 	if not is_creative():
-		food.tick(self, world == null or world.natural_regeneration)
+		if world == null or world.hunger:
+			food.tick(self, world == null or world.natural_regeneration)
 
 
 func _can_sprint() -> bool:
-	return is_creative() or flying or food.can_sprint()
+	return is_creative() or flying or food.can_sprint() or (world != null and not world.hunger)
 
 
 ## Hunger only in survival.
@@ -789,10 +790,31 @@ func _tick_sleep() -> void:
 
 
 ## Eats a food item (BlockInteraction, after holding the use button).
+## Eats a food item: with hunger it fills the food bar; without (Beta
+## 1.7.3) it heals right away. A golden apple always heals fully.
 func eat(item_id: int) -> void:
 	var item := Items.get_type(item_id)
-	if item and item.food > 0:
+	if item == null or item.food <= 0:
+		return
+	if world == null or world.hunger:
 		food.eat(item.food, item.saturation)
+		if item.name == "golden_apple":
+			heal(item.heal)
+	else:
+		heal(item.heal)
+
+
+## Whether eating makes sense now (hunger: not full; Beta: hurt), golden
+## apples always.
+func can_eat(item_id: int) -> bool:
+	var item := Items.get_type(item_id)
+	if item == null or item.food <= 0:
+		return false
+	if is_creative() or item.name == "golden_apple":
+		return true
+	if world == null or world.hunger:
+		return food.food < FoodStats.MAX_FOOD
+	return health < MAX_HEALTH
 
 
 ## Exhaustion from breaking a block (BlockInteraction).
@@ -812,4 +834,7 @@ func _track_fall() -> void:
 	if on_ground:
 		if _fall_distance > SAFE_FALL:
 			damage(ceili(_fall_distance - SAFE_FALL))
+		if _fall_distance > 0.75 and world:
+			# Landing on farmland tramples it.
+			FarmBehavior.trample(world, Vector3i(floori(_x), floori(_y - 0.1), floori(_z)))
 		_fall_distance = 0.0

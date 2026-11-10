@@ -15,9 +15,11 @@ var tool := ""
 var tier := -1
 var efficiency := 1.0
 var durability := 0
-## Food points and saturation modifier (0 = not food), like the classic game.
+## Food points and saturation modifier (0 = not food), like the classic game
+## with hunger; `heal`: health it gives at once without hunger (Beta 1.7.3).
 var food := 0
 var saturation := 0.0
+var heal := 0
 ## Ticks it burns in a furnace (0 = not fuel).
 var fuel := 0
 ## The block this item places (sugar cane), "" = none.
@@ -54,9 +56,10 @@ func set_durability(uses: int) -> ItemType:
 	return self
 
 
-func set_food(points: int, saturation_modifier: float) -> ItemType:
+func set_food(points: int, saturation_modifier: float, health: int = 0) -> ItemType:
 	food = points
 	saturation = saturation_modifier
+	heal = health if health > 0 else points
 	return self
 
 

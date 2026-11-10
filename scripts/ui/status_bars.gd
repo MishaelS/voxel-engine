@@ -57,10 +57,15 @@ func _process(_delta: float) -> void:
 		_heart_jitter[i] = randi() % 2 if low else 0
 		_food_jitter[i] = (randi() % 2 if randf() < 0.15 else 0) if hungry else 0
 	# Redraw only when something visible changed.
-	var state := "%d %d %s %s %s" % [player.health, player.food.food, _blinking(), _heart_jitter, _food_jitter]
+	var state := "%d %d %s %s %s %s" % [player.health, player.food.food, _blinking(), _heart_jitter, _food_jitter, _hunger()]
 	if state != _shown:
 		_shown = state
 		queue_redraw()
+
+
+## The food bar shows only with hunger on (the doHunger game rule).
+func _hunger() -> bool:
+	return player.world == null or player.world.hunger
 
 
 func _blinking() -> bool:
@@ -73,6 +78,8 @@ func _draw() -> void:
 		var position := Vector2(i * STEP, _heart_jitter[i] * P)
 		draw_texture(_heart_empty, position, tint)
 		_draw_level(player.health - i * 2, position, _heart_full, _heart_half, tint)
+	if not _hunger():
+		return
 	for i in ICONS:
 		var position := Vector2(WIDTH - ICON - i * STEP, _food_jitter[i] * P)
 		draw_texture(_food_empty, position)

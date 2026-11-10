@@ -207,11 +207,22 @@ func _use() -> void:
 			_place_block(id)
 		return
 	if item.food > 0:
-		if player.is_creative() or player.food.food < FoodStats.MAX_FOOD:
+		if not player.can_eat(id):
+			return
+		if world.hunger:
 			_eating = 0.0
+		else:
+			# Beta 1.7.3: eaten at once, heals right away.
+			_finish_eating(id)
 		return
 	if item.places != "":
-		_place_block(Blocks.id_of(item.places)) # sugar cane
+		_place_block(Blocks.id_of(item.places)) # sugar cane, seeds, cake
+		return
+	if item.tool == "hoe":
+		if hit and target.normal != Vector3i.DOWN and FarmBehavior.till(world, target.pos):
+			player.swing()
+			if not player.is_creative():
+				player.inventory.wear(player.selected_slot)
 		return
 	match item.name:
 		"bucket":
@@ -224,6 +235,11 @@ func _use() -> void:
 			_place_bed()
 		"flint_and_steel":
 			_strike_flint()
+		"bone_meal":
+			if hit and FarmBehavior.bone_meal(world, target.pos):
+				player.swing()
+				if not player.is_creative():
+					player.inventory.take(player.selected_slot)
 		"wooden_door", "iron_door":
 			_place_door(item.name.trim_suffix("_door"))
 		"sign":
@@ -251,6 +267,8 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 			var open := family == "trapdoor"
 			world.set_block(pos, Blocks.variant("trapdoor_open" if open else "trapdoor", Blocks.facing_table[id]))
 			Sounds.play("door/" + ("open" if open else "close"), Vector3(pos) + Vector3(0.5, 0.5, 0.5), 1.0, randf() * 0.1 + 0.9)
+		"cake":
+			return FarmBehavior.eat_cake(world, pos, player)
 		"bed_foot", "bed_head":
 			var head := pos
 			if family == "bed_foot":
@@ -321,6 +339,10 @@ func _place_block(id: int) -> void:
 		player.swing()
 		if not player.is_creative():
 			player.inventory.take(player.selected_slot)
+		return
+	if family == "wheat_crop" and not FarmBehavior.is_farmland(world.get_block(pos + Vector3i.DOWN)):
+		return # seeds only on farmland
+	if family == "cake" and Blocks.is_opaque_table[world.get_block(pos + Vector3i.DOWN)] == 0:
 		return
 	if family == "ladder" or family == "trapdoor":
 		# On the side of the clicked block, held by it.
@@ -474,19 +496,25 @@ func _continue_eating(ticks: float) -> void:
 		world.particles.item_crumbs(id, mouth, player.look_direction())
 		Sounds.play("random/eat", null, 0.5 + 0.5 * randi_range(0, 1), randf_range(0.8, 1.2))
 	if _eating >= EAT_TICKS:
-		player.eat(id)
-		Sounds.play("random/burp", null, 0.5, randf_range(0.9, 1.0))
-		if not player.is_creative():
-			player.inventory.take(player.selected_slot)
-			var container := Items.get_type(id).container
-			if container != "":
-				# The bowl stays in hand.
-				if player.inventory.is_empty_slot(player.selected_slot):
-					player.inventory.set_slot(player.selected_slot, Items.id_of(container), 1)
-				elif player.inventory.add(Items.id_of(container), 1) > 0:
-					player.throw_items(Items.id_of(container), 1)
+		_finish_eating(id)
 		_stop_eating()
 		_place_delay = PLACE_DELAY_TICKS * 2
+
+
+## Eats the food in hand: its effect, one fewer, the bowl stays.
+func _finish_eating(id: int) -> void:
+	player.eat(id)
+	Sounds.play("random/burp" if world.hunger else "random/eat", null, 0.5, randf_range(0.9, 1.0))
+	player.swing()
+	if player.is_creative():
+		return
+	player.inventory.take(player.selected_slot)
+	var container := Items.get_type(id).container
+	if container != "":
+		if player.inventory.is_empty_slot(player.selected_slot):
+			player.inventory.set_slot(player.selected_slot, Items.id_of(container), 1)
+		elif player.inventory.add(Items.id_of(container), 1) > 0:
+			player.throw_items(Items.id_of(container), 1)
 
 
 func _stop_eating() -> void:

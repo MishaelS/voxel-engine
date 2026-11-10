@@ -25,6 +25,7 @@ const TOOL_PATTERNS := {
 	"pickaxe": ["MMM", " S ", " S "],
 	"axe": ["MM", "MS", " S"],
 	"shovel": ["M", "S", "S"],
+	"hoe": ["MM", " S", " S"],
 	"sword": ["M", "M", "S"],
 }
 
@@ -66,6 +67,11 @@ static func _build_recipes() -> Array:
 		{"pattern": ["CC", "CC"], "keys": {"C": "clay_ball"}, "result": "clay", "count": 1},
 		{"pattern": ["P", "P", "P"], "keys": {"P": "paper"}, "result": "book", "count": 1},
 		{"pattern": ["S"], "keys": {"S": "sugar_cane"}, "result": "sugar", "count": 1},
+		{"pattern": ["WWW"], "keys": {"W": "wheat"}, "result": "bread", "count": 1},
+		{"pattern": ["B"], "keys": {"B": "bone"}, "result": "bone_meal", "count": 3},
+		{"pattern": ["MMM", "SES", "WWW"], "keys": {"M": "milk_bucket", "S": "sugar", "E": "egg", "W": "wheat"}, "result": "cake", "count": 1},
+		{"pattern": ["WCW"], "keys": {"W": "wheat", "C": "cocoa_beans"}, "result": "cookie", "count": 8},
+		{"pattern": ["GGG", "GAG", "GGG"], "keys": {"G": "gold_block", "A": "apple"}, "result": "golden_apple", "count": 1},
 		{"pattern": ["SSS"], "keys": {"S": "sugar_cane"}, "result": "paper", "count": 3},
 		{"pattern": ["P P", " P "], "keys": {"P": PLANKS}, "result": "bowl", "count": 4},
 		{"pattern": ["B", "R", "W"], "keys": {"B": "brown_mushroom", "R": "red_mushroom", "W": "bowl"}, "result": "mushroom_stew", "count": 1},

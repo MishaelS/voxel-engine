@@ -561,8 +561,14 @@ func _click_result(shift: bool) -> void:
 			_held_damage = 0
 		for i in _craft_width * _craft_width:
 			if _craft.count_at(i) > 0:
-				# A water bucket leaves its bucket (no such recipes yet).
+				# Milk buckets leave their buckets (the cake), like the game.
+				var container := Items.get_type(_craft.id_at(i)).container if not Items.is_block(_craft.id_at(i)) else ""
 				_craft.take(i)
+				if container != "":
+					if _craft.is_empty_slot(i):
+						_craft.set_slot(i, Items.id_of(container), 1)
+					else:
+						_give(Items.id_of(container), 1)
 		if not shift:
 			return
 		result = Crafting.result_of(_craft_grid(), _craft_width)

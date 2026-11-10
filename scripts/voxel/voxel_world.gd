@@ -73,6 +73,9 @@ var world_generator: WorldGenerator
 var keep_inventory := false
 ## naturalRegeneration game rule: full food heals the player.
 var natural_regeneration := true
+## doHunger game rule: hunger like Beta 1.8 (on), or like Beta 1.7.3 (off):
+## no food bar, food is eaten at once and heals right away.
+var hunger := true
 ## Where this world is saved (WorldSave.current when started from the
 ## title screen); null = not saved.
 var save: WorldSave

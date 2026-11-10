@@ -214,8 +214,58 @@ static func _register_all() -> bool:
 		register(_fire(age))
 	_register_building_blocks()
 	_register_nature()
+	_register_farming()
 	_set_flammability()
 	return true
+
+
+# --- Farming (stage 5) ---------------------------------------------------------------
+
+## Farmland (dry, wet), wheat (8 stages) and cake (6 slices) (appended: ids
+## stay stable).
+static func _register_farming() -> void:
+	for wet in [false, true]:
+		var farmland := BlockType.column("farmland_wet" if wet else "farmland", 86 if wet else 87, 2, 2) \
+			.set_height(0.9375).set_hardness(0.6).set_tool("shovel").set_drop("dirt") \
+			.set_on_update(Callable(FarmBehavior, "on_update")).set_random_tick(Callable(FarmBehavior, "random_tick"))
+		farmland.family = "farmland"
+		if wet:
+			farmland.in_catalog = false
+		register(farmland)
+	for stage in 8:
+		var wheat := BlockType.cube("wheat_crop" if stage == 0 else "wheat_crop_%d" % stage, 88 + stage).set_layer(Layer.CUTOUT) \
+			.set_collides(false).set_hardness(0.0).set_light_opacity(0).set_height(0.25 + stage * 0.1).set_item("seeds") \
+			.set_on_update(Callable(FarmBehavior, "on_update")).set_random_tick(Callable(FarmBehavior, "random_tick")) \
+			.hidden_from_catalog()
+		wheat.family = "wheat_crop"
+		# Ripe: wheat and up to 3 seeds; before that sometimes a seed back.
+		wheat.drops = [{"item": "wheat", "also": true}, {"item": "seeds", "min": 0, "max": 3}] if stage == 7 \
+			else [{"item": "seeds", "chance": 0.2}, {}]
+		# Crops like the game: four planes in a # shape.
+		var tile := 88 + stage
+		wheat.shape = BlockType.Shape.MODEL
+		wheat.model = BlockModel.register([
+			{"from": Vector3(4, -1, 0), "to": Vector3(4, 15, 16), "faces": {BlockModel.EAST: {"layer": tile}, BlockModel.WEST: {"layer": tile}}},
+			{"from": Vector3(12, -1, 0), "to": Vector3(12, 15, 16), "faces": {BlockModel.EAST: {"layer": tile}, BlockModel.WEST: {"layer": tile}}},
+			{"from": Vector3(0, -1, 4), "to": Vector3(16, 15, 4), "faces": {BlockModel.SOUTH: {"layer": tile}, BlockModel.NORTH: {"layer": tile}}},
+			{"from": Vector3(0, -1, 12), "to": Vector3(16, 15, 12), "faces": {BlockModel.SOUTH: {"layer": tile}, BlockModel.NORTH: {"layer": tile}}},
+		])
+		register(wheat)
+	for eaten in 6:
+		var cake := BlockType.cube("cake" if eaten == 0 else "cake_%d" % eaten, 121).set_hardness(0.5).set_drop("none") \
+			.set_height(0.999).set_light_opacity(0).set_item("cake").set_on_update(Callable(FarmBehavior, "on_update")) \
+			.hidden_from_catalog()
+		cake.family = "cake"
+		var from := Vector3(1 + 2 * eaten, 0, 1)
+		var to := Vector3(15, 8, 15)
+		cake.shape = BlockType.Shape.MODEL
+		cake.model = BlockModel.register([{"from": from, "to": to, "faces": {
+			BlockModel.UP: {"layer": 121}, BlockModel.DOWN: {"layer": 124},
+			BlockModel.EAST: {"layer": 122}, BlockModel.SOUTH: {"layer": 122}, BlockModel.NORTH: {"layer": 122},
+			BlockModel.WEST: {"layer": 123 if eaten > 0 else 122},
+		}}])
+		cake.collision_boxes.append(AABB(from / 16.0, (to - from) / 16.0))
+		register(cake)
 
 
 # --- Nature (stage 4) ----------------------------------------------------------------
