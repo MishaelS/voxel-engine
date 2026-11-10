@@ -1019,6 +1019,29 @@ func _tick(_tick_index: int) -> void:
 	_run_random_ticks()
 	_tick_block_entities()
 	_run_display_ticks()
+	_mood_tick()
+
+
+## Cave sounds like the game's mood sounds: every 6000-18000 ticks a spot
+## near the player is tried; dark air out of the sky's sight (deep in a
+## cave) plays an eerie sound there.
+var _mood_wait := 0
+
+
+func _mood_tick() -> void:
+	if player == null:
+		return
+	if _mood_wait == 0:
+		_mood_wait = _display_rng.randi_range(6000, 18000)
+	_mood_wait -= 1
+	if _mood_wait > 0:
+		return
+	var center := Vector3i(player.global_position.floor())
+	var spot := center + Vector3i(_display_rng.randi_range(-8, 8), _display_rng.randi_range(-8, 8), _display_rng.randi_range(-8, 8))
+	if get_block(spot) == Blocks.AIR and get_light(spot) == 0 and get_block_light(spot) < _display_rng.randi_range(0, 7):
+		Sounds.play("ambient/cave", Vector3(spot) + Vector3(0.5, 0.5, 0.5), 0.7, 0.8 + _display_rng.randf() * 0.2)
+	else:
+		_mood_wait = _display_rng.randi_range(0, 1200) + 1 # try again soon
 
 
 ## Display ticks like the game: random blocks around the player show their

@@ -705,6 +705,7 @@ func respawn(position: Vector3) -> void:
 
 
 func _die() -> void:
+	Sounds.play("damage/hurt", null, 1.0, 0.7)
 	dead = true
 	death_ticks = 0
 	velocity = Vector3.ZERO

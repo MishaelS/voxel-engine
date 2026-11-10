@@ -364,6 +364,7 @@ static func _liquid(block_name: String, level: int, family: String = "water") ->
 		block.display_tick = Callable(LiquidBehavior, "lava_display_tick")
 	else:
 		block = BlockType.column(block_name, 205, 206).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2)
+		block.display_tick = Callable(LiquidBehavior, "water_display_tick")
 	block.set_collides(false).set_hardness(-1).set_liquid().set_drop("none") \
 		.set_on_update(Callable(LiquidBehavior, "on_update")) \
 		.set_scheduled_tick(Callable(LiquidBehavior, "scheduled_tick"))

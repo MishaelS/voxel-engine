@@ -9,6 +9,8 @@ Groups (each with a few variants, picked at random):
   step/<material>N  - footsteps (also the hit while breaking)
   random/pop, click, glassN, fizz, eatN, splash, burp
   damage/hurtN
+  chest/open, chest/close, liquid/water, liquid/lava, liquid/lavapop,
+  ambient/caveN
 Materials: stone, wood, gravel, grass, sand, cloth, snow.
 
 Usage: python3 tools/make_sounds.py assets/sounds
@@ -134,6 +136,31 @@ def main(root):
     x = t(0.35)
     write(os.path.join(root, "fire", "ignite.wav"),
           (highpass(noise(0.35), 2000) * env(0.35, 0.002, 0.03) + lowpass(noise(0.35), 900) * env(0.35, 0.03, 0.12)))
+    # Chest: a wooden creak opening, a thump closing.
+    x = t(0.45)
+    creak = np.sin(2 * np.pi * (220 + 120 * np.sin(2 * np.pi * 3 * x)) * x) * (0.5 + 0.5 * np.sign(np.sin(2 * np.pi * 37 * x)))
+    write(os.path.join(root, "chest", "open.wav"), lowpass(creak + 0.4 * noise(0.45), 1800) * env(0.45, 0.05, 0.25))
+    write(os.path.join(root, "chest", "close.wav"), MATERIALS["wood"](1.6))
+    # Flowing water: a soft babble; lava: a low bubbling; lava pop: a blip.
+    x = t(1.5)
+    babble = lowpass(noise(1.5), 900) * (0.6 + 0.4 * np.sin(2 * np.pi * 3.1 * x) * np.sin(2 * np.pi * 1.7 * x))
+    write(os.path.join(root, "liquid", "water.wav"), babble * np.minimum(x / 0.3, 1.0) * np.minimum((1.5 - x) / 0.4, 1.0))
+    bubbles = np.zeros(len(x))
+    for _ in range(14):
+        start = int(rng.uniform(0, 1.3) * RATE)
+        f = rng.uniform(60, 140)
+        b = np.sin(2 * np.pi * f * t(0.12) * (1 + 2 * t(0.12))) * env(0.12, 0.005, 0.04)
+        bubbles[start:start + len(b)] += b[: len(x) - start]
+    write(os.path.join(root, "liquid", "lava.wav"), lowpass(bubbles + 0.2 * noise(1.5), 600))
+    x = t(0.12)
+    write(os.path.join(root, "liquid", "lavapop.wav"), np.sin(2 * np.pi * (300 - 900 * x) * x) * env(0.12, 0.002, 0.03))
+    # Cave: low, eerie tones that slowly swell and fade.
+    for k in range(1, 4):
+        x = t(4.0)
+        base = rng.uniform(55, 90)
+        tone = sum(np.sin(2 * np.pi * base * m * x + rng.uniform(0, 6)) / m for m in (1, 1.5, 2.01, 3.03))
+        swell = np.sin(np.pi * x / 4.0) ** 2
+        write(os.path.join(root, "ambient", f"cave{k}.wav"), (tone + 0.3 * lowpass(noise(4.0), 300)) * swell)
     # Hurt: a short low grunt.
     for k in range(1, 4):
         x = t(0.25)

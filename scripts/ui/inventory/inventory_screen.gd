@@ -129,6 +129,8 @@ func _open_mode(mode: Mode) -> void:
 func close() -> void:
 	if not _open:
 		return
+	if _mode == Mode.CHEST or _mode == Mode.LARGE_CHEST:
+		Sounds.play("chest/close", null, 0.5, randf() * 0.1 + 0.9)
 	# Nothing is lost: the held stack and the crafting grid go back.
 	_give(_held_id, _held_count, _held_damage)
 	_held_id = Blocks.AIR

@@ -14,6 +14,8 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Background music: three calm piano pieces made from scratch by `tools/make_music.py` (slow chords, a sparse pentatonic melody, a soft pad and reverb; about two minutes each, mp3), played every 10-20 minutes like the classic game.
+- More sounds like the classic game: chests creak open and thump shut, flowing water babbles (1 in 64 display ticks), lava bubbles and pops, eerie cave sounds deep in dark caves (mood sounds every 6000-18000 ticks), a sound when the player dies. Added to `tools/make_sounds.py`.
 - Torches like the classic game: on the floor or on a wall (leaning 22.5 degrees away from it, `BlockModel` boxes can now be tilted), light 14, falling off without the block holding them, a flame and smoke at the tip; 4 from coal or charcoal over a stick. Flat in the inventory, in hand and dropped.
 - Glowstone (light 15, drops 2-4 glowstone dust; 4 dust make the block; nowhere to mine it before the Nether), pumpkins (now generated: a patch in one column of 32) and jack o'lanterns (a pumpkin over a torch, light 15).
 - Fire like the classic game (`FireBehavior`): burns on solid blocks and next to burning ones (planks, logs, leaves, wool, tall grass and flowers), ages, spreads around and upward and burns blocks away; hurts and sets on fire the player and entities walking in; glowing, animated like the Beta fire (`FireAnimation`), crackles and smokes. Flint and steel (iron ingot and flint) lights it and wears out after 64 uses; lava sets things around on fire and sends up sparks.

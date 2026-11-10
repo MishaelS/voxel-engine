@@ -114,9 +114,24 @@ static func lava_random_tick(world: VoxelWorld, pos: Vector3i) -> void:
 
 
 ## Lava pops: now and then a spark jumps out of a lava surface.
+## Lava surfaces pop (a spark and a blip, 1 in 100) and bubble (1 in 200),
+## like the classic game.
 static func lava_display_tick(world: VoxelWorld, pos: Vector3i, rng: RandomNumberGenerator) -> void:
-	if world.get_block(pos + Vector3i.UP) == Blocks.AIR and rng.randi_range(0, 99) == 0:
-		world.particles.lava_pop(Vector3(pos) + Vector3(rng.randf(), 1.0, rng.randf()))
+	if world.get_block(pos + Vector3i.UP) != Blocks.AIR:
+		return
+	var surface := Vector3(pos) + Vector3(rng.randf(), 1.0, rng.randf())
+	if rng.randi_range(0, 99) == 0:
+		world.particles.lava_pop(surface)
+		Sounds.play("liquid/lavapop", surface, 0.2 + rng.randf() * 0.2, 0.9 + rng.randf() * 0.15)
+	if rng.randi_range(0, 199) == 0:
+		Sounds.play("liquid/lava", surface, 0.2 + rng.randf() * 0.2, 0.9 + rng.randf() * 0.15)
+
+
+## Flowing water babbles now and then (1 in 64), like the classic game.
+static func water_display_tick(world: VoxelWorld, pos: Vector3i, rng: RandomNumberGenerator) -> void:
+	var level := Blocks.liquid_level_table[world.get_block(pos)]
+	if level > 0 and level < 8 and rng.randi_range(0, 63) == 0:
+		Sounds.play("liquid/water", Vector3(pos) + Vector3(0.5, 0.5, 0.5), rng.randf() * 0.25 + 0.75, rng.randf() + 0.5)
 
 
 ## Lava touching water (above or beside) hardens. Returns true if it did.

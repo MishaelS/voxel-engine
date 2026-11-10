@@ -229,6 +229,7 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 			_screen().open_crafting_table()
 		"chest", "chest_left", "chest_right":
 			var other: Variant = ChestBehavior.partner(world, pos)
+			Sounds.play("chest/open", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.5, randf() * 0.1 + 0.9)
 			if other == null:
 				_screen().open_container(world.block_entity(pos))
 			elif Blocks.chest_part_table[id] == ChestModel.Part.LEFT:
