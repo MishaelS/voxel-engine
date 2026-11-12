@@ -209,6 +209,21 @@ static func _flow_cost(world: VoxelWorld, pos: Vector3i, depth: int, came_from: 
 	return best
 
 
+## The height of the liquid's surface in its block (world y), like the
+## game's: a source 8/9 high, each flowing level 1/9 lower, full when the
+## same liquid is above.
+static func surface_height(world: VoxelWorld, pos: Vector3i) -> float:
+	var id := world.get_block(pos)
+	if Blocks.liquid_table[id] == 0:
+		return float(pos.y)
+	var above := world.get_block(pos + Vector3i.UP)
+	if Blocks.liquid_table[above] == 1 and Blocks.family_of(above) == Blocks.family_of(id):
+		return pos.y + 1.0
+	var level := Blocks.liquid_level_table[id]
+	var share := 0.0 if level >= 8 else (level + 1) / 9.0
+	return pos.y + 1.0 - share
+
+
 ## Direction of the current at a liquid block, like the classic game:
 ## toward lower neighbors (and down along a falling column next to walls).
 ## Not normalized; ZERO in still liquid.

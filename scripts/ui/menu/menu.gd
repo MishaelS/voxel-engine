@@ -166,6 +166,9 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("ui_cancel"):
 		return
+	if in_game and not is_open() and LoadingScreen.active:
+		get_viewport().set_input_as_handled()
+		return # no pausing while the world is still loading
 	if is_open():
 		back()
 	elif in_game and (chat == null or not chat.is_open()):

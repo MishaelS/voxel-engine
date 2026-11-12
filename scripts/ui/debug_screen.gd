@@ -88,6 +88,17 @@ func _left_lines() -> PackedStringArray:
 				world.generation_jobs_count(), s.generation_ms, world.light_jobs_count(), world.mesh_jobs_count(), s.mesh_ms])
 			lines.append("Faces: %d, vertices: %d" % [s.faces, s.vertices])
 			lines.append("Cave culling: %d chunks hidden" % world.culled_chunks)
+			# Where the main thread's time goes (ms), to track down stutters.
+			var f := world.frame_times
+			var t := world.tick_times
+			var e := world.entities.tick_times if world.entities else {}
+			var entity_us := 0
+			for kind: String in e:
+				entity_us += int(e[kind])
+			lines.append("Frame ms: stream %.1f gen %.1f light %.1f mesh %.1f cull %.1f" % [f.get("stream", 0) / 1000.0,
+				f.get("generation", 0) / 1000.0, f.get("light", 0) / 1000.0, f.get("mesh", 0) / 1000.0, f.get("cull", 0) / 1000.0])
+			lines.append("Tick ms: random %.1f display %.1f scheduled %.1f entities %.1f" % [t.get("random", 0) / 1000.0,
+				t.get("display", 0) / 1000.0, t.get("scheduled", 0) / 1000.0, entity_us / 1000.0])
 	lines.append("")
 
 	if camera:

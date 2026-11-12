@@ -50,7 +50,16 @@ var _meshes := {}
 var _ids := {}
 
 
+## A world is loading (the pause menu waits).
+static var active := false
+
+
+func _exit_tree() -> void:
+	active = false
+
+
 func _ready() -> void:
+	active = true
 	layer = 50
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	GameInput.lock()
@@ -345,5 +354,6 @@ func _finish() -> void:
 	if world:
 		world.loading_radius = -1
 	GameInput.unlock()
+	active = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	queue_free()

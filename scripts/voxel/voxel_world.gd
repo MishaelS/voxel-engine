@@ -108,6 +108,8 @@ var _connectivity := {}    # Vector3i -> face connectivity (ChunkMesher.connecti
 ## holds, a furnace's slots and fire. Vector3i -> {"type", "inventory", ...}.
 var _block_entities := {}
 var _cull_dirty := true
+var _cull_task := -1
+var _cull_job := {}
 var _cull_timer := 0.0
 var _camera_chunk := Vector3i(0, -1000, 0)
 ## Chunks hidden by cave culling in the last pass (debug screen).
@@ -161,6 +163,10 @@ class MeshJob:
 	## Grass / foliage colors of the column (WorldGenerator.column_colors).
 	var colors: Array = [PackedColorArray(), PackedColorArray()]
 	var surfaces := {}
+	## The finished mesh (built on the worker too: uploading the arrays is
+	## slow), null when the chunk shows nothing.
+	var mesh: ArrayMesh
+	var faces := 0
 	## Face connectivity for cave culling (ChunkMesher.connectivity).
 	var connectivity := ChunkMesher.ALL_CONNECTED
 	var mesh_ms := 0.0
@@ -172,6 +178,11 @@ class MeshJob:
 		surfaces = ChunkMesher.build(padded, ChunkMesher.pad_light(center_light, neighbor_light, SkyLight.MAX),
 			colors[0], colors[1], coord * ChunkData.SIZE, ChunkMesher.pad_light(center_block_light, neighbor_block_light))
 		connectivity = ChunkMesher.connectivity(padded)
+		if not surfaces.is_empty():
+			mesh = ChunkMesher.to_mesh(surfaces)
+			for arrays: Array in surfaces.values():
+				faces += arrays[Mesh.ARRAY_VERTEX].size() / 4
+			surfaces = {}
 		mesh_ms = (Time.get_ticks_usec() - start_us) / 1000.0
 
 
@@ -264,15 +275,27 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## Main-thread time of the last frame's world work by phase (microseconds),
+## for the debug screen and profiling: stream, generation, light, mesh, cull.
+var frame_times := {}
+
+
 func _process(delta: float) -> void:
+	var t0 := Time.get_ticks_usec()
 	_update_streaming()
+	var t1 := Time.get_ticks_usec()
 	_finish_generation_jobs()
 	_start_generation_jobs()
+	var t2 := Time.get_ticks_usec()
 	_finish_light_jobs()
 	_start_light_jobs()
+	var t3 := Time.get_ticks_usec()
 	_finish_mesh_jobs()
 	_start_mesh_jobs()
+	var t4 := Time.get_ticks_usec()
 	_update_culling(delta)
+	var t5 := Time.get_ticks_usec()
+	frame_times = {"stream": t1 - t0, "generation": t2 - t1, "light": t3 - t2, "mesh": t4 - t3, "cull": t5 - t4}
 
 
 # --- World lifecycle ---------------------------------------------------------------
@@ -390,6 +413,9 @@ func _wait_for_jobs() -> void:
 	for job: LightJob in _light_jobs.values():
 		WorkerThreadPool.wait_for_task_completion(job.task_id)
 	_light_jobs.clear()
+	if _cull_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_cull_task)
+		_cull_task = -1
 
 
 # --- Streaming -----------------------------------------------------------------------
@@ -591,12 +617,10 @@ func light_jobs_count() -> int:
 func get_light(pos: Vector3i) -> int:
 	if pos.y >= WorldGenerator.HEIGHT:
 		return SkyLight.MAX
-	var coord := chunk_coord_of(pos)
-	var data: ChunkData = _chunks.get(coord)
+	var data: ChunkData = _chunks.get(Vector3i(pos.x >> 4, pos.y >> 4, pos.z >> 4))
 	if data == null:
 		return 0
-	var local := pos - coord * ChunkData.SIZE
-	return data.light[ChunkData.index(local.x, local.y, local.z)]
+	return data.light[(pos.x & 15) + ((pos.z & 15) << 4) + ((pos.y & 15) << 8)]
 
 
 func _set_light(pos: Vector3i, level: int) -> void:
@@ -789,10 +813,7 @@ func _update_heightmap(pos: Vector3i, id: int) -> void:
 # --- Blocks --------------------------------------------------------------------------
 
 static func chunk_coord_of(pos: Vector3i) -> Vector3i:
-	return Vector3i(
-		floori(pos.x / float(ChunkData.SIZE)),
-		floori(pos.y / float(ChunkData.SIZE)),
-		floori(pos.z / float(ChunkData.SIZE)))
+	return Vector3i(pos.x >> 4, pos.y >> 4, pos.z >> 4) # chunks are 16^3 (floor division)
 
 
 func is_inside(pos: Vector3i) -> bool:
@@ -801,12 +822,11 @@ func is_inside(pos: Vector3i) -> bool:
 
 ## Block at a world position; AIR where no chunk is loaded.
 func get_block(pos: Vector3i) -> int:
-	var coord := chunk_coord_of(pos)
-	var data: ChunkData = _chunks.get(coord)
+	# Called very often: chunk and index worked out inline (chunks are 16^3).
+	var data: ChunkData = _chunks.get(Vector3i(pos.x >> 4, pos.y >> 4, pos.z >> 4))
 	if data == null:
 		return Blocks.AIR
-	var local := pos - coord * ChunkData.SIZE
-	return data.get_block(local.x, local.y, local.z)
+	return data.blocks[(pos.x & 15) + ((pos.z & 15) << 4) + ((pos.y & 15) << 8)]
 
 
 ## Biome name at a block column (debug screen).
@@ -1076,15 +1096,26 @@ func generation_jobs_count() -> int:
 	return _gen_jobs.size()
 
 
+## Time of the last tick's parts (microseconds), for profiling.
+var tick_times := {}
+
+
 func _tick(_tick_index: int) -> void:
+	var t0 := Time.get_ticks_usec()
 	clock.tick()
 	weather.tick()
 	WeatherEffects.world_tick(self)
+	var t1 := Time.get_ticks_usec()
 	_run_scheduled_ticks()
+	var t2 := Time.get_ticks_usec()
 	_run_random_ticks()
+	var t3 := Time.get_ticks_usec()
 	_tick_block_entities()
+	var t4 := Time.get_ticks_usec()
 	_run_display_ticks()
 	_mood_tick()
+	var t5 := Time.get_ticks_usec()
+	tick_times = {"weather": t1 - t0, "scheduled": t2 - t1, "random": t3 - t2, "block_entities": t4 - t3, "display": t5 - t4}
 
 
 ## Cave sounds like the game's mood sounds: every 6000-18000 ticks a spot
@@ -1125,14 +1156,26 @@ static func furnace_display_tick(world: VoxelWorld, pos: Vector3i, rng: RandomNu
 func _run_display_ticks() -> void:
 	if player == null:
 		return
-	var center := Vector3i(player.global_position.floor())
+	# Like the game's 1000 random blocks around the player, picked straight
+	# from the arrays of the 3 x 3 x 3 chunks around (cheap: 27 lookups).
+	var center := chunk_coord_of(Vector3i(player.global_position.floor()))
 	var handlers := Blocks.display_table
-	for i in DISPLAY_TICKS:
-		var pos := center + Vector3i(_display_rng.randi_range(-DISPLAY_RANGE, DISPLAY_RANGE),
-			_display_rng.randi_range(-DISPLAY_RANGE, DISPLAY_RANGE), _display_rng.randi_range(-DISPLAY_RANGE, DISPLAY_RANGE))
-		var id := get_block(pos)
-		if handlers[id] == 1:
-			Blocks.get_type(id).display_tick.call(self, pos, _display_rng)
+	var per_chunk := DISPLAY_TICKS / 27 + 1
+	for dy in range(-1, 2):
+		for dz in range(-1, 2):
+			for dx in range(-1, 2):
+				var coord := center + Vector3i(dx, dy, dz)
+				var data: ChunkData = _chunks.get(coord)
+				if data == null:
+					continue
+				var blocks := data.blocks
+				var origin := coord * ChunkData.SIZE
+				for i in per_chunk:
+					var index := _display_rng.randi() & 4095
+					var id: int = blocks[index]
+					if handlers[id] == 1:
+						var pos := origin + Vector3i(index & 15, index >> 8, (index >> 4) & 15)
+						Blocks.get_type(id).display_tick.call(self, pos, _display_rng)
 
 
 func _run_scheduled_ticks() -> void:
@@ -1153,23 +1196,48 @@ func _run_scheduled_ticks() -> void:
 			handler.call(self, pos)
 
 
+## Random ticks reach this many columns around the player, like the game's
+## (9 chunks there; the rest of the loaded world just waits).
+const RANDOM_TICK_RADIUS := 8
+## Main-thread time random ticks may take per tick; what's left over goes on
+## next tick from where it stopped, so a tick never stalls a frame.
+const RANDOM_TICK_BUDGET_US := 4000
+
+var _random_tick_queue: Array[Vector3i] = []
+
+
 func _run_random_ticks() -> void:
+	if player == null or random_tick_speed <= 0:
+		return
+	if _random_tick_queue.is_empty():
+		# A new round: the chunks with something that ticks, near the player.
+		var center := Vector2i(floori(player.global_position.x) >> 4, floori(player.global_position.z) >> 4)
+		for cx in range(center.x - RANDOM_TICK_RADIUS, center.x + RANDOM_TICK_RADIUS + 1):
+			for cz in range(center.y - RANDOM_TICK_RADIUS, center.y + RANDOM_TICK_RADIUS + 1):
+				if not _columns.has(Vector2i(cx, cz)):
+					continue
+				for cy in WorldGenerator.HEIGHT_CHUNKS:
+					var coord := Vector3i(cx, cy, cz)
+					var data: ChunkData = _chunks.get(coord)
+					if data and data.tickable_count > 0:
+						_random_tick_queue.append(coord)
 	var ticks_randomly := Blocks.ticks_randomly
-	for coord: Vector3i in _chunks:
-		var data: ChunkData = _chunks[coord]
-		if data.tickable_count == 0:
+	var started := Time.get_ticks_usec()
+	while not _random_tick_queue.is_empty():
+		var coord: Vector3i = _random_tick_queue.pop_back()
+		var data: ChunkData = _chunks.get(coord)
+		if data == null:
 			continue
+		var blocks := data.blocks
 		var origin: Vector3i = coord * ChunkData.SIZE
 		for i in random_tick_speed:
-			var index := rng.randi_range(0, ChunkData.VOLUME - 1)
-			var id: int = data.blocks[index]
+			var index := rng.randi() & 4095
+			var id: int = blocks[index]
 			if ticks_randomly[id] == 0:
 				continue
-			var local := Vector3i(
-				index % ChunkData.SIZE,
-				index / (ChunkData.SIZE * ChunkData.SIZE),
-				(index / ChunkData.SIZE) % ChunkData.SIZE)
-			Blocks.get_type(id).random_tick.call(self, origin + local)
+			Blocks.get_type(id).random_tick.call(self, origin + Vector3i(index & 15, index >> 8, (index >> 4) & 15))
+		if Time.get_ticks_usec() - started > RANDOM_TICK_BUDGET_US:
+			break
 
 
 # --- Meshing -----------------------------------------------------------------------------
@@ -1251,12 +1319,17 @@ func _rebuild_mesh_queue() -> void:
 		_mesh_queue.append(coords[key & 0xFFFFF])
 
 
+const MESH_UPLOAD_BUDGET_US := 4000
+
+
 func _finish_mesh_jobs() -> void:
 	# Finished meshes uploaded per frame (main-thread work): Chunk Updates.
 	var max_uploads: int = Settings.CHUNK_UPDATE_CHOICES[Settings.get_value("chunk_updates")]
 	var uploads := 0
+	var started := Time.get_ticks_usec()
 	for coord: Vector3i in _mesh_jobs.keys():
-		if uploads >= max_uploads:
+		# Also at most ~4 ms of uploads a frame, so moving doesn't stutter.
+		if uploads >= max_uploads or (uploads > 0 and Time.get_ticks_usec() - started > MESH_UPLOAD_BUDGET_US):
 			break
 		var job: MeshJob = _mesh_jobs[coord]
 		if not WorkerThreadPool.is_task_completed(job.task_id):
@@ -1271,12 +1344,8 @@ func _finish_mesh_jobs() -> void:
 
 
 func _apply_mesh(job: MeshJob) -> void:
-	var faces := 0
-	var mesh: ArrayMesh = null
-	if not job.surfaces.is_empty():
-		mesh = ChunkMesher.to_mesh(job.surfaces)
-		for arrays: Array in job.surfaces.values():
-			faces += arrays[Mesh.ARRAY_VERTEX].size() / 4
+	var faces := job.faces
+	var mesh: ArrayMesh = job.mesh
 	_total_faces += faces - _chunk_faces.get(job.coord, 0)
 	_chunk_faces[job.coord] = faces
 	_last_mesh_ms = job.mesh_ms
@@ -1358,6 +1427,13 @@ func _update_culling(delta: float) -> void:
 	if camera_chunk != _camera_chunk:
 		_camera_chunk = camera_chunk
 		_cull_dirty = true
+	# The search runs on a worker thread; its result is applied when done.
+	if _cull_task >= 0:
+		if not WorkerThreadPool.is_task_completed(_cull_task):
+			return
+		WorkerThreadPool.wait_for_task_completion(_cull_task)
+		_cull_task = -1
+		_apply_culling(_cull_job.reached)
 	if not _cull_dirty or _cull_timer > 0.0:
 		return
 	_cull_dirty = false
@@ -1368,23 +1444,36 @@ func _update_culling(delta: float) -> void:
 			node.visible = true
 		culled_chunks = 0
 		return
+	_cull_job = {"connectivity": _connectivity.duplicate(), "camera": camera_chunk, "column": _player_column,
+		"distance": render_distance, "reached": {}}
+	_cull_task = WorkerThreadPool.add_task(_cull_search.bind(_cull_job), false, "cave culling")
 
-	var reached := {camera_chunk: true}
+
+## The cave culling search (worker thread): from the camera's chunk through
+## the chunks' open faces (ChunkMesher.connectivity), never turning back
+## toward the camera; what it can't reach is hidden.
+static func _cull_search(job: Dictionary) -> void:
+	var connectivity: Dictionary = job.connectivity
+	var camera: Vector3i = job.camera
+	var column: Vector2i = job.column
+	var distance: int = job.distance
+	var reached: Dictionary = job.reached
+	reached[camera] = true
 	var queue := []
 	for face in 6:
-		queue.append([camera_chunk + FACE_DIRECTIONS[face], face ^ 1, 1 << face])
+		queue.append([camera + FACE_DIRECTIONS[face], face ^ 1, 1 << face])
 	var head := 0
 	while head < queue.size():
 		var entry: Array = queue[head]
 		head += 1
 		var coord: Vector3i = entry[0]
 		if reached.has(coord) or coord.y < 0 or coord.y >= WorldGenerator.HEIGHT_CHUNKS \
-				or absi(coord.x - _player_column.x) > render_distance or absi(coord.z - _player_column.y) > render_distance:
+				or absi(coord.x - column.x) > distance or absi(coord.z - column.y) > distance:
 			continue
 		reached[coord] = true
 		var entered: int = entry[1]
 		var directions: int = entry[2]
-		var connections: int = _connectivity.get(coord, ChunkMesher.ALL_CONNECTED)
+		var connections: int = connectivity.get(coord, ChunkMesher.ALL_CONNECTED)
 		for face in 6:
 			if directions & (1 << (face ^ 1)):
 				continue # never back toward the camera
@@ -1392,10 +1481,15 @@ func _update_culling(delta: float) -> void:
 				continue # no way through this chunk to that face
 			queue.append([coord + FACE_DIRECTIONS[face], face ^ 1, directions | (1 << face)])
 
+
+## Shows the reached chunks and hides the rest (only those that change).
+func _apply_culling(reached: Dictionary) -> void:
 	culled_chunks = 0
 	for coord: Vector3i in _chunk_nodes:
 		var visible := reached.has(coord)
-		(_chunk_nodes[coord] as Node3D).visible = visible
+		var node: Node3D = _chunk_nodes[coord]
+		if node.visible != visible:
+			node.visible = visible
 		if not visible:
 			culled_chunks += 1
 
@@ -1436,11 +1530,12 @@ func save_state() -> Dictionary:
 		saved_block_entities[pos] = entity
 	return {"game_time": clock.game_time, "day_time": clock.day_time, "rules": rules,
 		"block_entities": saved_block_entities, "items": items.save_state(), "entities": entities.save_state(),
-		"maps": maps, "next_map_id": next_map_id, "weather": weather.save_state()}
+		"maps": maps, "next_map_id": next_map_id, "weather": weather.save_state(), "stats": Stats.save_state()}
 
 
 func _restore_state() -> void:
 	var world_state: Dictionary = save.state.get("world", {}) if save else {}
+	Stats.load_state(world_state.get("stats", {})) # each world has its own
 	if world_state.is_empty():
 		return
 	clock.game_time = world_state.get("game_time", 0)

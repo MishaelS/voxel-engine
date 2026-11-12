@@ -452,12 +452,12 @@
     ],
     "from": [
      -4,
-     6,
+     8,
      6
     ],
     "pivot": [
      0,
-     10,
+     12,
      6
     ],
     "uv": [
@@ -475,42 +475,48 @@
     ],
     "from": [
      -2,
-     7,
+     9,
      14
     ],
     "pivot": [
      0,
-     10,
+     12,
      6
     ],
     "uv": [
-     24,
-     0
+     16,
+     16
     ],
-    "role": "head"
+    "role": "",
+    "parent": "head"
    },
    {
     "name": "body",
     "size": [
      10,
-     8,
-     16
+     16,
+     8
     ],
     "from": [
      -5,
-     5,
-     -8
+     7,
+     -3
     ],
     "pivot": [
      0,
-     9,
-     0
+     13,
+     -2
     ],
     "uv": [
-     0,
-     32
+     28,
+     8
     ],
-    "role": ""
+    "role": "",
+    "rotate": [
+     90,
+     0,
+     0
+    ]
    },
    {
     "name": "leg_fr",
@@ -568,12 +574,12 @@
     "from": [
      -5,
      0,
-     -7
+     -9
     ],
     "pivot": [
      -3,
      6,
-     -5
+     -7
     ],
     "uv": [
      0,
@@ -591,12 +597,12 @@
     "from": [
      1,
      0,
-     -7
+     -9
     ],
     "pivot": [
      3,
      6,
-     -5
+     -7
     ],
     "uv": [
      0,
@@ -605,57 +611,165 @@
     "role": "leg_a"
    },
    {
-    "name": "saddle",
+    "name": "saddle_head",
+    "size": [
+     8,
+     8,
+     8
+    ],
+    "from": [
+     -4,
+     8,
+     6
+    ],
+    "pivot": [
+     0,
+     12,
+     6
+    ],
+    "uv": [
+     0,
+     0
+    ],
+    "role": "",
+    "parent": "head",
+    "texture": "saddle_pig",
+    "inflate": 0.5,
+    "saddle": true
+   },
+   {
+    "name": "saddle_body",
     "size": [
      10,
-     1,
+     16,
      8
     ],
     "from": [
      -5,
-     13,
-     -4
+     7,
+     -3
     ],
     "pivot": [
      0,
-     9,
-     0
+     13,
+     -2
     ],
     "uv": [
-     0,
-     0
+     28,
+     8
     ],
     "role": "",
     "parent": "body",
-    "texture": "pig_saddle",
-    "inflate": 0.3,
+    "texture": "saddle_pig",
+    "inflate": 0.5,
     "saddle": true
    },
    {
-    "name": "saddle_strap",
+    "name": "saddle_leg_fr",
     "size": [
-     10,
+     4,
      6,
-     2
+     4
     ],
     "from": [
      -5,
-     7,
-     -1
+     0,
+     3
     ],
     "pivot": [
-     0,
-     9,
-     0
+     -3,
+     6,
+     5
     ],
     "uv": [
      0,
-     10
+     16
     ],
     "role": "",
-    "parent": "body",
-    "texture": "pig_saddle",
-    "inflate": 0.4,
+    "parent": "leg_fr",
+    "texture": "saddle_pig",
+    "inflate": 0.5,
+    "saddle": true
+   },
+   {
+    "name": "saddle_leg_fl",
+    "size": [
+     4,
+     6,
+     4
+    ],
+    "from": [
+     1,
+     0,
+     3
+    ],
+    "pivot": [
+     3,
+     6,
+     5
+    ],
+    "uv": [
+     0,
+     16
+    ],
+    "role": "",
+    "parent": "leg_fl",
+    "texture": "saddle_pig",
+    "inflate": 0.5,
+    "saddle": true
+   },
+   {
+    "name": "saddle_leg_br",
+    "size": [
+     4,
+     6,
+     4
+    ],
+    "from": [
+     -5,
+     0,
+     -9
+    ],
+    "pivot": [
+     -3,
+     6,
+     -7
+    ],
+    "uv": [
+     0,
+     16
+    ],
+    "role": "",
+    "parent": "leg_br",
+    "texture": "saddle_pig",
+    "inflate": 0.5,
+    "saddle": true
+   },
+   {
+    "name": "saddle_leg_bl",
+    "size": [
+     4,
+     6,
+     4
+    ],
+    "from": [
+     1,
+     0,
+     -9
+    ],
+    "pivot": [
+     3,
+     6,
+     -7
+    ],
+    "uv": [
+     0,
+     16
+    ],
+    "role": "",
+    "parent": "leg_bl",
+    "texture": "saddle_pig",
+    "inflate": 0.5,
     "saddle": true
    }
   ]
@@ -1208,7 +1322,7 @@
     ],
     "from": [
      -2,
-     8,
+     9,
      3
     ],
     "pivot": [
@@ -1243,7 +1357,8 @@
      14,
      0
     ],
-    "role": "head"
+    "role": "",
+    "parent": "head"
    },
    {
     "name": "wattle",
@@ -1255,7 +1370,7 @@
     "from": [
      -1,
      9,
-     6
+     5
     ],
     "pivot": [
      0,
@@ -1266,76 +1381,36 @@
      14,
      4
     ],
-    "role": "head"
+    "role": "",
+    "parent": "head"
    },
    {
     "name": "body",
     "size": [
      6,
-     6,
-     8
+     8,
+     6
     ],
     "from": [
      -3,
      4,
-     -4
-    ],
-    "pivot": [
-     0,
-     7,
-     0
-    ],
-    "uv": [
-     0,
-     9
-    ],
-    "role": ""
-   },
-   {
-    "name": "wing_r",
-    "size": [
-     1,
-     4,
-     6
-    ],
-    "from": [
-     -4,
-     6,
      -3
     ],
     "pivot": [
-     -3,
-     10,
+     0,
+     8,
      0
     ],
     "uv": [
-     28,
+     0,
      9
     ],
-    "role": "wing_right"
-   },
-   {
-    "name": "wing_l",
-    "size": [
-     1,
-     4,
-     6
-    ],
-    "from": [
-     3,
-     6,
-     -3
-    ],
-    "pivot": [
-     3,
-     10,
+    "role": "",
+    "rotate": [
+     90,
+     0,
      0
-    ],
-    "uv": [
-     28,
-     9
-    ],
-    "role": "wing_left"
+    ]
    },
    {
     "name": "leg_r",
@@ -1350,9 +1425,9 @@
      -1
     ],
     "pivot": [
-     -1.5,
+     -2,
      5,
-     0
+     -1
     ],
     "uv": [
      26,
@@ -1373,15 +1448,61 @@
      -1
     ],
     "pivot": [
-     1.5,
+     1,
      5,
-     0
+     -1
     ],
     "uv": [
      26,
      0
     ],
     "role": "leg_b"
+   },
+   {
+    "name": "wing_r",
+    "size": [
+     1,
+     4,
+     6
+    ],
+    "from": [
+     -4,
+     7,
+     -3
+    ],
+    "pivot": [
+     -4,
+     11,
+     0
+    ],
+    "uv": [
+     24,
+     13
+    ],
+    "role": "wing_right"
+   },
+   {
+    "name": "wing_l",
+    "size": [
+     1,
+     4,
+     6
+    ],
+    "from": [
+     3,
+     7,
+     -3
+    ],
+    "pivot": [
+     4,
+     11,
+     0
+    ],
+    "uv": [
+     24,
+     13
+    ],
+    "role": "wing_left"
    }
   ]
  },
@@ -1763,7 +1884,8 @@
      0,
      0
     ],
-    "role": "outer"
+    "role": "outer",
+    "translucent": true
    }
   ]
  },

@@ -104,11 +104,20 @@ func _process(delta: float) -> void:
 		_tps_window_time = 0.0
 
 
+## Time of each listener in the last tick (microseconds, by node name and
+## method), for profiling.
+var listener_times := {}
+
+
 func _run_tick() -> void:
 	var start_us := Time.get_ticks_usec()
 	for phase_listeners: Array in _listeners:
 		for listener: Callable in phase_listeners:
+			var before := Time.get_ticks_usec()
 			listener.call(tick_count)
+			var owner := listener.get_object()
+			var key := "%s.%s" % [owner.name if owner is Node else owner.get_class(), listener.get_method()]
+			listener_times[key] = Time.get_ticks_usec() - before
 	tick_count += 1
 	_tps_window_ticks += 1
 	var tick_ms := (Time.get_ticks_usec() - start_us) / 1000.0

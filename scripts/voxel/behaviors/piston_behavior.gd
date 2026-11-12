@@ -137,6 +137,9 @@ static func _extend(world: VoxelWorld, pos: Vector3i, direction: Vector3i, stick
 	world.set_block(pos, base_id(direction, true, sticky), false) # first, so the head has its piston
 	world.set_block(pos + direction, head_id(direction, sticky))
 	_push_creatures(world, moving, pos + direction, direction)
+	var player := world.player as Player
+	if not moving.is_empty() and player and player.global_position.distance_to(Vector3(pos)) < 32.0:
+		Stats.grant("engineer")
 	Sounds.play("random/piston_out", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.5, randf() * 0.25 + 0.6)
 	Redstone.notify_around(world, pos)
 

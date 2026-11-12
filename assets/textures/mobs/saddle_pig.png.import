@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cjxq0j3xk8sr3"
-path="res://.godot/imported/pig_saddle.png-7410d8d15a8ff0f6fa2dca8669cf9b5c.ctex"
+uid="uid://bvbex81vr7555"
+path="res://.godot/imported/saddle_pig.png-122dfca03bd6fbdde67e794ccdb25093.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/mobs/pig_saddle.png"
-dest_files=["res://.godot/imported/pig_saddle.png-7410d8d15a8ff0f6fa2dca8669cf9b5c.ctex"]
+source_file="res://assets/textures/mobs/saddle_pig.png"
+dest_files=["res://.godot/imported/saddle_pig.png-122dfca03bd6fbdde67e794ccdb25093.ctex"]
 
 [params]
 

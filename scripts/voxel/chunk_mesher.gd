@@ -662,7 +662,11 @@ static func _build_layer(padded: PackedInt32Array, light: PackedByteArray, cells
 				if mode & 4:
 					uv.x = 1.0 - uv.x
 				if face >= 2:
-					if c < 2 and top < 1.0:
+					if c < 2 and sloped:
+						# Flowing liquid's lowered sides: the texture is cut off at
+						# the surface, not squeezed (like the game's).
+						uv.y = 1.0 - (vertices[start + c].y - origin.y)
+					elif c < 2 and top < 1.0:
 						uv.y = 1.0 - top
 					elif c >= 2 and raise > 0.0:
 						uv.y = 1.0 - raise

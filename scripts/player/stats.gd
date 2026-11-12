@@ -1,16 +1,14 @@
 class_name Stats
 extends RefCounted
-## Statistics and achievements like Beta 1.7.3, kept for the player across
-## all worlds (user://stats.cfg), like the game's account stats.
+## Statistics and achievements like Beta 1.7.3, kept with each world (in its
+## save: VoxelWorld.save_state / _restore_state), so every world has its own.
 ## - Counters: general ones (time played, distances walked, swum, fallen,
 ##   climbed, flown and ridden, jumps, deaths, damage, kills, fish caught,
-##   items dropped, games...) and per block / item ("mine.<block>",
+##   items dropped, times loaded...) and per block / item ("mine.<block>",
 ##   "craft.<item>", "use.<item>", "break.<item>");
-## - Achievements: the Beta ones that exist here (no Nether yet), each
-##   needing its parent first; getting one shows a toast (AchievementToast)
-##   and is saved at once.
-
-const PATH := "user://stats.cfg"
+## - Achievements: the Beta ones that exist here (no Nether yet) and our own
+##   (OURS), each needing its parent first; getting one shows a toast
+##   (AchievementToast).
 
 ## id -> [name, description, parent id, icon (item or block name), column, row]
 const ACHIEVEMENTS := {
@@ -32,13 +30,26 @@ const ACHIEVEMENTS := {
 	"flyPig": ["When Pigs Fly", "Fly a pig off a cliff", "killCow", "saddle", 8, -4],
 	"snipeSkeleton": ["Sniper Duel", "Kill a skeleton with an arrow from more than 50 meters", "killEnemy", "bow", 7, 0],
 	"diamonds": ["DIAMONDS!", "Acquire diamonds with your iron tools", "acquireIron", "diamond", -1, 5],
+	# Our own (not in the classic game):
+	"lightItUp": ["Playing with Fire", "Light a fire with flint and steel", "acquireIron", "flint_and_steel", -1, 3],
+	"boom": ["Kaboom!", "Watch TNT go off", "lightItUp", "tnt", -3, 3],
+	"engineer": ["Engineer", "Make a piston push something", "acquireIron", "piston", 0, 2],
+	"musician": ["Musician", "Play a note block", "acquireIron", "note_block", 0, 7],
+	"dj": ["DJ", "Put a music disc into a jukebox", "diamonds", "music_disc_cat", -2, 6],
+	"fisherman": ["Fisherman", "Catch 10 fish", "cookFish", "fishing_rod", 3, 7],
+	"artist": ["Art Lover", "Hang a painting on a wall", "buildWorkBench", "painting", 5, -3],
+	"sleepyhead": ["Good Night", "Sleep in a bed", "buildWorkBench", "bed", 3, -2],
+	"sailor": ["Sailor", "Row a boat 100 meters", "buildWorkBench", "boat", 5, 0],
+	"tamer": ["Best Friend", "Tame a wolf", "killEnemy", "bone", 9, 0],
+	"treasure": ["Treasure Hunter", "Open a dungeon chest", "buildPickaxe", "chest", 5, 4],
 }
+## Our own achievements (the rest are the classic ones).
+const OURS := ["lightItUp", "boom", "engineer", "musician", "dj", "fisherman", "artist", "sleepyhead", "sailor",
+	"tamer", "treasure"]
 ## General counters in the statistics window: key -> [name, kind]
 ## (kind: "count", "time" in ticks, "distance" in centimeters).
 const GENERAL := [
-	["games_played", "Games Played", "count"],
-	["saves_loaded", "Saves Loaded", "count"],
-	["worlds_created", "Worlds Created", "count"],
+	["saves_loaded", "Times Loaded", "count"],
 	["leave_game", "Games Quit", "count"],
 	["play_ticks", "Minutes Played", "time"],
 	["walk_cm", "Distance Walked", "distance"],
@@ -61,34 +72,26 @@ const GENERAL := [
 static var _counters := {}
 static var _unlocked := {}
 static var _loaded := false
-static var _dirty := false
 ## Called with an achievement id when one is gotten (the toast listens).
 static var on_achievement := Callable()
 
 
 static func _load() -> void:
-	if _loaded:
-		return
 	_loaded = true
-	var file := ConfigFile.new()
-	if file.load(PATH) != OK:
-		return
-	for key in file.get_section_keys("stats") if file.has_section("stats") else PackedStringArray():
-		_counters[key] = int(file.get_value("stats", key, 0))
-	for key in file.get_section_keys("achievements") if file.has_section("achievements") else PackedStringArray():
-		_unlocked[key] = true
 
 
-static func save() -> void:
-	if not _loaded or not _dirty:
-		return
-	_dirty = false
-	var file := ConfigFile.new()
-	for key: String in _counters:
-		file.set_value("stats", key, _counters[key])
-	for key: String in _unlocked:
-		file.set_value("achievements", key, true)
-	file.save(PATH)
+## The world's statistics for its save.
+static func save_state() -> Dictionary:
+	return {"counters": _counters.duplicate(), "achievements": _unlocked.keys()}
+
+
+## A world's statistics (a new world: none).
+static func load_state(saved: Dictionary) -> void:
+	_loaded = true
+	_counters = (saved.get("counters", {}) as Dictionary).duplicate()
+	_unlocked = {}
+	for id: String in saved.get("achievements", []):
+		_unlocked[id] = true
 
 
 static func add(key: String, amount: int = 1) -> void:
@@ -96,7 +99,6 @@ static func add(key: String, amount: int = 1) -> void:
 		return
 	_load()
 	_counters[key] = int(_counters.get(key, 0)) + amount
-	_dirty = true
 
 
 static func value(key: String) -> int:
@@ -131,8 +133,6 @@ static func grant(id: String) -> void:
 	if not ACHIEVEMENTS.has(id) or _unlocked.has(id) or not can_get(id):
 		return
 	_unlocked[id] = true
-	_dirty = true
-	save()
 	if on_achievement.is_valid():
 		on_achievement.call(id)
 

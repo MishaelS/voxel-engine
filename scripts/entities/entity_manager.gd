@@ -102,16 +102,27 @@ func clear() -> void:
 	_entities.clear()
 
 
+## Time of the last tick by entity type, and "spawner" (microseconds), for
+## profiling.
+var tick_times := {}
+
+
 func _tick(_tick_index: int) -> void:
+	tick_times.clear()
+	var started := Time.get_ticks_usec()
 	if spawner == null and world:
 		spawner = MobSpawner.new(world)
 	if spawner:
 		spawner.tick()
+	tick_times["spawner"] = Time.get_ticks_usec() - started
 	var i := 0
 	while i < _entities.size():
 		var entity := _entities[i]
 		if not entity.removed and world.is_inside(Vector3i(entity.feet().floor())):
+			var before := Time.get_ticks_usec()
 			entity.tick()
+			var kind := entity.type_name()
+			tick_times[kind] = tick_times.get(kind, 0) + Time.get_ticks_usec() - before
 		if entity.removed:
 			entity.queue_free()
 			_entities.remove_at(i)

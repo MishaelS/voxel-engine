@@ -405,8 +405,10 @@ static func _redstone_torch(facing: int, lit: bool) -> BlockType:
 		block.facing = facing
 		block.model = BlockModel.register([{"from": Vector3(7, 3.5, -1), "to": Vector3(9, 13.5, 1), "faces": faces,
 			"rotation": {"axis": "x", "angle": 22.5, "origin": Vector3(8, 3.5, 0)}}], facing)
+		block.set_selection(_facing_box(AABB(Vector3(5.5, 3, 0), Vector3(5, 10, 5)), facing))
 	else:
 		block.model = BlockModel.register([{"from": Vector3(7, 0, 7), "to": Vector3(9, 10, 9), "faces": faces}])
+		block.set_selection(AABB(Vector3(6, 0, 6), Vector3(4, 10, 4)))
 	return block
 
 
@@ -638,7 +640,10 @@ static func _register_farming() -> void:
 	for wet in [false, true]:
 		var farmland := BlockType.column("farmland_wet" if wet else "farmland", 86 if wet else 87, 2, 2) \
 			.set_height(0.9375).set_hardness(0.6).set_tool("shovel").set_drop("dirt") \
-			.set_on_update(Callable(FarmBehavior, "on_update")).set_random_tick(Callable(FarmBehavior, "random_tick"))
+			.set_on_update(Callable(FarmBehavior, "on_update")).set_random_tick(Callable(FarmBehavior, "random_tick")) \
+			.set_collision([AABB(Vector3.ZERO, Vector3(16, 16, 16))]).set_selection(AABB(Vector3.ZERO, Vector3(16, 15, 16)))
+		# Like the game: drawn 15/16 high but solid all the way up, so nothing
+		# sinks in when it is trampled back into (full) dirt.
 		farmland.family = "farmland"
 		if wet:
 			farmland.in_catalog = false
@@ -879,6 +884,9 @@ static func _door(kind: String, tile: int, half: String, open: bool, facing: int
 	var faces := {}
 	for face in 6:
 		faces[face] = {"layer": tile}
+	# The back is mirrored, like the game's, so the hinges stay on one edge
+	# (x = 0, where the door swings open) seen from either side.
+	faces[BlockModel.WEST if open else BlockModel.NORTH]["mirror_u"] = true
 	block.shape = BlockType.Shape.MODEL
 	block.model = BlockModel.register([{"from": from, "to": to, "faces": faces}], facing)
 	var turn := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
@@ -965,8 +973,10 @@ static func _torch(facing: int) -> BlockType:
 		block.in_catalog = false
 		block.model = BlockModel.register([{"from": Vector3(7, 3.5, -1), "to": Vector3(9, 13.5, 1), "faces": faces,
 			"rotation": {"axis": "x", "angle": 22.5, "origin": Vector3(8, 3.5, 0)}}], facing)
+		block.set_selection(_facing_box(AABB(Vector3(5.5, 3, 0), Vector3(5, 10, 5)), facing))
 	else:
 		block.model = BlockModel.register([{"from": Vector3(7, 0, 7), "to": Vector3(9, 10, 9), "faces": faces}])
+		block.set_selection(AABB(Vector3(6, 0, 6), Vector3(4, 10, 4)))
 	return block
 
 
@@ -1188,6 +1198,11 @@ static func register(block: BlockType) -> int:
 	collision_table.append(block.collision_boxes)
 	if block.selection_box.size == Vector3.ZERO:
 		var bounds := AABB(Vector3.ZERO, Vector3(1, block.height, 1))
+		if block.shape == BlockType.Shape.CROSS and not block.name.begins_with("wheat"):
+			# Plants are picked by a narrower box, like the game's: flowers and
+			# mushrooms 0.4 wide, grass, saplings and the rest 0.8.
+			var inset := 0.3 if block.name in ["dandelion", "rose", "brown_mushroom", "red_mushroom"] else 0.1
+			bounds = AABB(Vector3(inset, 0, inset), Vector3(1.0 - inset * 2.0, block.height, 1.0 - inset * 2.0))
 		if not block.collision_boxes.is_empty():
 			bounds = block.collision_boxes[0]
 			for box in block.collision_boxes:

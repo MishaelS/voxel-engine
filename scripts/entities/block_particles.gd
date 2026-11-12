@@ -90,17 +90,17 @@ func hit_block(pos: Vector3i, normal: Vector3i, block_id: int) -> void:
 
 
 ## Crumbs of an item (eating), from `origin` along `direction`.
-func item_crumbs(item_id: int, origin: Vector3, direction: Vector3, amount: int = 5) -> void:
+func item_crumbs(item_id: int, origin: Vector3, direction: Vector3, amount: int = 5, scale: float = 1.0) -> void:
 	var light := _brightness(origin)
 	for i in amount:
 		var velocity := direction * 0.1 + Vector3(_rng.randf_range(-0.05, 0.05), _rng.randf_range(0.05, 0.1), _rng.randf_range(-0.05, 0.05))
 		if Items.is_block(item_id):
-			_add_tile(origin, velocity, _tile_of(item_id), _tint_of(item_id) * light, 1.0)
+			_add_tile(origin, velocity, _tile_of(item_id), _tint_of(item_id) * light, scale)
 		else:
 			var item := Items.get_type(item_id)
 			var u := ((item.icon % 16) + _rng.randi_range(0, 3) / 4.0) / 16.0
 			var v := ((item.icon / 16) + _rng.randi_range(0, 3) / 4.0) / 16.0
-			_add(origin, velocity, Color(-1, u, v, _size(1.0)), Color(light, light, light), _life(), 1.0, false)
+			_add(origin, velocity, Color(-1, u, v, _size(scale)), Color(light, light, light), _life(), 1.0, false)
 
 
 ## A puff of smoke (lava hardening, items burning).

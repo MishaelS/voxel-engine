@@ -146,14 +146,15 @@ func _weathered(color: Color) -> Color:
 func _update_fog(to_sun: Vector3) -> void:
 	var environment := world_environment.environment
 	# Under water the fog covers the sky too: everything far is deep water.
-	environment.fog_sky_affect = 1.0 if underwater or in_lava else 0.0
-	if in_lava:
+	var from_far := isometric or snapshot # the isometric camera is far away: no water / lava fog
+	environment.fog_sky_affect = 1.0 if (underwater or in_lava) and not from_far else 0.0
+	if in_lava and not from_far:
 		environment.fog_enabled = true
 		environment.fog_light_color = LAVA_FOG
 		environment.fog_depth_begin = 0.0
 		environment.fog_depth_end = LAVA_FOG_END
 		return
-	if underwater:
+	if underwater and not from_far:
 		environment.fog_enabled = true
 		environment.fog_light_color = WATER_FOG * (0.2 + 0.8 * daylight)
 		environment.fog_depth_begin = 0.0
@@ -167,6 +168,11 @@ func _update_fog(to_sun: Vector3) -> void:
 	environment.fog_light_color = horizon_color(to_sun, view)
 	environment.fog_depth_begin = distance * Settings.get_value("fog_distance") / 100.0
 	environment.fog_depth_end = distance
+	if from_far:
+		# Measured from the isometric camera, which hangs DISTANCE blocks away:
+		# the world around the player stays clear, its far edge fades.
+		environment.fog_depth_begin = IsometricCamera.DISTANCE + distance * 0.3
+		environment.fog_depth_end = IsometricCamera.DISTANCE + distance * 1.1
 
 
 func _update_clouds(to_sun: Vector3) -> void:

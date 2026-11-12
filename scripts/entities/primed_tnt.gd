@@ -73,6 +73,9 @@ func tick() -> void:
 	if fuse <= 0:
 		removed = true
 		Explosion.explode(world, feet() + Vector3(0, 0.5, 0), POWER, self)
+		var player := world.player as Player
+		if player and player.global_position.distance_to(feet()) < 32.0:
+			Stats.grant("boom")
 		return
 	world.particles.smoke(feet() + Vector3(0, 1.1, 0), 1)
 

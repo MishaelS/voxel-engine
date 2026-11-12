@@ -29,6 +29,7 @@ static func use_jukebox(world: VoxelWorld, pos: Vector3i, player: Player, held: 
 	if not name.begins_with("music_disc_"):
 		return false
 	entity.record = held
+	Stats.grant("dj")
 	if not player.is_creative():
 		player.inventory.take(player.selected_slot)
 	play_record(world, pos, name.trim_prefix("music_disc_"))

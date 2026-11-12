@@ -295,6 +295,7 @@ func sleep_in(bed: Vector3i) -> void:
 		message.emit(Lang.t("You may not rest now, the bed is too far away"))
 		return
 	sleeping = true
+	Stats.grant("sleepyhead")
 	sleep_ticks = 0
 	_bed = bed
 	spawn_point = Vector3(bed) + Vector3(0.5, 0.0, 0.5)
@@ -448,7 +449,7 @@ func _update_camera(alpha: float, delta: float) -> void:
 				distance = maxf(float(hit.distance) - 0.3, 0.3)
 		transform_3d.origin += back.normalized() * distance
 	body.visible = third_person and not sleeping
-	held_item.hidden = body.visible or (map_view != null and map_view.visible)
+	held_item.covered = body.visible or (map_view != null and map_view.visible)
 	camera.transform = transform_3d
 	var base_fov: float = Settings.get_value("fov")
 	camera.fov = clampf(base_fov * lerpf(_prev_fov_factor, _fov_factor, alpha), 1.0, 170.0)
@@ -839,6 +840,8 @@ func _count_movement() -> void:
 			Stats.grant("onARail")
 		if kind == "pig" and vehicle.velocity.y < -0.5:
 			Stats.grant("flyPig")
+		if kind == "boat" and Stats.value("boat_cm") >= 10000:
+			Stats.grant("sailor")
 	elif flying:
 		Stats.add("fly_cm", roundi(moved.length() * 100.0))
 	elif in_water:

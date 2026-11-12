@@ -2,9 +2,11 @@ class_name Screenshots
 extends Node
 ## Screenshots and the isometric camera, like the old game:
 ## - F2: a screenshot of the screen (with the GUI unless it is hidden);
-## - F1: hide / show the GUI;
+## - F1: hide / show the HUD like the classic game (crosshair, hotbar,
+##   health, chat, debug screen, the hand); windows and menus still show;
 ## - F6: the isometric camera (IsometricCamera), Z / X turn it, the wheel
-##   zooms; the crosshair and the block in hand are hidden;
+##   zooms; the crosshair and the block in hand are hidden, the mouse is
+##   free and its settings are in a panel on the right (IsometricPanel);
 ## - F7: an isometric picture of the whole loaded area at high resolution
 ##   (Screenshot Size), rendered off-screen without GUI, fog or clouds.
 ## Pictures go to user://screenshots/ and the chat says where.
@@ -18,12 +20,20 @@ const RENDER_SIZES: Array[int] = [2048, 4096, 8192]
 @export var chat: Chat
 
 var isometric := false
+## F1: the HUD is hidden.
+var hud_hidden := false
+## The same for HUD parts that show themselves (StatusBars).
+static var hud_off := false
+
+const HUD_NODES := ["Crosshair", "Hotbar", "StatusBars", "DebugScreen"]
 
 var _camera: IsometricCamera
+var _panel: IsometricPanel
 var _rendering := false
 
 
 func _ready() -> void:
+	hud_off = false
 	_camera = IsometricCamera.new()
 	_camera.target = player
 	add_child(_camera)
@@ -33,7 +43,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("screenshot"):
 		take_screenshot()
 	elif event.is_action_pressed("hide_gui"):
-		ui.visible = not ui.visible
+		hud_hidden = not hud_hidden
+		_apply_hud()
 	elif event.is_action_pressed("isometric_view") and not GameInput.is_blocked():
 		set_isometric(not isometric)
 	elif event.is_action_pressed("isometric_screenshot") and not GameInput.is_blocked():
@@ -59,14 +70,48 @@ func set_isometric(enabled: bool) -> void:
 		_camera.current = true
 	elif player and player.camera:
 		player.camera.current = true
-	if player and player.held_item:
-		player.held_item.hidden = enabled
-	var crosshair := ui.get_node_or_null("Crosshair") as CanvasItem
-	if crosshair:
-		crosshair.visible = not enabled
 	var atmosphere := Atmosphere.find(get_tree())
 	if atmosphere:
 		atmosphere.isometric = enabled
+	# The settings panel, with the mouse free to use it.
+	if enabled and _panel == null:
+		_panel = IsometricPanel.new()
+		_panel.screenshots = self
+		ui.add_child(_panel)
+	elif not enabled and _panel:
+		_panel.queue_free()
+		_panel = null
+	if enabled:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif not GameInput.is_blocked():
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_apply_hud()
+
+
+## Shows or hides the HUD (F1, and what the isometric view hides). The
+## debug screen comes back only if it is on.
+func _apply_hud() -> void:
+	hud_off = hud_hidden
+	for name: String in HUD_NODES:
+		var node := ui.get_node_or_null(name) as CanvasItem
+		if node == null:
+			continue
+		var shown := not hud_hidden
+		if name == "Crosshair":
+			shown = shown and not isometric
+		if name == "DebugScreen":
+			shown = shown and Settings.get_value("debug_screen")
+		node.visible = shown
+	if player and player.held_item:
+		player.held_item.hidden = isometric or hud_hidden
+
+
+func _process(_delta: float) -> void:
+	# With the HUD hidden, the chat shows only while it is open.
+	if hud_hidden and chat:
+		chat.visible = chat.is_open()
+	elif chat and not chat.visible:
+		chat.visible = true
 
 
 ## Saves what is on the screen now.
@@ -128,7 +173,7 @@ func render_isometric() -> void:
 	var image := viewport.get_texture().get_image()
 	if atmosphere:
 		atmosphere.snapshot = false
-	player.held_item.hidden = isometric
+	player.held_item.hidden = isometric or hud_hidden
 	world.culling_enabled = true
 	world.set_open_edges(false)
 	viewport.queue_free()

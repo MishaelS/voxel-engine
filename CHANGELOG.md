@@ -75,12 +75,26 @@ Sections:
 - Chest model and large chests like the modern game (`ChestModel`, `ChestBehavior`): chests are drawn as the game's chest model (a base, a lid and a latch, 14/16 high) with textures from `assets/textures/chest-atlas.png` (the game's chest texture layout, unfolded boxes); its faces become extra layers of the block tile array. A chest placed next to a single chest facing the same way joins it into a large chest (two halves with one long lid and the latch at the seam); opening it shows both halves' 27 slots as one 54-slot window (container4.png, "Large Chest"). Breaking one half leaves a single chest; each half keeps its own items.
 
 ### Changed
+- The block outline is sharper: lines about 2 pixels wide at any distance (`shaders/outline.gdshader`), around each box of the block (both steps of stairs); plants and torches are picked by narrower boxes like the game's.
+- Achievements and statistics belong to each world (kept in its save) instead of to all worlds; 11 achievements of our own were added (Playing with Fire, Kaboom!, Engineer, Musician, DJ, Fisherman, Art Lover, Good Night, Sailor, Best Friend, Treasure Hunter), shown in blue on the map.
+- The isometric camera's settings moved from the options into the isometric view itself (F6): a panel on the right changes the angle, facing, zoom, clouds, fog, screenshot size and background as you click, with a screenshot button; the mouse is free while it is open.
 - The wolf follows the game's model and texture layout and uses the new `pale_wolf` skin (the generated one is gone); tame wolves wear a red collar (`wolf_collar`, drawn over the neck), hold their tail high (lower when hurt, the classic health gauge) and have 20 health like Beta.
 - Mob models follow the game's own boxes and texture layout (`assets/models/mobs.json`), so the game's skins fit: 64 x 32 skins work next to 64 x 64 ones, left limbs can use the right ones' texture mirrored, the cow's and sheep's bodies lie along the box like the game's, horns, the udder and the fleece move with their parts. The sheep's fleece is now made of a head, body and leg pieces. New skins for the zombie, skeleton, creeper, spider, cow, sheep, squid, the player and the armor of every material (the leather armor tinted brown like Beta); pigs, chickens, slimes, wolves, the fleece and the leggings layer keep the generated ones. `tools/make_mob_textures.py` and `tools/make_armor_textures.py` no longer overwrite textures that are already there.
 - Block ids are 32-bit (`ChunkData.blocks` is a `PackedInt32Array`): up to 65535 block states instead of 256, every state its own id. Older saves (one byte per block) are converted on load and written back; item ids moved to 32768 and up (`Items.FIRST_ITEM`), older saved inventories and dropped items are renumbered (`Items.from_save()`).
 - Player collision lives in `EntityPhysics`, shared with entities.
 
 ### Fixed
+- Stutters while moving and turning (frames of 50-100 ms at render distance 12): random block ticks only reach 8 columns around the player like the game's (they ran over the whole loaded world) and spread over ticks when a tick runs long; display ticks pick their blocks straight from the 27 chunks around; the cave culling search runs on a worker thread and only changes the chunks that change; chunk meshes are built on the worker threads too, and at most ~4 ms of them are put in place a frame; faster block and light lookups. The debug screen shows where each frame's and tick's time goes.
+- Eating: the food comes up in front of the mouth, turned toward the face, and bobs like the game's (it stood on edge at the side); the crumbs are smaller and below the middle of the view; no swing after eating (only Beta's instant eating swings).
+- Squid swim under the water in pushes, mostly level, and lean into the way they go (they stood upright and bobbed above the surface).
+- The pig lost its body with the new skin: its model follows the game's layout now; the saddle is the game's overlay (`saddle_pig`); the chicken follows the game's layout for its new skin; the slime's outer jelly is see-through (`mob_translucent.gdshader`).
+- Flowing water's sides show the top of the texture cut off at the surface instead of squeezed.
+- Items float at the water's real surface (flowing water is lower) instead of at the top of its block.
+- Jumping on farmland no longer sinks you into the ground: like the game, farmland is drawn 15/16 high but solid all the way up.
+- Doors: the back of the door is mirrored like the game's, so the hinges are on the same edge from both sides and the door swings open on the hinge side.
+- In the isometric view, fog no longer hides everything (it is measured from the far-away camera, without water or lava fog) and the hand no longer shows through walls.
+- Esc no longer pauses the game while the world is loading.
+- F1 hides the HUD like the game (crosshair, hotbar, health, chat, debug screen, the hand) while the inventory, menus and other windows still show.
 - Spider legs slope down to the ground like the game's (front and back pairs at 45 degrees, the middle ones flatter); they pointed up.
 
 ### Removed

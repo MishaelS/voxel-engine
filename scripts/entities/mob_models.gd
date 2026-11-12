@@ -13,7 +13,9 @@ extends RefCounted
 ##   body lies along the box's height, like the game's);
 ## - "parent": another part whose pivot it moves with (horns, overlays;
 ##   give it the same pivot);
-## - "texture": another skin than the mob's own.
+## - "texture": another skin than the mob's own;
+## - "translucent": drawn see-through by the skin's alpha (the slime's
+##   outer jelly).
 
 const MODELS_PATH := "res://assets/models/mobs.json"
 const SKINS := "res://assets/textures/mobs/"
@@ -70,13 +72,14 @@ static func _skin_size(texture: String) -> Vector2:
 	return Vector2(image.get_size()) if image else Vector2(64, 64)
 
 
-static func _material(texture: String) -> ShaderMaterial:
-	if not _materials.has(texture):
+static func _material(texture: String, translucent: bool = false) -> ShaderMaterial:
+	var key := texture + ("#translucent" if translucent else "")
+	if not _materials.has(key):
 		var material := ShaderMaterial.new()
-		material.shader = preload("res://shaders/mob.gdshader")
+		material.shader = preload("res://shaders/mob_translucent.gdshader") if translucent else preload("res://shaders/mob.gdshader")
 		material.set_shader_parameter("skin", TexturePacks.load_texture(SKINS + texture + ".png"))
-		_materials[texture] = material
-	return _materials[texture]
+		_materials[key] = material
+	return _materials[key]
 
 
 ## A part's box around its pivot, with the skin's unfolded faces.
@@ -87,7 +90,8 @@ static func part_mesh(mob: String, part: Dictionary) -> ArrayMesh:
 ## A part's box around its pivot, with the skin's unfolded faces.
 static func _mesh(mob: String, part: Dictionary) -> ArrayMesh:
 	var texture: String = part.get("texture", mob)
-	var key := "%s/%s/%s/%s/%s/%s" % [mob, part.name, texture, part.get("inflate", 0.0), part.uv, part.get("mirror", false)]
+	var translucent: bool = part.get("translucent", false)
+	var key := "%s/%s/%s/%s/%s/%s/%s" % [mob, part.name, texture, part.get("inflate", 0.0), part.uv, part.get("mirror", false), translucent]
 	if _meshes.has(key):
 		return _meshes[key]
 	var size := _v(part.size)
@@ -146,6 +150,6 @@ static func _mesh(mob: String, part: Dictionary) -> ArrayMesh:
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	mesh.surface_set_material(0, _material(texture))
+	mesh.surface_set_material(0, _material(texture, translucent))
 	_meshes[key] = mesh
 	return mesh

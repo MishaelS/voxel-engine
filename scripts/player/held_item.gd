@@ -42,6 +42,8 @@ var player: Player
 ## Hidden while another camera is used (isometric view, screenshots): the
 ## block floats next to the player's eyes in the world.
 var hidden := false
+## Hidden by the player's own view: the third-person body or a map in hand.
+var covered := false
 ## Items drawn turned half around in hand, like the classic game's.
 const TURNED_AROUND: Array[String] = ["fishing_rod"]
 
@@ -104,7 +106,7 @@ func _process(delta: float) -> void:
 		_swing += ticks / SWING_TICKS
 		if _swing >= 1.0:
 			_swing = -1.0
-	visible = not hidden
+	visible = not hidden and not covered
 	_mesh_instance.visible = _shown != Blocks.AIR
 	_arm_instance().visible = _shown == Blocks.AIR
 	if visible and _shown == Blocks.AIR:
@@ -142,12 +144,21 @@ func _pose() -> void:
 	var basis_3d := Basis(Vector3.UP, deg_to_rad(45.0 - sin(swing * swing * PI) * 20.0)) \
 		* Basis(Vector3.BACK, deg_to_rad(-arc_sqrt * 20.0)) \
 		* Basis(Vector3.RIGHT, deg_to_rad(-arc_sqrt * 80.0))
-	if player.eating >= 0.0:
-		# Eating: the food comes to the mouth and bobs.
-		var t := minf(player.eating * 4.0, 1.0)
-		position_3d = position_3d.lerp(Vector3(0.2, -0.38, -0.8), t)
-		position_3d.y += absf(cos(player.eating * 32.0 / 4.0 * PI)) * 0.05 * t
 	transform = Transform3D(basis_3d.scaled(Vector3.ONE * SCALE), position_3d)
+	if player.eating >= 0.0:
+		# Eating like the game (transformEatFirstPerson): the food swings in
+		# front of the mouth, turned toward the face, and bobs while chewed.
+		var left := 1.0 - clampf(player.eating, 0.0, 1.0) # share of the time left
+		var ticks_left := left * BlockInteraction.EAT_TICKS + 1.0
+		var bob := 0.0 if left >= 0.8 else absf(cos(ticks_left / 4.0 * PI) * 0.1)
+		var f := 1.0 - pow(left, 27.0)
+		var eat := Transform3D(Basis.IDENTITY, Vector3(f * 0.6, -f * 0.5 + bob, 0.0)) \
+			* Transform3D(Basis(Vector3.UP, deg_to_rad(f * 90.0)), Vector3.ZERO) \
+			* Transform3D(Basis(Vector3.RIGHT, deg_to_rad(f * 10.0)), Vector3.ZERO) \
+			* Transform3D(Basis(Vector3.BACK, deg_to_rad(f * 30.0)), Vector3.ZERO)
+		var rest := Transform3D(Basis(Vector3.UP, deg_to_rad(45.0)).scaled(Vector3.ONE * SCALE),
+			REST + Vector3(0, -(1.0 - _equip) * 0.6, 0))
+		transform = eat * rest
 	if not ItemMeshes.is_flat(_shown):
 		# The block's mesh spans 0..1: center it on the pivot.
 		_mesh_instance.transform = Transform3D(Basis.IDENTITY, Vector3(-0.5, -0.5, -0.5))

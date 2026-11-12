@@ -47,6 +47,8 @@ class AchievementMap extends Control:
 			var state := _state(id)
 			style.bg_color = [Color(0.12, 0.12, 0.14), Color(0.35, 0.35, 0.38), Color(0.55, 0.5, 0.2)][state]
 			style.border_color = [Color(0.25, 0.25, 0.28), Color(0.7, 0.7, 0.72), Color(1.0, 0.9, 0.3)][state]
+			if id in Stats.OURS and state > 0:
+				style.border_color = Color(0.45, 0.75, 1.0) if state == 1 else Color(0.5, 0.95, 1.0) # our own: blue
 			style.set_border_width_all(P)
 			frame.add_theme_stylebox_override("panel", style)
 			frame.size = Vector2(24, 24) * P

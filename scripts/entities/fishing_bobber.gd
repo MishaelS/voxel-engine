@@ -138,6 +138,8 @@ func reel_in() -> int:
 			Vector3(to.x * 0.1, to.y * 0.1 + sqrt(to.length()) * 0.08, to.z * 0.1))
 		wear = 1
 		Stats.add("fish_caught")
+		if Stats.value("fish_caught") >= 10:
+			Stats.grant("fisherman")
 	elif on_ground:
 		wear = 2
 	_gone()

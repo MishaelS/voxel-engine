@@ -207,9 +207,14 @@ func _box_blocked(center: Vector3) -> bool:
 	return false
 
 
+## Below the water's surface (flowing water is lower: items float on it,
+## not up to the top of its block).
 func _in_water(center: Vector3) -> bool:
-	var id := world.get_block(Vector3i(center.floor()))
-	return Blocks.liquid_table[id] == 1 and Blocks.family_of(id) == "water"
+	var cell := Vector3i(center.floor())
+	var id := world.get_block(cell)
+	if Blocks.liquid_table[id] == 0 or Blocks.family_of(id) != "water":
+		return false
+	return center.y < LiquidBehavior.surface_height(world, cell)
 
 
 func _in_lava(center: Vector3) -> bool:

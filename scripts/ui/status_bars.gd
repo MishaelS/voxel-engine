@@ -60,7 +60,7 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	visible = player != null and not player.is_creative()
+	visible = player != null and not player.is_creative() and not Screenshots.hud_off
 	if not visible:
 		return
 	var low := player.health <= LOW_HEALTH and not player.dead

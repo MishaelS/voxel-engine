@@ -62,6 +62,8 @@ var tamed := false
 var sitting := false
 ## Pigs: wearing a saddle (the player can ride them).
 var saddled := false
+var _squid_push := 0.0
+var _squid_pitch := 0.0
 var angry := false
 
 var target: Node3D
@@ -352,12 +354,26 @@ func _wolf_tick(player: Player) -> void:
 	_animal_tick(player)
 
 
+## Squid like Beta's: under water they swim in pushes (a new, mostly level
+## direction now and then, the push fading), staying under the surface;
+## the body leans into the way it goes. Out of water they flop.
 func _squid_tick() -> void:
 	if in_water:
-		velocity.y += 0.02 # floats
-		if _wander == Vector3.INF or randi_range(0, 49) == 0:
-			_wander = Vector3(randf_range(-1, 1), randf_range(-0.3, 0.3), randf_range(-1, 1)).normalized() * spec.speed
-		velocity += _wander * 0.2
+		_squid_push *= 0.9
+		if _wander == Vector3.INF or randi_range(0, 49) == 0 or horizontal_collision:
+			var angle := randf() * TAU
+			_wander = Vector3(cos(angle), randf_range(-0.1, 0.1), sin(angle)).normalized()
+		if _squid_push < 0.05 and randi_range(0, 19) == 0:
+			_squid_push = 1.0 # a new push of the tentacles
+		var push: Vector3 = _wander * float(spec.speed) * 2.0 * _squid_push
+		velocity.x = push.x
+		velocity.z = push.z
+		velocity.y = push.y + 0.02 # cancels the water's pull: no rising or sinking
+		# Stay under the surface.
+		if Blocks.liquid_table[world.get_block(Vector3i(floori(_x), floori(_y + height + 0.1), floori(_z)))] == 0:
+			velocity.y = minf(velocity.y, -0.02)
+		if Vector2(velocity.x, velocity.z).length_squared() > 1e-5:
+			rotation.y = atan2(velocity.x, velocity.z)
 	else:
 		velocity.x *= 0.5
 		velocity.z *= 0.5
@@ -456,6 +472,7 @@ func interact(player: Player, item_id: int) -> bool:
 					angry = false
 					target = null
 					max_health = 20 # tame wolves have 20 health, like Beta
+					Stats.grant("tamer")
 					health = max_health
 					_update_wool()
 					world.particles.hearts(center() + Vector3(0, height * 0.5, 0))
@@ -596,6 +613,17 @@ func _process(delta: float) -> void:
 					node.rotation.y = side * ((index - 1.5) * 0.4) + side * swing * 0.4 * (1 if index % 2 == 0 else -1)
 	if mob_type == "wolf" and sitting:
 		_model.root.position.y = -0.15
+	if mob_type == "squid":
+		# Leans into the way it swims (level when still), around its middle.
+		var moving := Vector2(velocity.x, velocity.z).length()
+		var target := atan2(moving, velocity.y) if moving > 0.005 or absf(velocity.y) > 0.005 else 0.0
+		if not in_water:
+			target = 0.0
+		_squid_pitch = lerpf(_squid_pitch, target, minf(delta * 3.0, 1.0))
+		var middle := Vector3(0, height * 0.5, 0)
+		var size := float(MobModels.model("squid").get("scale", 1.0)) / 16.0
+		_model.root.transform = Transform3D(Basis(Vector3.RIGHT, _squid_pitch), middle) \
+			* Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * size), -middle)
 	var brightness := world.brightness_at(center()) if world else 1.0
 	var flash := 0.0
 	if mob_type == "creeper" and _fuse > 0:

@@ -48,6 +48,7 @@ var target_entity: Entity
 var break_progress := 0.0
 
 var _outline: MeshInstance3D
+var _outline_block := -1
 var _cracks: MeshInstance3D
 var _crack_material: ShaderMaterial
 var _breaking_pos := Vector3i(0, -1000, 0)
@@ -61,8 +62,8 @@ var _inventory_screen: InventoryScreen
 
 func _ready() -> void:
 	_outline = MeshInstance3D.new()
-	_outline.mesh = _make_outline_mesh()
 	_outline.visible = false
+	_outline.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_outline)
 	_cracks = MeshInstance3D.new()
 	_cracks.mesh = _make_crack_mesh()
@@ -84,11 +85,12 @@ func _process(delta: float) -> void:
 	var hit: bool = target.get("hit", false)
 	_outline.visible = hit and not player.sleeping
 	if hit:
+		# The outline follows the block's shape: each of its boxes (stairs),
+		# or its selection box (slabs, plants, torches, doors).
 		_outline.global_position = Vector3(target.pos)
-		# The outline follows the block's shape (slabs, torches, doors).
-		var box: AABB = Blocks.selection_table[target.block]
-		_outline.global_position = Vector3(target.pos) + box.position
-		_outline.scale = box.size
+		if target.block != _outline_block:
+			_outline_block = target.block
+			_outline.mesh = _outline_mesh(target.block)
 
 	var ticks := delta / TICK
 	_break_delay = maxf(_break_delay - ticks, 0.0)
@@ -133,6 +135,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					_attack(target_entity)
 				elif target.get("hit", false) and Blocks.family_of(target.block) == "note_block":
 					MusicBehavior.play_note(world, target.pos)
+					Stats.grant("musician")
 				get_viewport().set_input_as_handled()
 		MOUSE_BUTTON_RIGHT:
 			if _captured():
@@ -298,6 +301,7 @@ func _use() -> void:
 					player.inventory.take(player.selected_slot)
 		"painting":
 			if hit and Painting.hang(world, target.pos, target.normal):
+				Stats.grant("artist")
 				player.swing()
 				if not player.is_creative():
 					player.inventory.take(player.selected_slot)
@@ -324,6 +328,7 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 		return false
 	if Blocks.family_of(id) == "dungeon_chest":
 		DungeonBehavior.open_chest(world, pos)
+		Stats.grant("treasure")
 		id = world.get_block(pos)
 	var family := Blocks.family_of(id)
 	match family:
@@ -333,6 +338,7 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 			return MusicBehavior.use_jukebox(world, pos, player, player.held_block())
 		"note_block":
 			MusicBehavior.tune(world, pos)
+			Stats.grant("musician")
 		"chest", "chest_left", "chest_right":
 			var other: Variant = ChestBehavior.partner(world, pos)
 			Sounds.play("chest/open", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.5, randf() * 0.1 + 0.9)
@@ -563,6 +569,7 @@ func _strike_flint() -> void:
 	if target.get("hit", false) and Blocks.get_type(target.block).name == "tnt":
 		player.swing()
 		PrimedTnt.light(world, target.pos)
+		Stats.grant("lightItUp")
 		if not player.is_creative():
 			player.inventory.wear(player.selected_slot)
 		return
@@ -571,6 +578,7 @@ func _strike_flint() -> void:
 		return
 	player.swing()
 	if FireBehavior.ignite(world, cell):
+		Stats.grant("lightItUp")
 		Sounds.play("fire/ignite", Vector3(cell) + Vector3(0.5, 0.5, 0.5), 1.0, randf_range(0.8, 1.2))
 		if not player.is_creative():
 			player.inventory.wear(player.selected_slot)
@@ -620,8 +628,10 @@ func _continue_eating(ticks: float) -> void:
 	player.eating = _eating / EAT_TICKS
 	# Crumbs every 4 ticks from the mouth.
 	if int(_eating) / 4 != before / 4 and _eating > 6.0:
-		var mouth := player.eye_position() + player.look_direction() * 0.4 - Vector3(0, 0.15, 0)
-		world.particles.item_crumbs(id, mouth, player.look_direction())
+		# Like the game: just in front of the mouth, below the middle of the view.
+		var look := player.look_direction()
+		var mouth := player.eye_position() + look * 0.6 - Vector3(0, 0.3 + randf() * 0.3, 0)
+		world.particles.item_crumbs(id, mouth, look, 5, 0.5)
 		Sounds.play("random/eat", null, 0.5 + 0.5 * randi_range(0, 1), randf_range(0.8, 1.2))
 	if _eating >= EAT_TICKS:
 		_finish_eating(id)
@@ -633,7 +643,8 @@ func _continue_eating(ticks: float) -> void:
 func _finish_eating(id: int) -> void:
 	player.eat(id)
 	Sounds.play("random/burp" if world.hunger else "random/eat", null, 0.5, randf_range(0.9, 1.0))
-	player.swing()
+	if not world.hunger:
+		player.swing() # Beta eats at once with a swing; held-down eating ends without one
 	if player.is_creative():
 		return
 	player.inventory.take(player.selected_slot)
@@ -653,24 +664,51 @@ func _stop_eating() -> void:
 
 # --- Meshes --------------------------------------------------------------------------
 
-## The 12 edges of a block, slightly enlarged to avoid z-fighting.
-static func _make_outline_mesh() -> ImmediateMesh:
-	const E := 0.002
-	var corners: Array[Vector3] = []
-	for i in 8:
-		corners.append(Vector3(1.0 + E if i & 1 else -E, 1.0 + E if i & 2 else -E, 1.0 + E if i & 4 else -E))
-	var mesh := ImmediateMesh.new()
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color(0, 0, 0, 0.6)
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mesh.surface_begin(Mesh.PRIMITIVE_LINES, material)
-	for a in 8:
-		for bit in [1, 2, 4]:
-			if a & bit == 0:
-				mesh.surface_add_vertex(corners[a])
-				mesh.surface_add_vertex(corners[a | bit])
-	mesh.surface_end()
+static var _outline_material: ShaderMaterial
+static var _outline_meshes := {} # block id -> ArrayMesh
+
+
+## The outline of a block: the 12 edges of each of its boxes (a little
+## bigger, so they don't flicker into the faces), as screen-width lines
+## (shaders/outline.gdshader).
+static func _outline_mesh(id: int) -> ArrayMesh:
+	if _outline_meshes.has(id):
+		return _outline_meshes[id]
+	if _outline_material == null:
+		_outline_material = ShaderMaterial.new()
+		_outline_material.shader = preload("res://shaders/outline.gdshader")
+	var boxes: Array = Blocks.collision_table[id] if Blocks.collision_table[id].size() > 1 else [Blocks.selection_table[id]]
+	var vertices := PackedVector3Array()
+	var ends := PackedVector2Array()
+	var others := PackedVector2Array()
+	var indices := PackedInt32Array()
+	for box: AABB in boxes:
+		var grown := box.grow(0.002)
+		for a in 8:
+			for bit in [1, 2, 4]:
+				if a & bit:
+					continue
+				var p := grown.get_endpoint(a)
+				var q := grown.get_endpoint(a | bit)
+				var start := vertices.size()
+				for corner: Array in [[p, q, -1.0], [p, q, 1.0], [q, p, 1.0], [q, p, -1.0]]:
+					var at: Vector3 = corner[0]
+					var other: Vector3 = corner[1]
+					vertices.append(at)
+					ends.append(Vector2(other.x, other.y))
+					others.append(Vector2(other.z, corner[2]))
+				indices.append_array(PackedInt32Array([start, start + 1, start + 2, start, start + 2, start + 3]))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_TEX_UV] = ends
+	arrays[Mesh.ARRAY_TEX_UV2] = others
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(0, _outline_material)
+	mesh.custom_aabb = AABB(Vector3(-0.1, -0.1, -0.1), Vector3(1.2, 1.7, 1.2))
+	_outline_meshes[id] = mesh
 	return mesh
 
 
