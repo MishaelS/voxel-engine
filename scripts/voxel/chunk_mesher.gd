@@ -64,8 +64,23 @@ const AO_BRIGHTNESS: Array[float] = [0.22, 0.45, 0.68, 1.0]
 const SHADOW_CONTRAST := 1.35
 
 ## Brightness of light levels 0..15, the classic curve: each level is a
-## clear step down, level 0 keeps 5% so caves are dark but not black.
+## clear step down, level 0 keeps 5% so caves are dark but not black. With
+## the Classic pack it is the game's own table made linear (its light works
+## on sRGB colors), like the classic block shaders (CLASSIC_GAMMA); used for
+## creatures, items and particles (VoxelWorld.brightness_at).
+static var classic_light := true
+## The Brightness setting for classic light (0 Moody .. 1 Bright), like the
+## block shaders' `classic_gamma`.
+static var classic_gamma := 0.5
 static var LIGHT_BRIGHTNESS := _build_light_curve()
+
+
+## Switches the curve for the shader pack's lighting (ShaderPackApplier)
+## and the Brightness setting.
+static func set_classic_light(classic: bool, gamma: float = classic_gamma) -> void:
+	classic_light = classic
+	classic_gamma = gamma
+	LIGHT_BRIGHTNESS = _build_light_curve()
 
 ## Smooth lighting (voxel AO + light averaged per corner) on/off ("Smooth
 ## Lighting" setting; off = flat light per face). Re-mesh after changing.
@@ -102,8 +117,18 @@ static func _build_light_curve() -> PackedFloat32Array:
 	for level in SkyLight.MAX + 1:
 		var darkness := 1.0 - level / float(SkyLight.MAX)
 		var classic := (1.0 - darkness) / (darkness * 3.0 + 1.0)
-		curve.append(pow(classic, SHADOW_CONTRAST) * 0.95 + 0.05)
+		if classic_light:
+			var table := classic * 0.95 + 0.05
+			curve.append(pow(lerpf(table, 1.0 - pow(1.0 - table, 4.0), classic_gamma), 2.2))
+		else:
+			curve.append(pow(classic, SHADOW_CONTRAST) * 0.95 + 0.05)
 	return curve
+
+
+## A liquid level for the flow direction: sources and falling liquid 0,
+## spreading liquid 1..7 (farther from the source = higher).
+static func _flow_decay(level: int) -> int:
+	return 0 if level >= 8 else level
 
 
 static func _delta(offset: Vector3i) -> int:
@@ -552,6 +577,22 @@ static func _build_layer(padded: PackedInt32Array, light: PackedByteArray, cells
 							total += 1.0
 							weight += 1.0
 				corner_heights[k] = 1.0 if full else 1.0 - total / maxf(weight, 1.0)
+		# Which way it flows (the game's flow vector): toward lower neighbors.
+		var flow := Vector2.ZERO
+		if sloped:
+			var own := _flow_decay(liquid_levels[id])
+			for side in 4:
+				var step: int = [1, -1, P, -P][side]
+				var neighbor_id := padded[i + step]
+				var diff := 0
+				if liquid[neighbor_id] == 1:
+					diff = _flow_decay(liquid_levels[neighbor_id]) - own
+				elif collides[neighbor_id] == 0 and liquid[padded[i + step - P2]] == 1:
+					diff = _flow_decay(liquid_levels[padded[i + step - P2]]) - (own - 8)
+				else:
+					continue
+				flow += Vector2([1, -1, 0, 0][side], [0, 0, 1, -1][side]) * diff
+			flow = flow.normalized() if flow.length_squared() > 1e-6 else Vector2.ZERO
 		# Random texture variant, fixed per block position (like the modern
 		# game's position random): bits 0-1 turn the top / bottom, bit 2
 		# mirrors (MIRROR blocks only).
@@ -585,6 +626,9 @@ static func _build_layer(padded: PackedInt32Array, light: PackedByteArray, cells
 
 			var index := id * 6 + face
 			var tile := float(face_tiles[index])
+			var flowing_top := face == 0 and flow != Vector2.ZERO
+			if flowing_top:
+				tile = float(face_tiles[id * 6 + 2]) # the flowing texture, turned along the flow
 			var overlay := float(face_overlays[index])
 			var normal := normals_table[face]
 			var start := vertices.size()
@@ -655,6 +699,13 @@ static func _build_layer(padded: PackedInt32Array, light: PackedByteArray, cells
 				mode = turn if face < 2 else (turn & 4)
 			for c in 4:
 				var uv := corner_uvs[(c + mode) & 3]
+				if flowing_top:
+					# Like the game: the middle half of the texture (twice as big),
+					# its down direction along the flow, so the ripples run with it.
+					var corner := corner_offsets[c]
+					var d := Vector2(corner.x - 0.5, corner.z - 0.5)
+					uvs.append(Vector2(0.5 + d.dot(Vector2(-flow.y, flow.x)) * 0.5, 0.5 + d.dot(flow) * 0.5))
+					continue
 				if mode & 4:
 					uv.x = 1.0 - uv.x
 				if face >= 2:

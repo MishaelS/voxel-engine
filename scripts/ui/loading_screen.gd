@@ -265,11 +265,11 @@ func _process(delta: float) -> void:
 func _advance_cells(states: Array) -> void:
 	var all_done := true
 	for cell in _cells:
-		var real: Array = states[cell.index] if cell.index < states.size() else [Stage.MESHED, 64]
+		var real: Array = states[cell.index] if cell.index < states.size() else [Stage.MESHED, WorldGenerator.SEA_LEVEL]
 		if cell.stage == Stage.NONE:
 			if real[0] > Stage.NONE and _elapsed >= _next_drop:
 				_next_drop = _elapsed + DROP_STAGGER
-				cell.height = clampi(1 + roundi((real[1] - 61) / 3.0), 1, 6)
+				cell.height = clampi(1 + roundi((real[1] - (WorldGenerator.SEA_LEVEL - 3)) / 3.0), 1, 6)
 				cell.stage = Stage.GENERATED
 				cell.changed_at = _elapsed
 				cell.dropped_at = _elapsed

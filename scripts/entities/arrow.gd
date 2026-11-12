@@ -9,6 +9,8 @@ const DAMAGE := 4
 const STUCK_TICKS := 1200
 
 var shooter: Node3D
+## How hard the bow was drawn (0.1..1): the damage scales with it.
+var power := 1.0
 var stuck := false
 var _stuck_ticks := 0
 var _model: Node3D
@@ -41,23 +43,40 @@ func _ready() -> void:
 	height = 0.5
 	_model = Node3D.new()
 	add_child(_model)
-	var wood := StandardMaterial3D.new()
-	wood.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	wood.albedo_color = Color(0.45, 0.32, 0.18)
-	var stone := wood.duplicate() as StandardMaterial3D
-	stone.albedo_color = Color(0.5, 0.5, 0.5)
-	var feather := wood.duplicate() as StandardMaterial3D
-	feather.albedo_color = Color(0.92, 0.92, 0.92)
-	for piece: Array in [[Vector3(0.04, 0.04, 0.5), Vector3.ZERO, wood], [Vector3(0.07, 0.07, 0.08), Vector3(0, 0, 0.27), stone],
-			[Vector3(0.12, 0.01, 0.12), Vector3(0, 0, -0.2), feather], [Vector3(0.01, 0.12, 0.12), Vector3(0, 0, -0.2), feather]]:
-		var mesh := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = piece[0]
-		box.material = piece[2]
-		mesh.mesh = box
-		mesh.position = piece[1]
-		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_model.add_child(mesh)
+	var mesh := MeshInstance3D.new()
+	mesh.mesh = _arrow_mesh()
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_model.add_child(mesh)
+
+
+static var _mesh: ArrayMesh
+
+
+## The arrow like the game's: two crossed pictures 16 x 5 pixels (feathers
+## to tip along +Z) turned 45 degrees, and the 5 x 5 back seen from behind;
+## textures/entity/arrow.png (32 x 32), 0.05625 blocks a pixel.
+static func _arrow_mesh() -> ArrayMesh:
+	if _mesh:
+		return _mesh
+	const S := 0.05625
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var quad := func(corners: Array, uvs: Array) -> void:
+		for k: int in [0, 1, 2, 0, 2, 3]:
+			tool.set_uv(uvs[k])
+			tool.add_vertex(corners[k] * S)
+	for plane in 2:
+		var turn := Basis(Vector3.BACK, deg_to_rad(45.0 + plane * 90.0))
+		quad.call([turn * Vector3(0, 2, -12), turn * Vector3(0, 2, 4), turn * Vector3(0, -2, 4), turn * Vector3(0, -2, -12)],
+			[Vector2(0, 0), Vector2(0.5, 0), Vector2(0.5, 5.0 / 32.0), Vector2(0, 5.0 / 32.0)])
+	quad.call([Vector3(-2, 2, -11), Vector3(2, 2, -11), Vector3(2, -2, -11), Vector3(-2, -2, -11)],
+		[Vector2(0, 5.0 / 32.0), Vector2(5.0 / 32.0, 5.0 / 32.0), Vector2(5.0 / 32.0, 10.0 / 32.0), Vector2(0, 10.0 / 32.0)])
+	_mesh = tool.commit()
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/entity_flat.gdshader")
+	material.set_shader_parameter("picture", TexturePacks.load_texture("res://assets/textures/entity/arrow.png"))
+	_mesh.surface_set_material(0, material)
+	return _mesh
 
 
 func tick() -> void:
@@ -93,7 +112,7 @@ func tick() -> void:
 			return
 	if not hit.is_empty():
 		var target: Entity = hit[0]
-		target.damage(DAMAGE, start)
+		target.damage(maxi(ceili(DAMAGE * power), 1), start)
 		if target is Mob and shooter == player:
 			(target as Mob).angry = true
 			if target.is_dead():
@@ -135,3 +154,7 @@ func _process(delta: float) -> void:
 	if velocity.length_squared() > 1e-6 and not stuck:
 		_model.look_at(global_position + velocity, Vector3.UP if absf(velocity.normalized().y) < 0.99 else Vector3.RIGHT)
 		_model.rotate_object_local(Vector3.UP, PI)
+	if world and Engine.get_process_frames() % 6 == 0:
+		var light := world.brightness_at(global_position)
+		for child in _model.get_children():
+			(child as GeometryInstance3D).set_instance_shader_parameter("brightness", light)

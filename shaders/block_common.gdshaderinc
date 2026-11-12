@@ -10,6 +10,11 @@
 // through the classic light curve; times the corner's ambient occlusion.
 //
 // Includers may #define before including:
+//   CLASSIC_GAMMA       - light, AO and face shading worked out like the
+//                         classic game, on the texture's sRGB colors (its
+//                         light table, smooth lighting's 0.4 / 0.6 / 0.8
+//                         corners), then turned into linear: the original's
+//                         deep corners and dark sides (Classic pack)
 //   BLOCK_TILE_FILTER   - texture filter of the tiles (default: mipmapped)
 //   BLOCK_CUSTOM_VERTEX - write their own vertex(), starting with BLOCK_VERTEX
 
@@ -24,13 +29,24 @@ uniform float ao_strength = 1.0;
 uniform float shadow_contrast = 1.35;
 // Light levels taken away from sky light at night (Classic pack), 0..11.
 uniform float sky_darkness = 0.0;
+// Brightness setting (Classic): 0 = Moody (the classic game) .. 1 = Bright,
+// lifting dark light levels like the modern game's gamma.
+uniform float classic_gamma = 0.5;
 
 varying flat vec2 tile_layers;
 varying float block_ao;
 varying float block_glow;
 
 // The vertex part every block shader runs: tile layers and AO.
-#define BLOCK_VERTEX tile_layers = vec2(floor(UV2.x + 0.01), UV2.y); block_ao = mix(1.0, ao_levels[clamp(int(fract(UV2.x + 0.01) * 4.0 + 0.5), 0, 3)], ao_strength); block_glow = CUSTOM0.r;
+#ifdef CLASSIC_GAMMA
+// The classic smooth lighting: a corner by 3 / 2 / 1 / 0 solid blocks keeps
+// 0.4 / 0.6 / 0.8 / 1 of the light (sRGB, made linear below).
+const vec4 CLASSIC_AO = vec4(0.4, 0.6, 0.8, 1.0);
+#define BLOCK_AO(level) pow(mix(1.0, CLASSIC_AO[level], ao_strength), 2.2)
+#else
+#define BLOCK_AO(level) mix(1.0, ao_levels[level], ao_strength)
+#endif
+#define BLOCK_VERTEX tile_layers = vec2(floor(UV2.x + 0.01), UV2.y); block_ao = BLOCK_AO(clamp(int(fract(UV2.x + 0.01) * 4.0 + 0.5), 0, 3)); block_glow = CUSTOM0.r;
 
 #ifndef BLOCK_CUSTOM_VERTEX
 void vertex() {
@@ -44,7 +60,13 @@ float light_brightness(float level01) {
 	float level = max(clamp(level01 * 15.0 - sky_darkness, 0.0, 15.0), block_glow * 15.0);
 	float darkness = 1.0 - level / 15.0;
 	float classic = (1.0 - darkness) / (darkness * 3.0 + 1.0);
+#ifdef CLASSIC_GAMMA
+	float table = classic * 0.95 + 0.05; // the game's light table (sRGB)
+	float lifted = 1.0 - (1.0 - table) * (1.0 - table) * (1.0 - table) * (1.0 - table);
+	return pow(mix(table, lifted, classic_gamma), 2.2); // made linear
+#else
 	return pow(classic, shadow_contrast) * 0.95 + 0.05;
+#endif
 }
 
 // Returns linear albedo (rgb) and coverage (a).

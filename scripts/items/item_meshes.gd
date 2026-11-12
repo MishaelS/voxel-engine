@@ -27,8 +27,9 @@ static func atlas_texture(id: int) -> Texture2D:
 	return Items.icons_texture() if not Items.is_block(id) else TexturePacks.load_texture(Blocks.ATLAS_PATH)
 
 
-static func extruded(item_id: int, material: Material) -> ArrayMesh:
-	var key := [item_id, material.get_instance_id()]
+## `tile`: another picture of the item atlas (the drawn bow), -1 = its own.
+static func extruded(item_id: int, material: Material, tile_override: int = -1) -> ArrayMesh:
+	var key := [item_id, material.get_instance_id(), tile_override]
 	if _cache.has(key):
 		return _cache[key]
 	var atlas: Image = (atlas_texture(item_id)).get_image()
@@ -42,7 +43,7 @@ static func extruded(item_id: int, material: Material) -> ArrayMesh:
 		if block.biome_tint != 0:
 			tint = block.tint.srgb_to_linear()
 	else:
-		tile = Items.get_type(item_id).icon
+		tile = Items.get_type(item_id).icon if tile_override < 0 else tile_override
 	var tile_x := (tile % 16) * 16
 	var tile_y := (tile / 16) * 16
 	var filled := func(x: int, y: int) -> bool:

@@ -133,7 +133,46 @@ func _show(id: int) -> void:
 
 ## The classic first-person block transform: resting pose, equip offset
 ## and the swing arc.
+## The drawn bow's picture for `ticks` drawn (Items.BOW_PULL_TILES), like
+## the game: the first after a moment, the last after 18 ticks.
+static func bow_pull_tile(ticks: float) -> int:
+	return Items.BOW_PULL_TILES[2 if ticks >= 18.0 else (1 if ticks > 13.0 else 0)]
+
+
+## Drawing the bow like the game (Beta 1.8's first-person bow): held up in
+## front, a little turned, pulled toward the eye and shaking when fully
+## drawn.
+func _bow_pose() -> void:
+	var ticks := player.bow_pull
+	var power := BlockInteraction.bow_power(ticks)
+	var t := Transform3D(Basis.IDENTITY, REST + Vector3(0, -(1.0 - _equip) * 0.6, 0))
+	t *= Transform3D(Basis(Vector3.UP, deg_to_rad(45.0)), Vector3.ZERO)
+	t *= Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * SCALE), Vector3.ZERO)
+	t *= Transform3D(Basis(Vector3.BACK, deg_to_rad(-18.0)), Vector3.ZERO)
+	t *= Transform3D(Basis(Vector3.UP, deg_to_rad(-12.0)), Vector3.ZERO)
+	t *= Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-8.0)), Vector3.ZERO)
+	t *= Transform3D(Basis.IDENTITY, Vector3(-0.9, 0.2, 0.0))
+	if power > 0.1:
+		t *= Transform3D(Basis.IDENTITY, Vector3(0, sin((ticks - 0.1) * 1.3) * 0.01 * (power - 0.1), 0))
+	t *= Transform3D(Basis.IDENTITY, Vector3(0, 0, power * 0.1))
+	t *= Transform3D(Basis(Vector3.BACK, deg_to_rad(-335.0)), Vector3.ZERO)
+	t *= Transform3D(Basis(Vector3.UP, deg_to_rad(-50.0)), Vector3.ZERO)
+	t *= Transform3D(Basis.IDENTITY, Vector3(0, 0.5, 0))
+	t *= Transform3D(Basis.IDENTITY.scaled(Vector3(1, 1, 1.0 + power * 0.2)), Vector3.ZERO)
+	t *= Transform3D(Basis.IDENTITY, Vector3(0, -0.5, 0))
+	t *= Transform3D(Basis(Vector3.UP, deg_to_rad(50.0)), Vector3.ZERO)
+	t *= Transform3D(Basis(Vector3.BACK, deg_to_rad(335.0)), Vector3.ZERO)
+	transform = t
+	_mesh_instance.mesh = ItemMeshes.extruded(_shown, _item_material, bow_pull_tile(ticks))
+	_mesh_instance.transform = ITEM_IN_HAND
+
+
 func _pose() -> void:
+	if player.bow_pull >= 0.0 and Items.name_of(_shown) == "bow":
+		_bow_pose()
+		return
+	if Items.name_of(_shown) == "bow":
+		_mesh_instance.mesh = _meshes[_shown] # back to the bow at rest
 	var swing := maxf(_swing, 0.0)
 	var arc := sin(swing * PI)
 	var arc_sqrt := sin(sqrt(swing) * PI)
@@ -145,20 +184,6 @@ func _pose() -> void:
 		* Basis(Vector3.BACK, deg_to_rad(-arc_sqrt * 20.0)) \
 		* Basis(Vector3.RIGHT, deg_to_rad(-arc_sqrt * 80.0))
 	transform = Transform3D(basis_3d.scaled(Vector3.ONE * SCALE), position_3d)
-	if player.eating >= 0.0:
-		# Eating like the game (transformEatFirstPerson): the food swings in
-		# front of the mouth, turned toward the face, and bobs while chewed.
-		var left := 1.0 - clampf(player.eating, 0.0, 1.0) # share of the time left
-		var ticks_left := left * BlockInteraction.EAT_TICKS + 1.0
-		var bob := 0.0 if left >= 0.8 else absf(cos(ticks_left / 4.0 * PI) * 0.1)
-		var f := 1.0 - pow(left, 27.0)
-		var eat := Transform3D(Basis.IDENTITY, Vector3(f * 0.6, -f * 0.5 + bob, 0.0)) \
-			* Transform3D(Basis(Vector3.UP, deg_to_rad(f * 90.0)), Vector3.ZERO) \
-			* Transform3D(Basis(Vector3.RIGHT, deg_to_rad(f * 10.0)), Vector3.ZERO) \
-			* Transform3D(Basis(Vector3.BACK, deg_to_rad(f * 30.0)), Vector3.ZERO)
-		var rest := Transform3D(Basis(Vector3.UP, deg_to_rad(45.0)).scaled(Vector3.ONE * SCALE),
-			REST + Vector3(0, -(1.0 - _equip) * 0.6, 0))
-		transform = eat * rest
 	if not ItemMeshes.is_flat(_shown):
 		# The block's mesh spans 0..1: center it on the pivot.
 		_mesh_instance.transform = Transform3D(Basis.IDENTITY, Vector3(-0.5, -0.5, -0.5))

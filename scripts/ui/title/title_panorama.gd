@@ -29,7 +29,7 @@ var camera: Camera3D
 var _generator: WorldGenerator
 var _stage := Stage.GENERATE
 var _task := -1
-var _chunk_blocks: Array = []   # [column * 8 + k] -> PackedByteArray
+var _chunk_blocks: Array = []   # [column * WorldGenerator.HEIGHT_CHUNKS + k] -> PackedByteArray
 var _heights: Array = []        # [column] -> PackedInt32Array
 var _colors: Array = []         # [column] -> [grass, foliage]
 var _chunk_light: Array = []
@@ -149,7 +149,7 @@ func _generate_column(index: int) -> void:
 	_heights[index] = WorldGenerator.heightmap(blocks)
 	_colors[index] = _generator.column_colors(column.x, column.y)
 	for k in WorldGenerator.HEIGHT_CHUNKS:
-		_chunk_blocks[index * 8 + k] = blocks.slice(k * ChunkData.VOLUME, (k + 1) * ChunkData.VOLUME)
+		_chunk_blocks[index * WorldGenerator.HEIGHT_CHUNKS + k] = blocks.slice(k * ChunkData.VOLUME, (k + 1) * ChunkData.VOLUME)
 
 
 ## Light; beyond the piece counts as open air (only seen through fog).
@@ -170,17 +170,17 @@ func _light_column(index: int) -> void:
 			var inside := nx >= 0 and nz >= 0 and nx < SIZE and nz < SIZE
 			var column := []
 			for k in WorldGenerator.HEIGHT_CHUNKS:
-				column.append(_chunk_blocks[(nx + nz * SIZE) * 8 + k] if inside else air)
+				column.append(_chunk_blocks[(nx + nz * SIZE) * WorldGenerator.HEIGHT_CHUNKS + k] if inside else air)
 			chunks.append(column)
 			heights.append(_heights[nx + nz * SIZE] if inside else no_height)
 	var light := SkyLight.compute_column(SkyLight.area_of(chunks), heights)
 	for k in WorldGenerator.HEIGHT_CHUNKS:
-		_chunk_light[index * 8 + k] = light[k]
+		_chunk_light[index * WorldGenerator.HEIGHT_CHUNKS + k] = light[k]
 
 
 func _mesh_chunk(index: int) -> void:
-	var column := index / 8
-	var k := index % 8
+	var column := index / WorldGenerator.HEIGHT_CHUNKS
+	var k := index % WorldGenerator.HEIGHT_CHUNKS
 	var x := column % SIZE
 	var z := column / SIZE
 	var neighbors := {}
@@ -194,7 +194,7 @@ func _mesh_chunk(index: int) -> void:
 				if (dx == 0 and dy == 0 and dz == 0) or nx < 0 or nz < 0 or nx >= SIZE or nz >= SIZE \
 						or nk < 0 or nk >= WorldGenerator.HEIGHT_CHUNKS:
 					continue
-				var other := (nx + nz * SIZE) * 8 + nk
+				var other := (nx + nz * SIZE) * WorldGenerator.HEIGHT_CHUNKS + nk
 				neighbors[Vector3i(dx, dy, dz)] = _chunk_blocks[other]
 				neighbor_light[Vector3i(dx, dy, dz)] = _chunk_light[other]
 	var colors: Array = _colors[column]
@@ -208,10 +208,10 @@ func _show_meshes() -> void:
 		var surfaces: Dictionary = _surfaces[index]
 		if surfaces.is_empty():
 			continue
-		var column := index / 8
+		var column := index / WorldGenerator.HEIGHT_CHUNKS
 		var instance := MeshInstance3D.new()
 		instance.mesh = ChunkMesher.to_mesh(surfaces)
-		instance.position = Vector3(column % SIZE, index % 8, column / SIZE) * ChunkData.SIZE
+		instance.position = Vector3(column % SIZE, index % WorldGenerator.HEIGHT_CHUNKS, column / SIZE) * ChunkData.SIZE
 		instance.transparency = 1.0
 		add_child(instance)
 		_instances.append(instance)

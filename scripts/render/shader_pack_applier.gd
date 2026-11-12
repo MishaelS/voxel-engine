@@ -24,12 +24,28 @@ func _ready() -> void:
 	_apply()
 
 
+## The Brightness setting (0..100): with the Classic pack it lifts the dark
+## light levels like the modern game's gamma (Moody = the classic game);
+## with Dynamic Lighting it is the exposure.
+static func apply_brightness(environment: Environment, value: float) -> void:
+	var dynamic := ShaderPacks.current != null and ShaderPacks.current.base == ShaderPack.Base.DYNAMIC
+	ChunkMesher.set_classic_light(not dynamic, value / 100.0)
+	BlockMaterials.set_parameter("classic_gamma", value / 100.0)
+	if environment:
+		environment.tonemap_exposure = lerpf(0.75, 1.35, value / 100.0) if dynamic else 1.0
+
+
 func _apply() -> void:
 	var pack := ShaderPacks.current
 	if pack == null:
 		return
 	var dynamic := pack.base == ShaderPack.Base.DYNAMIC
 	var environment := world_environment.environment if world_environment else null
+	apply_brightness(environment, Settings.get_value("brightness"))
+	if environment:
+		# Classic: colors straight to the screen like the game (no filmic
+		# curve flattening its contrast).
+		environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC if dynamic else Environment.TONE_MAPPER_LINEAR
 	if sun:
 		# Classic blocks are unshaded: the light would only cost time.
 		sun.visible = dynamic

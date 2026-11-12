@@ -207,7 +207,9 @@ static func _register_all() -> bool:
 	register(BlockType.cube("glowstone", 105).set_hardness(0.3).set_light_emission(15) \
 		.set_drops([{"item": "glowstone_dust", "min": 2, "max": 4}]))
 	for facing in 4:
-		register(_oriented("pumpkin", facing, 102, 102, 119, 118).set_hardness(1.0).set_tool("axe"))
+		# Carved pumpkins (shears in crafting, see Crafting); worlds from before
+		# keep theirs (same ids).
+		register(_oriented("carved_pumpkin", facing, 102, 102, 119, 118).set_hardness(1.0).set_tool("axe"))
 	for facing in 4:
 		register(_oriented("jack_o_lantern", facing, 102, 102, 120, 118).set_hardness(1.0).set_tool("axe") \
 			.set_light_emission(15))
@@ -220,6 +222,8 @@ static func _register_all() -> bool:
 	_register_music()
 	_register_redstone()
 	_register_rails()
+	# A whole pumpkin, as it grows (appended: ids stay stable).
+	register(BlockType.column("pumpkin", 102, 118, 102).set_hardness(1.0).set_tool("axe"))
 	_set_flammability()
 	return true
 
@@ -1329,7 +1333,10 @@ static func facing_toward(look: Vector3) -> int:
 
 ## Display name ("oak_planks" -> "Oak Planks"); variants use their item's.
 static func display_name(id: int) -> String:
-	return Items.display_name(item_of(id))
+	var item := item_of(id)
+	if item == id and family_of(id) != types[id].name:
+		return Lang.t(family_of(id).capitalize()) # fire_3, piston_head_7...: their kind
+	return Items.display_name(item)
 
 
 static var _fast_graphics := false

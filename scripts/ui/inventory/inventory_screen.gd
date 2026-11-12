@@ -642,6 +642,9 @@ func _click_result(shift: bool) -> void:
 			if _craft.count_at(i) > 0:
 				# Milk buckets leave their buckets (the cake), like the game.
 				var container := Items.get_type(_craft.id_at(i)).container if not Items.is_block(_craft.id_at(i)) else ""
+				if Items.name_of(_craft.id_at(i)) == "shears":
+					_craft.wear(i) # the shears stay in the grid, a little worn
+					continue
 				_craft.take(i)
 				if container != "":
 					if _craft.is_empty_slot(i):

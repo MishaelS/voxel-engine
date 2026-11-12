@@ -1,7 +1,7 @@
 class_name Clouds
 extends MeshInstance3D
 ## The cloud layer, like the classic game's fancy clouds: 12x12-block
-## cells, 4 blocks thick, at y = 108, drifting east with the game ticks.
+## cells, 4 blocks thick, 44 blocks above the sea (y = 172), drifting east with the game ticks.
 ##
 ## The shape comes from a repeating 256x256 pattern (made once from
 ## seamless noise). The mesh is built once: a grid of boxes that follows
@@ -10,7 +10,7 @@ extends MeshInstance3D
 
 const CELL := 12.0
 const THICKNESS := 4.0
-const HEIGHT := 108.0
+const HEIGHT := WorldGenerator.SEA_LEVEL + 44.0
 const GRID := 48            ## cells across the mesh (576 blocks)
 const PATTERN_SIZE := 256
 ## Blocks per game tick (the classic speed).

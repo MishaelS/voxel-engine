@@ -137,6 +137,11 @@ func _process(delta: float) -> void:
 			right_arm.rotation.x -= sin(sqrt(hit) * PI) * 1.6
 		var head := parts.head as Node3D
 		head.rotation = Vector3(-player.pitch(), 0, 0)
+		if player.bow_pull >= 0.0:
+			# Drawing the bow: both arms up along the view, the left one
+			# reaching across to the string (the game's bow pose).
+			right_arm.rotation = Vector3(-PI / 2.0 - player.pitch(), 0.1, 0)
+			(parts.left_arm as Node3D).rotation = Vector3(-PI / 2.0 - player.pitch(), -0.5, 0)
 		(parts.body as Node3D).rotation.x = 0.0
 		if player.sneaking:
 			# Beta's sneaking: the body bends forward, the arms come along, the

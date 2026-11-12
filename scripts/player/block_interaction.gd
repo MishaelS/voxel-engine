@@ -30,7 +30,6 @@ const PLACE_DELAY_TICKS := 4
 const HAND_BREAK_FACTOR := 30.0
 const WRONG_TOOL_FACTOR := 100.0
 ## Ticks of eating, like the classic game (32).
-const EAT_TICKS := 32
 ## Atlas tiles of the 10 crack stages.
 const CRACK_TILE := 240
 ## Cracks are drawn on a slightly bigger cube to stay above the block.
@@ -53,9 +52,9 @@ var _cracks: MeshInstance3D
 var _crack_material: ShaderMaterial
 var _breaking_pos := Vector3i(0, -1000, 0)
 var _break_delay := 0.0 # ticks
+var _drawing := -1.0 # ticks the bow has been drawn, -1 = not drawing
 var _place_delay := 0.0 # ticks
 var _tick_time := 0.0
-var _eating := -1.0 # ticks eaten, -1 = not eating
 var _hit_ticks := 0
 var _inventory_screen: InventoryScreen
 
@@ -101,13 +100,17 @@ func _process(delta: float) -> void:
 	else:
 		_stop_breaking()
 	var using := active and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
-	if using and _eating >= 0.0:
-		_continue_eating(ticks)
-	else:
-		_stop_eating()
-		if using and _place_delay <= 0.0:
-			_use()
-			_place_delay = PLACE_DELAY_TICKS
+	if _drawing >= 0.0:
+		if Items.name_of(player.held_block()) != "bow" or not active:
+			_stop_drawing()
+		elif using:
+			_drawing += ticks
+			player.bow_pull = _drawing
+		else:
+			_release_bow()
+	elif using and _place_delay <= 0.0:
+		_use()
+		_place_delay = PLACE_DELAY_TICKS
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -204,7 +207,6 @@ func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 			Stats.add("mine." + Blocks.get_type(id).name)
 		if sheared:
 			world.items.drop_from_block(pos, Blocks.id_of(Blocks.get_type(id).name), 1)
-		player.block_broken()
 		if Items.durability(tool) > 0 and (hardness > 0.0 or Items.name_of(tool) == "shears"):
 			player.inventory.wear(player.selected_slot, 2 if Items.get_type(tool).tool == "sword" else 1)
 		_stop_breaking()
@@ -255,13 +257,8 @@ func _use() -> void:
 			_place_block(id)
 		return
 	if item.food > 0:
-		if not player.can_eat(id):
-			return
-		if world.hunger:
-			_eating = 0.0
-		else:
-			# Beta 1.7.3: eaten at once, heals right away.
-			_finish_eating(id)
+		if player.can_eat(id):
+			_finish_eating(id) # Beta 1.7.3: eaten at once, heals right away
 		return
 	if item.places != "":
 		_place_block(Blocks.id_of(item.places)) # sugar cane, seeds, cake
@@ -284,7 +281,7 @@ func _use() -> void:
 		"flint_and_steel":
 			_strike_flint()
 		"bow":
-			_shoot_bow()
+			_start_drawing()
 		"fishing_rod":
 			_fish()
 		"minecart", "chest_minecart", "furnace_minecart":
@@ -550,7 +547,29 @@ func _fish() -> void:
 
 
 ## Beta bows shoot at once: an arrow from the inventory (free in creative).
-func _shoot_bow() -> void:
+## The bow like the game since Beta 1.8: hold the button to draw it (the
+## string goes back in three steps, the view zooms in), let go to shoot;
+## the longer it was drawn (full after a second), the faster and harder
+## the arrow. A barely drawn bow doesn't shoot.
+func _start_drawing() -> void:
+	if not player.is_creative() and player.inventory.find(Items.id_of("arrow")) < 0:
+		return
+	_drawing = 0.0
+	player.bow_pull = 0.0
+
+
+## The game's bow power for `ticks` drawn: 0..1.
+static func bow_power(ticks: float) -> float:
+	var f := ticks / 20.0
+	return minf((f * f + f * 2.0) / 3.0, 1.0)
+
+
+func _release_bow() -> void:
+	var power := bow_power(_drawing)
+	_stop_drawing()
+	_place_delay = PLACE_DELAY_TICKS
+	if power < 0.1:
+		return
 	var arrow := Items.id_of("arrow")
 	if not player.is_creative():
 		var slot := player.inventory.find(arrow)
@@ -560,9 +579,14 @@ func _shoot_bow() -> void:
 		player.inventory.wear(player.selected_slot)
 	var eye := player.eye_position()
 	var look := player.look_direction()
-	var shot := Arrow.shoot(world, eye + look * 0.3 - Vector3(0, 0.1, 0), eye + look * 10.0, 1.5, 1.0, player)
-	shot.velocity = look * 1.5 + Vector3(randfn(0, 1), randfn(0, 1), randfn(0, 1)) * 0.0075
-	player.swing()
+	var shot := Arrow.shoot(world, eye + look * 0.3 - Vector3(0, 0.1, 0), eye + look * 10.0, 3.0 * power, 1.0, player)
+	shot.velocity = look * 3.0 * power + Vector3(randfn(0, 1), randfn(0, 1), randfn(0, 1)) * 0.0075
+	shot.power = power
+
+
+func _stop_drawing() -> void:
+	_drawing = -1.0
+	player.bow_pull = -1.0
 
 
 func _strike_flint() -> void:
@@ -617,34 +641,11 @@ func _empty_bucket(family: String) -> void:
 		player.inventory.set_slot(player.selected_slot, Items.id_of("bucket"), 1)
 
 
-func _continue_eating(ticks: float) -> void:
-	var id := player.held_block()
-	var item := Items.get_type(id)
-	if item == null or item.food <= 0:
-		_stop_eating()
-		return
-	var before := int(_eating)
-	_eating += ticks
-	player.eating = _eating / EAT_TICKS
-	# Crumbs every 4 ticks from the mouth.
-	if int(_eating) / 4 != before / 4 and _eating > 6.0:
-		# Like the game: just in front of the mouth, below the middle of the view.
-		var look := player.look_direction()
-		var mouth := player.eye_position() + look * 0.6 - Vector3(0, 0.3 + randf() * 0.3, 0)
-		world.particles.item_crumbs(id, mouth, look, 5, 0.5)
-		Sounds.play("random/eat", null, 0.5 + 0.5 * randi_range(0, 1), randf_range(0.8, 1.2))
-	if _eating >= EAT_TICKS:
-		_finish_eating(id)
-		_stop_eating()
-		_place_delay = PLACE_DELAY_TICKS * 2
-
-
 ## Eats the food in hand: its effect, one fewer, the bowl stays.
 func _finish_eating(id: int) -> void:
 	player.eat(id)
-	Sounds.play("random/burp" if world.hunger else "random/eat", null, 0.5, randf_range(0.9, 1.0))
-	if not world.hunger:
-		player.swing() # Beta eats at once with a swing; held-down eating ends without one
+	Sounds.play("random/eat", null, 0.5, randf_range(0.9, 1.0))
+	player.swing() # Beta eats at once with a swing
 	if player.is_creative():
 		return
 	player.inventory.take(player.selected_slot)
@@ -654,12 +655,6 @@ func _finish_eating(id: int) -> void:
 			player.inventory.set_slot(player.selected_slot, Items.id_of(container), 1)
 		elif player.inventory.add(Items.id_of(container), 1) > 0:
 			player.throw_items(Items.id_of(container), 1)
-
-
-func _stop_eating() -> void:
-	_eating = -1.0
-	if player:
-		player.eating = -1.0
 
 
 # --- Meshes --------------------------------------------------------------------------

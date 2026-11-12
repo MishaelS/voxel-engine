@@ -226,8 +226,51 @@ static func icons_texture() -> ImageTexture:
 		if _icons_image.is_compressed():
 			_icons_image.decompress()
 		_icons_image.convert(Image.FORMAT_RGBA8)
+		_draw_bow_pulls(_icons_image)
 		_icons_texture = ImageTexture.create_from_image(_icons_image)
 	return _icons_texture
+
+
+## Pictures of the drawn bow (3 steps), in free cells of the item atlas.
+const BOW_PULL_TILES: Array[int] = [220, 221, 222]
+
+
+## The bow's picture with its string pulled back 1 / 2 / 3 pixels and an
+## arrow on it, drawn into BOW_PULL_TILES unless a texture pack already has
+## pictures there.
+static func _draw_bow_pulls(atlas: Image) -> void:
+	var bow := get_type(id_of("bow")).icon
+	var source := atlas.get_region(Rect2i((bow % 16) * 16, (bow / 16) * 16, 16, 16))
+	for step in 3:
+		var tile := BOW_PULL_TILES[step]
+		var origin := Vector2i((tile % 16) * 16, (tile / 16) * 16)
+		if not atlas.get_region(Rect2i(origin, Vector2i(16, 16))).is_invisible():
+			continue
+		var picture := source.duplicate() as Image
+		var string := Color8(68, 68, 68)
+		for k in 10: # the straight string goes
+			if picture.get_pixel(13 - k, 4 + k).is_equal_approx(string):
+				picture.set_pixel(13 - k, 4 + k, Color(0, 0, 0, 0))
+		var pull := step + 1
+		var middle := Vector2i(8 + pull, 9 + pull)
+		# The arrow: feathers at the string, the shaft toward the grip, the head beyond it.
+		for k in range(1, 11 + pull):
+			var p := middle - Vector2i(k, k)
+			if p.x < 0 or p.y < 0:
+				break
+			var color := Color8(104, 78, 30) if k < 7 + pull else Color8(190, 190, 190)
+			if k <= 2:
+				color = Color8(235, 235, 235)
+			picture.set_pixelv(p, color)
+		picture.set_pixelv(middle - Vector2i(1, 0), Color8(235, 235, 235))
+		picture.set_pixelv(middle - Vector2i(0, 1), Color8(235, 235, 235))
+		# The string from both ends of the bow to where it is pulled.
+		for end: Vector2i in [Vector2i(13, 4), Vector2i(4, 13)]:
+			var steps := maxi(absi(end.x - middle.x), absi(end.y - middle.y))
+			for i in steps + 1:
+				var p := Vector2(end).lerp(Vector2(middle), float(i) / steps).round()
+				picture.set_pixelv(Vector2i(p), string)
+		atlas.blit_rect(picture, Rect2i(0, 0, 16, 16), origin)
 
 
 ## The item atlas picture (the one icons_texture() shows); after changing

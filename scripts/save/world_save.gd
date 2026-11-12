@@ -5,7 +5,10 @@ extends RefCounted
 ##                                         time, game rules and the player
 ##   user://saves/<folder>/columns/x.z.bin - every column generated so far
 ##                                           (with the player's changes)
-## Columns are zstd-compressed (32 KB raw each). A column is written when it
+## Columns are zstd-compressed (256 KB raw each: 32-bit ids, 256 high).
+## Worlds made when the world was 128 high are upgraded when opened
+## (upgrade_height: a backup in user://backups, everything 64 blocks up)
+## and their columns one by one as they load (WorldGenerator.convert_legacy). A column is written when it
 ## is first generated, so loading the world again reads it instead of
 ## generating it, and again when the player changed it.
 ##
@@ -23,6 +26,10 @@ var name := "New World"
 var world_seed := 0
 var generator := 0 # VoxelWorld.Generator
 var game_mode := 0 # Player.GameMode
+## The world's height (WorldGenerator.LEGACY_HEIGHT for worlds made before
+## it was 256) and whether its terrain has the taller mountains (new worlds).
+var height := WorldGenerator.HEIGHT
+var tall_terrain := true
 var created := 0      # unix time
 var last_played := 0  # unix time
 ## World and player state, written by save_state(); empty for a new world.
@@ -96,6 +103,8 @@ func load_level() -> bool:
 	game_mode = config.get_value("world", "game_mode", 0)
 	created = config.get_value("world", "created", 0)
 	last_played = config.get_value("world", "last_played", 0)
+	height = config.get_value("world", "height", WorldGenerator.LEGACY_HEIGHT)
+	tall_terrain = config.get_value("world", "tall_terrain", false)
 	state = config.get_value("state", "data", {})
 	return true
 
@@ -108,9 +117,73 @@ func write_level() -> void:
 	config.set_value("world", "game_mode", game_mode)
 	config.set_value("world", "created", created)
 	config.set_value("world", "last_played", last_played)
+	config.set_value("world", "height", height)
+	config.set_value("world", "tall_terrain", tall_terrain)
 	config.set_value("state", "data", state)
 	DirAccess.make_dir_recursive_absolute(path())
 	config.save(path(LEVEL_FILE))
+
+
+func needs_height_upgrade() -> bool:
+	return height < WorldGenerator.HEIGHT
+
+
+## A world made when the world was 128 high: copied to user://backups first,
+## then its saved state moves 64 blocks up (the player, the bed, block
+## entities, items, creatures, paintings); its terrain keeps the classic
+## shape so new columns join the old ones. Columns are converted as they
+## load.
+func upgrade_height() -> void:
+	_copy_recursive(path(), _backup_path())
+	var shift := WorldGenerator.LEGACY_SHIFT
+	var up := Vector3(0, shift, 0)
+	var player_state: Dictionary = state.get("player", {})
+	if player_state.get("position") is Vector3:
+		player_state.position = (player_state.position as Vector3) + up
+	if player_state.get("spawn") is Vector3 and (player_state.spawn as Vector3).is_finite():
+		player_state.spawn = (player_state.spawn as Vector3) + up
+	var world_state: Dictionary = state.get("world", {})
+	var moved := {}
+	var old_entities: Dictionary = world_state.get("block_entities", {})
+	for pos: Vector3i in old_entities:
+		moved[pos + Vector3i(0, shift, 0)] = old_entities[pos]
+	if world_state.has("block_entities"):
+		world_state.block_entities = moved
+	for entry: Variant in world_state.get("items", []):
+		if entry is Array and (entry as Array).size() >= 4 and entry[3] is Vector3:
+			entry[3] = (entry[3] as Vector3) + up
+	for entity: Dictionary in world_state.get("entities", []):
+		if entity.get("position") is Vector3:
+			entity.position = (entity.position as Vector3) + up
+		if entity.get("anchor") is Vector3i:
+			entity.anchor = (entity.anchor as Vector3i) + Vector3i(0, shift, 0)
+		elif entity.get("anchor") is Vector3:
+			entity.anchor = (entity.anchor as Vector3) + up
+	height = WorldGenerator.HEIGHT
+	tall_terrain = false
+	write_level()
+
+
+## A free folder in user://backups for this world's copy.
+func _backup_path() -> String:
+	var base := "user://backups".path_join(folder + "_height_%d" % height)
+	var candidate := base
+	var n := 1
+	while DirAccess.dir_exists_absolute(candidate):
+		n += 1
+		candidate = "%s_%d" % [base, n]
+	return candidate
+
+
+static func _copy_recursive(from: String, to: String) -> void:
+	DirAccess.make_dir_recursive_absolute(to)
+	var dir := DirAccess.open(from)
+	if dir == null:
+		return
+	for file in dir.get_files():
+		DirAccess.copy_absolute(from.path_join(file), to.path_join(file))
+	for sub in dir.get_directories():
+		_copy_recursive(from.path_join(sub), to.path_join(sub))
 
 
 ## Deletes the world folder and everything in it.
@@ -140,22 +213,19 @@ func has_column(column: Vector2i) -> bool:
 
 
 ## The blocks of a saved column (WorldGenerator layout), or empty.
-## Columns are stored as 32-bit ids (older saves: one byte per block,
-## converted on load).
+## Columns are stored as 32-bit ids. A column saved when the world was 128
+## high comes back with WorldGenerator.LEGACY_VOLUME blocks (also from the
+## oldest saves with one byte per block): the caller converts it
+## (WorldGenerator.convert_legacy) and saves it again.
 func load_column(column: Vector2i) -> PackedInt32Array:
 	var file := FileAccess.open_compressed(_column_path(column), FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
 	if file == null:
 		return PackedInt32Array()
 	var data := file.get_buffer(WorldGenerator.COLUMN_VOLUME * 4)
-	if data.size() == WorldGenerator.COLUMN_VOLUME * 4:
+	if data.size() == WorldGenerator.COLUMN_VOLUME * 4 or data.size() == WorldGenerator.LEGACY_VOLUME * 4:
 		return data.to_int32_array()
-	if data.size() == WorldGenerator.COLUMN_VOLUME:
-		# An older save (one byte per block): converted and written back in
-		# the new format, so this happens only once.
-		var blocks := PackedInt32Array(Array(data))
-		file = null
-		save_column(column, blocks)
-		return blocks
+	if data.size() == WorldGenerator.LEGACY_VOLUME:
+		return PackedInt32Array(Array(data)) # the oldest saves: one byte per block
 	return PackedInt32Array()
 
 

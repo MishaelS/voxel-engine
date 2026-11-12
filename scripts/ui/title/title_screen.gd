@@ -214,6 +214,8 @@ func _play(save: WorldSave) -> void:
 		return
 	_starting = true
 	save.last_played = int(Time.get_unix_time_from_system())
+	if save.needs_height_upgrade():
+		save.upgrade_height() # made when the world was 128 high
 	save.write_level()
 	WorldSave.current = save
 	var tween := create_tween()

@@ -57,7 +57,9 @@ static func _build_recipes() -> Array:
 		{"pattern": ["SS", "SS"], "keys": {"S": "snowball"}, "result": "snow", "count": 1},
 		{"pattern": ["C", "S"], "keys": {"C": ["coal", "charcoal"], "S": "stick"}, "result": "torch", "count": 4},
 		{"pattern": ["GG", "GG"], "keys": {"G": "glowstone_dust"}, "result": "glowstone", "count": 1},
-		{"pattern": ["P", "T"], "keys": {"P": "pumpkin", "T": "torch"}, "result": "jack_o_lantern", "count": 1},
+		{"pattern": ["P", "T"], "keys": {"P": "carved_pumpkin", "T": "torch"}, "result": "jack_o_lantern", "count": 1},
+		# Shears carve a face into a pumpkin (they stay, a little worn).
+		{"shapeless": ["pumpkin", "shears"], "result": "carved_pumpkin", "count": 1},
 		{"pattern": ["I ", " F"], "keys": {"I": "iron_ingot", "F": "flint"}, "result": "flint_and_steel", "count": 1},
 		{"pattern": ["X  ", "XX ", "XXX"], "keys": {"X": "cobblestone"}, "result": "cobblestone_stairs", "count": 4},
 		{"pattern": ["X  ", "XX ", "XXX"], "keys": {"X": "oak_planks"}, "result": "oak_stairs", "count": 4},

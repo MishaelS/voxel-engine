@@ -2,7 +2,8 @@
 // real-time sun light or shadows. Everything is baked into the block:
 // - light levels and voxel AO (block_common: at night sky light loses up to
 //   11 levels, sky_darkness, like the classic game; caves stay as they are);
-// - fixed face shading: top 1.0, north/south 0.8, east/west 0.6, bottom 0.5.
+// - fixed face shading: top 1.0, north/south 0.8, east/west 0.6, bottom 0.5
+//   (on sRGB colors like the game, so made linear: raised to 2.2).
 // Shaders that include this #define BLOCK_CUSTOM_VERTEX before including
 // block_common.gdshaderinc, and in vertex() set
 //   face_shade = classic_face_shade(NORMAL);
@@ -17,8 +18,8 @@ float classic_face_shade(vec3 normal) {
 		return 1.0;
 	}
 	if (normal.y > 0.5) return 1.0;
-	if (normal.y < -0.5) return 0.5;
-	return abs(normal.z) > 0.5 ? 0.8 : 0.6;
+	if (normal.y < -0.5) return pow(0.5, 2.2);
+	return abs(normal.z) > 0.5 ? pow(0.8, 2.2) : pow(0.6, 2.2);
 }
 
 vec3 classic_light(vec3 albedo) {

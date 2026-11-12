@@ -38,8 +38,7 @@ func _apply(key: String, value: Variant) -> void:
 			if world:
 				world.set_render_distance(int(value))
 		"brightness":
-			if world_environment:
-				world_environment.environment.tonemap_exposure = lerpf(0.75, 1.35, value / 100.0)
+			ShaderPackApplier.apply_brightness(world_environment.environment if world_environment else null, value)
 		"debug_screen":
 			if hud:
 				hud.visible = value

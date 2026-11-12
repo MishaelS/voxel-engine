@@ -71,11 +71,6 @@ var sign_texts: SignTexts
 var world_generator: WorldGenerator
 ## keepInventory game rule: the player keeps the items on death.
 var keep_inventory := false
-## naturalRegeneration game rule: full food heals the player.
-var natural_regeneration := true
-## doHunger game rule: hunger like Beta 1.8 (on), or like Beta 1.7.3 (off):
-## no food bar, food is eaten at once and heals right away.
-var hunger := true
 ## Maps drawn so far: number -> {x, z (center), colors} (see Maps).
 var maps := {}
 ## The last power state of things that react to its changes (Redstone.edge).
@@ -90,7 +85,7 @@ var next_map_id := 0
 var save: WorldSave
 
 var _chunks := {}          # Vector3i -> ChunkData
-var _columns := {}         # Vector2i -> true: generated columns
+var _columns := {}         # Vector2i -> Array[ChunkData]: generated columns, bottom to top
 var _heightmaps := {}      # Vector2i -> PackedInt32Array (see WorldGenerator.heightmap)
 var _lit := {}             # Vector2i -> true: columns with sky light
 var _light_jobs := {}      # Vector2i -> LightJob on a worker thread
@@ -218,7 +213,11 @@ class GenerationJob:
 		var blocks := PackedInt32Array()
 		if save and save.has_column(column):
 			blocks = save.load_column(column) # generated or changed before: saved
-		if blocks.is_empty():
+		if blocks.size() == WorldGenerator.LEGACY_VOLUME:
+			# Saved when the world was 128 high: moved up onto the new deep layer.
+			blocks = generator.convert_legacy(column.x, column.y, blocks)
+			save.save_column(column, blocks)
+		elif blocks.is_empty():
 			blocks = generator.generate_blocks(column.x, column.y)
 			if save:
 				# Kept on disk: next time the world loads it is read, not generated.
@@ -291,11 +290,12 @@ func _process(delta: float) -> void:
 	_start_light_jobs()
 	var t3 := Time.get_ticks_usec()
 	_finish_mesh_jobs()
+	var t3b := Time.get_ticks_usec()
 	_start_mesh_jobs()
 	var t4 := Time.get_ticks_usec()
 	_update_culling(delta)
 	var t5 := Time.get_ticks_usec()
-	frame_times = {"stream": t1 - t0, "generation": t2 - t1, "light": t3 - t2, "mesh": t4 - t3, "cull": t5 - t4}
+	frame_times = {"stream": t1 - t0, "generation": t2 - t1, "light": t3 - t2, "mesh": t4 - t3, "mesh_upload": t3b - t3, "mesh_queue": _queue_us, "cull": t5 - t4}
 
 
 # --- World lifecycle ---------------------------------------------------------------
@@ -314,6 +314,7 @@ func generate() -> void:
 	_chunk_nodes.clear()
 	_chunk_faces.clear()
 	_dirty.clear()
+	_urgent_mesh.clear()
 	_total_faces = 0
 	_player_column = Vector2i(2147483647, 0)
 	rng.seed = world_seed
@@ -331,7 +332,9 @@ func generate() -> void:
 	_restore_state()
 	match generator:
 		Generator.BETA:
-			world_generator = BetaGenerator.new(world_seed)
+			var beta := BetaGenerator.new(world_seed)
+			beta.set_tall(save.tall_terrain if save else true)
+			world_generator = beta
 		Generator.RANDOM_BLOCKS:
 			world_generator = RandomBlocksGenerator.new(world_seed, random_density)
 
@@ -380,6 +383,15 @@ func _generate_now(column: Vector2i) -> void:
 	job.save = save
 	job.run()
 	_add_column(job)
+
+
+## The highest block that keeps out sky light at a block column (the
+## heightmap; -1 if none or not loaded). Cheap: no search.
+func surface_height(x: int, z: int) -> int:
+	var heights: Variant = _heightmaps.get(Vector2i(x >> 4, z >> 4))
+	if heights == null:
+		return -1
+	return (heights as PackedInt32Array)[(x & 15) + 16 * (z & 15)]
 
 
 func _top_block_y(x: int, z: int) -> int:
@@ -451,7 +463,7 @@ func _update_streaming() -> void:
 
 
 func _start_generation_jobs() -> void:
-	while _gen_jobs.size() < _max_jobs and not _wanted_columns.is_empty():
+	while _gen_jobs.size() < _half_jobs() and _busy_jobs() < _max_jobs and not _wanted_columns.is_empty():
 		var column: Vector2i = _wanted_columns.pop_back()
 		if _columns.has(column) or _gen_jobs.has(column):
 			continue
@@ -475,7 +487,7 @@ func _finish_generation_jobs() -> void:
 
 
 func _add_column(job: GenerationJob) -> void:
-	_columns[job.column] = true
+	_columns[job.column] = job.chunks # the column's chunks, bottom to top
 	_heightmaps[job.column] = job.heights
 	_column_colors[job.column] = job.colors
 	_light_scan_needed = true
@@ -523,7 +535,7 @@ func _can_mesh(coord: Vector3i) -> bool:
 # --- Lighting ------------------------------------------------------------------------
 
 func _start_light_jobs() -> void:
-	if not _light_scan_needed or _light_jobs.size() >= _max_jobs:
+	if not _light_scan_needed or _light_jobs.size() >= _half_jobs() or _busy_jobs() >= _max_jobs:
 		return
 	var candidates: Array[Vector2i] = []
 	for column: Vector2i in _columns:
@@ -545,7 +557,7 @@ func _start_light_jobs() -> void:
 	candidates.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		return (a - _player_column).length_squared() < (b - _player_column).length_squared())
 	for column in candidates:
-		if _light_jobs.size() >= _max_jobs:
+		if _light_jobs.size() >= _half_jobs() or _busy_jobs() >= _max_jobs:
 			break
 		var job := LightJob.new()
 		job.column = column
@@ -954,7 +966,7 @@ func _mark_dirty_around(coord: Vector3i, local: Vector3i) -> void:
 				var neighbor := coord + Vector3i(dx, dy, dz)
 				if _chunks.has(neighbor):
 					_dirty[neighbor] = true
-	_mesh_scan_needed = true
+					_urgent_mesh[neighbor] = true # a changed block: before the rest
 
 
 ## Sends a "block update" to the block at pos (its on_update handler).
@@ -1256,13 +1268,14 @@ func _run_random_ticks() -> void:
 		var center := Vector2i(floori(player.global_position.x) >> 4, floori(player.global_position.z) >> 4)
 		for cx in range(center.x - RANDOM_TICK_RADIUS, center.x + RANDOM_TICK_RADIUS + 1):
 			for cz in range(center.y - RANDOM_TICK_RADIUS, center.y + RANDOM_TICK_RADIUS + 1):
-				if not _columns.has(Vector2i(cx, cz)):
+				var column_chunks: Variant = _columns.get(Vector2i(cx, cz))
+				if column_chunks == null:
 					continue
-				for cy in WorldGenerator.HEIGHT_CHUNKS:
-					var coord := Vector3i(cx, cy, cz)
-					var data: ChunkData = _chunks.get(coord)
-					if data and data.tickable_count > 0:
-						_random_tick_queue.append(coord)
+				var cy := 0
+				for data: ChunkData in column_chunks:
+					if data.tickable_count > 0:
+						_random_tick_queue.append(Vector3i(cx, cy, cz))
+					cy += 1
 	var ticks_randomly := Blocks.ticks_randomly
 	var started := Time.get_ticks_usec()
 	while not _random_tick_queue.is_empty():
@@ -1284,17 +1297,53 @@ func _run_random_ticks() -> void:
 
 # --- Meshing -----------------------------------------------------------------------------
 
+## Generation and light each take at most half the worker slots, so meshes
+## always get some.
+func _half_jobs() -> int:
+	return maxi(_max_jobs / 2, 1)
+
+
+## Worker jobs of every kind running now: generation, light and meshes
+## share the cores, so the main thread keeps one to itself.
+func _busy_jobs() -> int:
+	return _gen_jobs.size() + _light_jobs.size() + _mesh_jobs.size()
+
+
+## Chunks with changed blocks: meshed first, without waiting for the queue.
+var _urgent_mesh := {}
+## When the queue was last sorted (ms): sorting every waiting chunk is the
+## expensive part, so while the world streams in it happens at most every
+## MESH_QUEUE_INTERVAL_MS.
+var _queue_sorted_at := -100000
+const MESH_QUEUE_INTERVAL_MS := 250
+
+
 func _start_mesh_jobs() -> void:
-	var free_slots := _max_jobs - _mesh_jobs.size()
+	var free_slots := _max_jobs - _busy_jobs()
 	if free_slots <= 0:
 		return
-	if _mesh_scan_needed:
+	var now := Time.get_ticks_msec()
+	if _mesh_scan_needed and (_mesh_queue.is_empty() or now - _queue_sorted_at >= MESH_QUEUE_INTERVAL_MS):
 		_mesh_scan_needed = false
+		_queue_sorted_at = now
 		_rebuild_mesh_queue()
 	var picked: Array[Vector3i] = []
+	for coord: Vector3i in _urgent_mesh.keys():
+		if picked.size() >= free_slots:
+			break
+		if _mesh_jobs.has(coord):
+			continue # waits for that job; picked up again when it ends
+		_urgent_mesh.erase(coord)
+		var chunk: ChunkData = _chunks.get(coord)
+		if chunk == null or not _dirty.has(coord) or not _can_mesh(coord):
+			continue
+		if chunk.air_count == ChunkData.VOLUME:
+			_clear_chunk_mesh(coord)
+			continue
+		picked.append(coord)
 	while picked.size() < free_slots and not _mesh_queue.is_empty():
 		var coord: Vector3i = _mesh_queue.pop_back()
-		if _dirty.has(coord) and not _mesh_jobs.has(coord) and _chunks.has(coord):
+		if _dirty.has(coord) and not _mesh_jobs.has(coord) and _chunks.has(coord) and not picked.has(coord):
 			picked.append(coord)
 	for coord in picked:
 		_dirty.erase(coord)
@@ -1324,15 +1373,24 @@ func _start_mesh_jobs() -> void:
 ## only when something changed what can be meshed (a column lit or loaded,
 ## the player moved to another column, a block changed), not every time a
 ## mesh finishes: scanning all waiting chunks is the expensive part.
+var _queue_us := 0
+
+
 func _rebuild_mesh_queue() -> void:
+	var queue_start := Time.get_ticks_usec()
 	_mesh_queue.clear()
-	var center := Vector3(_player_column.x, (player.global_position.y if player else 64.0) / ChunkData.SIZE, _player_column.y)
+	var center := Vector3(_player_column.x, (player.global_position.y if player else float(WorldGenerator.SEA_LEVEL)) / ChunkData.SIZE, _player_column.y)
 	var meshable_columns := {} # Vector2i -> bool, checked once per column
 	var view: Vector3 = player.look_direction() if player and player.has_method("look_direction") else Vector3.ZERO
 	var keys := PackedInt64Array()
 	var coords: Array[Vector3i] = []
+	var empty: Array[Vector3i] = []
 	for coord: Vector3i in _dirty:
 		if _mesh_jobs.has(coord):
+			continue
+		var chunk: ChunkData = _chunks.get(coord)
+		if chunk and chunk.air_count == ChunkData.VOLUME:
+			empty.append(coord) # nothing to draw: no job at all
 			continue
 		var column := Vector2i(coord.x, coord.z)
 		var meshable: Variant = meshable_columns.get(column)
@@ -1359,6 +1417,22 @@ func _rebuild_mesh_queue() -> void:
 	keys.sort()
 	for key in keys:
 		_mesh_queue.append(coords[key & 0xFFFFF])
+	for coord in empty:
+		_clear_chunk_mesh(coord)
+	_queue_us = Time.get_ticks_usec() - queue_start
+
+
+## A chunk of only air: no mesh, open to cave culling on every side.
+func _clear_chunk_mesh(coord: Vector3i) -> void:
+	_dirty.erase(coord)
+	_connectivity.erase(coord)
+	_total_faces -= _chunk_faces.get(coord, 0)
+	_chunk_faces.erase(coord)
+	var instance: MeshInstance3D = _chunk_nodes.get(coord)
+	if instance:
+		instance.queue_free()
+		_chunk_nodes.erase(coord)
+	_cull_dirty = true
 
 
 const MESH_UPLOAD_BUDGET_US := 4000
@@ -1379,7 +1453,7 @@ func _finish_mesh_jobs() -> void:
 		WorkerThreadPool.wait_for_task_completion(job.task_id)
 		_mesh_jobs.erase(coord)
 		if _dirty.has(coord):
-			_mesh_scan_needed = true # changed again while it was being meshed
+			_urgent_mesh[coord] = true # changed again while it was being meshed
 		if _chunks.has(coord):
 			_apply_mesh(job)
 			uploads += 1
@@ -1616,7 +1690,7 @@ func column_states(radius: int) -> Array:
 			if maxi(absi(dx), absi(dz)) > render_distance:
 				# Never meshed (beyond the render distance): counts as done.
 				var heights: Variant = _heightmaps.get(column)
-				result.append([3, (heights as PackedInt32Array)[8 + 16 * 8] if heights else 64])
+				result.append([3, (heights as PackedInt32Array)[8 + 16 * 8] if heights else WorldGenerator.SEA_LEVEL])
 				continue
 			if _columns.has(column):
 				state = 1

@@ -4,10 +4,15 @@ extends RefCounted
 ## (16 x HEIGHT x 16 blocks) at a time; columns are generated on worker
 ## threads, so generate_blocks() must only read shared state.
 
-const HEIGHT := 128
+const HEIGHT := 256
 const HEIGHT_CHUNKS := HEIGHT / ChunkData.SIZE
-const SEA_LEVEL := 64
+const SEA_LEVEL := 128
 const COLUMN_VOLUME := ChunkData.SIZE * ChunkData.SIZE * HEIGHT
+## Worlds made when the world was 128 high (sea at 64): their blocks are
+## LEGACY_SHIFT lower; converted on load (convert_legacy, WorldSave).
+const LEGACY_HEIGHT := 128
+const LEGACY_SHIFT := 64
+const LEGACY_VOLUME := ChunkData.SIZE * ChunkData.SIZE * LEGACY_HEIGHT
 
 var world_seed := 0
 
@@ -29,6 +34,22 @@ func generate_blocks(_cx: int, _cz: int) -> PackedInt32Array:
 ## empty arrays for the blocks' own tints.
 func column_colors(_cx: int, _cz: int) -> Array[PackedColorArray]:
 	return [PackedColorArray(), PackedColorArray()]
+
+
+## A column saved when the world was 128 high, in the 256 high world: its
+## blocks 64 up, the classic bedrock floor replaced, the new deep layer
+## under it and air above, both from the generator (which makes the same
+## terrain there in converted worlds).
+func convert_legacy(cx: int, cz: int, old: PackedInt32Array) -> PackedInt32Array:
+	var blocks := generate_blocks(cx, cz)
+	var bedrock := Blocks.id_of("bedrock")
+	for y in LEGACY_HEIGHT:
+		for i in 256:
+			var id := old[i + 256 * y]
+			if y <= 4 and id == bedrock:
+				continue # the old floor: the deep layer goes on below
+			blocks[i + 256 * (y + LEGACY_SHIFT)] = id
+	return blocks
 
 
 ## Name of the biome at a block column (for the debug screen).

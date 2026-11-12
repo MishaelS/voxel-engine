@@ -12,6 +12,9 @@ var blocks := PackedInt32Array()
 ## Number of blocks with a random tick handler (grass...). Chunks with none
 ## are skipped by random ticks.
 var tickable_count := 0
+## Number of air blocks: a chunk of only air has nothing to draw and is
+## skipped by meshing (most of the sky in a 256 high world).
+var air_count := VOLUME
 ## Sky light per block (0..15), same layout as `blocks`. Filled by
 ## SkyLight when the column is lit, then kept up to date by VoxelWorld.
 var light := PackedByteArray()
@@ -41,21 +44,27 @@ func get_block(x: int, y: int, z: int) -> int:
 
 func set_block(x: int, y: int, z: int, id: int) -> void:
 	var i := index(x, y, z)
-	tickable_count += Blocks.ticks_randomly[id] - Blocks.ticks_randomly[blocks[i]]
+	var old := blocks[i]
+	tickable_count += Blocks.ticks_randomly[id] - Blocks.ticks_randomly[old]
+	air_count += int(id == Blocks.AIR) - int(old == Blocks.AIR)
 	blocks[i] = id
 
 
-## Recounts tickable_count after filling `blocks` directly (generators).
+## Recounts tickable_count and air_count after filling `blocks` directly
+## (generators).
 func count_tickable() -> void:
-	var ticks := Blocks.ticks_randomly
+	air_count = blocks.count(Blocks.AIR)
 	tickable_count = 0
+	if air_count == VOLUME:
+		return
+	var ticks := Blocks.ticks_randomly
 	for id in blocks:
 		tickable_count += ticks[id]
 
 
 ## True if every block is air.
 func is_empty() -> bool:
-	return blocks.count(Blocks.AIR) == VOLUME
+	return air_count == VOLUME
 
 
 ## Number of non-air blocks.

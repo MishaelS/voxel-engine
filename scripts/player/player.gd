@@ -8,8 +8,6 @@ extends Node3D
 ## rendering, so it feels the same at any frame rate:
 ## - walking: ground acceleration 0.1 scaled by ground friction (0.6, ice
 ##   0.98), air control 0.02, gravity 0.08 with drag 0.98, jump 0.42;
-## - sprinting (Ctrl or double-tap W): x1.3 speed, sprint-jumps push
-##   forward, FOV widens; stops when hitting a wall or sneaking;
 ## - sneaking (Shift): x0.3 speed, eyes slightly lower, can't walk off edges;
 ## - stepping up 0.6 blocks without jumping is allowed (like slabs later);
 ## - swimming: slow, gravity 0.02, Space swims up;
@@ -37,10 +35,8 @@ const STEP_HEIGHT := 0.6
 const GRAVITY := 0.08
 const AIR_DRAG := 0.98
 const JUMP_VELOCITY := 0.42
-const SPRINT_JUMP_BOOST := 0.2
 const WALK_ACCELERATION := 0.1
 const AIR_ACCELERATION := 0.02
-const SPRINT_FACTOR := 1.3
 const SNEAK_FACTOR := 0.3
 const FLY_ACCELERATION := 0.05
 const FLY_VERTICAL := 0.15
@@ -110,8 +106,6 @@ var dead := false
 ## Ticks left of the hurt effect (camera tilt, blinking hearts); no new
 ## damage while it lasts.
 var hurt_ticks := 0
-## Hunger (food, saturation, exhaustion); heals and starves (survival).
-var food := FoodStats.new()
 ## Ticks since death (the death animation).
 var death_ticks := 0
 var _armor_remainder := 0
@@ -120,7 +114,6 @@ var _mount_start := Vector3.ZERO
 var air := MAX_AIR
 var _invulnerable := 0
 var _last_damage := 0
-var sprinting := false
 var sneaking := false
 var in_water := false
 var in_lava := false
@@ -136,9 +129,10 @@ var horizontal_collision := false
 var spawn_point := Vector3.INF
 ## Asleep in a bed (ticks asleep), like the classic game.
 var sleeping := false
-## Eating progress 0..1 (-1 = not eating), for the hand animation.
-var eating := -1.0
 var sleep_ticks := 0
+## Ticks the bow has been drawn (-1 = not drawing), for the hand, the
+## icon, the third-person arms and the view zooming in.
+var bow_pull := -1.0
 var _bed := Vector3i.ZERO
 var _sleep_fade: ColorRect
 var _fire: TextureRect
@@ -155,7 +149,6 @@ var _last_rendered := Vector3.INF
 var _yaw := 0.0
 var _pitch := 0.0
 var _jump_tap := 0  # ticks left to double-tap jump (toggle flying)
-var _forward_tap := 0 # ticks left to double-tap forward (sprint)
 var _eye := EYE_HEIGHT
 # View bobbing and FOV (previous / current tick values, interpolated).
 var _walked := 0.0
@@ -235,7 +228,6 @@ func save_state() -> Dictionary:
 		"flying": flying, "selected_slot": selected_slot,
 		"inventory": inventory.save_state(), "armor": armor.save_state(), "spawn": spawn_point,
 		"health": health if not dead else MAX_HEALTH,
-		"food": food.save_state() if not dead else FoodStats.new().save_state(),
 	}
 
 
@@ -245,7 +237,6 @@ func load_state(saved: Dictionary) -> void:
 	flying = saved.get("flying", false) and is_creative()
 	selected_slot = saved.get("selected_slot", 0)
 	health = clampi(saved.get("health", MAX_HEALTH), 1, MAX_HEALTH)
-	food.load_state(saved.get("food", {}))
 	spawn_point = saved.get("spawn", Vector3.INF)
 	if saved.has("armor"):
 		armor.load_state(saved.armor)
@@ -305,7 +296,6 @@ func sleep_in(bed: Vector3i) -> void:
 	_bed = bed
 	spawn_point = Vector3(bed) + Vector3(0.5, 0.0, 0.5)
 	velocity = Vector3.ZERO
-	sprinting = false
 	global_position = Vector3(bed) + Vector3(0.5, Blocks.height_table[world.get_block(bed)], 0.5)
 	_teleported()
 
@@ -372,10 +362,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				_jump_tap = 0
 			else:
 				_jump_tap = DOUBLE_TAP_TICKS
-	elif event.is_action_pressed("move_forward") and not event.is_echo():
-		if _forward_tap > 0 and not sneaking:
-			sprinting = true
-		_forward_tap = DOUBLE_TAP_TICKS
 
 
 # --- Frame: interpolation and camera ------------------------------------------
@@ -470,7 +456,6 @@ func _tick() -> void:
 	_prev_bob = _bob
 	_prev_fov_factor = _fov_factor
 	_jump_tap = maxi(_jump_tap - 1, 0)
-	_forward_tap = maxi(_forward_tap - 1, 0)
 	hurt_ticks = maxi(hurt_ticks - 1, 0)
 	_invulnerable = maxi(_invulnerable - 1, 0)
 	if dead:
@@ -498,14 +483,10 @@ func _tick() -> void:
 		strafe = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
 		jumping = Input.is_action_pressed("jump")
 		sneak_key = Input.is_action_pressed("sneak")
-		if Input.is_action_pressed("sprint") and forward > 0.0 and _can_sprint():
-			sprinting = true
 	sneaking = sneak_key and not flying
 	if sneaking:
 		forward *= SNEAK_FACTOR
 		strafe *= SNEAK_FACTOR
-	if forward <= 0.0 or sneaking or horizontal_collision or not _can_sprint():
-		sprinting = false
 	forward *= 0.98
 	strafe *= 0.98
 	var was_in_water := in_water
@@ -540,19 +521,14 @@ func _tick() -> void:
 		if jumping and on_ground and not flying:
 			velocity.y = JUMP_VELOCITY
 			Stats.add("jumps")
-			_exhaust(FoodStats.SPRINT_JUMP if sprinting else FoodStats.JUMP)
-			if sprinting:
-				velocity.x -= sin(_yaw) * SPRINT_JUMP_BOOST
-				velocity.z -= cos(_yaw) * SPRINT_JUMP_BOOST
 		var friction := 0.91
 		if on_ground:
 			friction = _ground_slipperiness() * 0.91
-		var acceleration := AIR_ACCELERATION * (SPRINT_FACTOR if sprinting else 1.0)
+		var acceleration := AIR_ACCELERATION
 		if flying:
-			acceleration = FLY_ACCELERATION * (2.0 if sprinting else 1.0)
+			acceleration = FLY_ACCELERATION
 		elif on_ground:
-			acceleration = WALK_ACCELERATION * (SPRINT_FACTOR if sprinting else 1.0) \
-				* 0.16277136 / (friction * friction * friction)
+			acceleration = WALK_ACCELERATION * 0.16277136 / (friction * friction * friction)
 		_move_relative(strafe, forward, acceleration)
 		# Ladders like the classic game: slow sideways, slow fall (none while
 		# sneaking), walking into the ladder climbs it.
@@ -587,10 +563,6 @@ func _tick() -> void:
 
 	# View bobbing and FOV follow the movement of this tick.
 	var moved := sqrt((_x - start_x) * (_x - start_x) + (_z - start_z) * (_z - start_z))
-	if in_water:
-		_exhaust(moved * FoodStats.SWIM_PER_BLOCK)
-	elif on_ground:
-		_exhaust(moved * (FoodStats.SPRINT_PER_BLOCK if sprinting else FoodStats.WALK_PER_BLOCK))
 	_walked += moved * 0.6
 	# A step sound every whole step (the classic distance), not while sneaking.
 	if on_ground and not sneaking and not in_water and _walked > _next_step:
@@ -603,8 +575,8 @@ func _tick() -> void:
 		bob_target = 0.0
 	_bob += (bob_target - _bob) * 0.4
 	var fov_target := 1.0
-	if sprinting:
-		fov_target = (SPRINT_FACTOR + 1.0) / 2.0
+	if bow_pull >= 0.0:
+		fov_target = 1.0 - BlockInteraction.bow_power(bow_pull) * 0.15 # the view zooms in while drawing
 	if flying:
 		fov_target *= 1.1
 	_fov_factor += (fov_target - _fov_factor) * 0.5
@@ -786,7 +758,6 @@ func damage(amount: int, always: bool = false) -> void:
 		_last_damage = amount
 		_invulnerable = INVULNERABLE_TICKS
 		hurt_ticks = HURT_TICKS
-	_exhaust(FoodStats.DAMAGE)
 	Sounds.play("damage/hurt", null, 1.0, randf_range(0.8, 1.2))
 	if health == 0:
 		_die()
@@ -864,7 +835,6 @@ func mount(creature: Entity) -> void:
 	_mount_start = creature.feet()
 	vehicle = creature
 	velocity = Vector3.ZERO
-	sprinting = false
 	flying = false
 
 
@@ -944,14 +914,13 @@ func heal(amount: int) -> void:
 		health = mini(health + amount, MAX_HEALTH)
 
 
-## Back to life at `position` with full health and food (death screen).
+## Back to life at `position` with full health (death screen).
 func respawn(position: Vector3) -> void:
 	wake_up()
 	fire_ticks = 0
 	dead = false
 	death_ticks = 0
 	health = MAX_HEALTH
-	food.reset()
 	hurt_ticks = 0
 	_invulnerable = 0
 	flying = false
@@ -964,7 +933,6 @@ func _die() -> void:
 	dead = true
 	death_ticks = 0
 	velocity = Vector3.ZERO
-	sprinting = false
 	wake_up()
 	# The classic game drops everything around the player (unless the
 	# keepInventory game rule is on).
@@ -987,19 +955,6 @@ func _update_health() -> void:
 	if world and on_ground and not flying:
 		RedstoneComponents.step_on(world, Vector3i(floori(_x), floori(_y + 0.01), floori(_z)))
 		RedstoneOre.touch(world, Vector3i(floori(_x), floori(_y - 0.1), floori(_z)))
-	if not is_creative():
-		if world == null or world.hunger:
-			food.tick(self, world == null or world.natural_regeneration)
-
-
-func _can_sprint() -> bool:
-	return is_creative() or flying or food.can_sprint() or (world != null and not world.hunger)
-
-
-## Hunger only in survival.
-func _exhaust(amount: float) -> void:
-	if not is_creative():
-		food.add_exhaustion(amount)
 
 
 ## Asleep: after SLEEP_TICKS the night is skipped to the morning (06:00
@@ -1016,37 +971,20 @@ func _tick_sleep() -> void:
 		wake_up()
 
 
-## Eats a food item (BlockInteraction, after holding the use button).
-## Eats a food item: with hunger it fills the food bar; without (Beta
-## 1.7.3) it heals right away. A golden apple always heals fully.
+## Eats a food item like Beta 1.7.3: at once, healing right away (no
+## hunger in the classic game).
 func eat(item_id: int) -> void:
 	var item := Items.get_type(item_id)
-	if item == null or item.food <= 0:
-		return
-	if world == null or world.hunger:
-		food.eat(item.food, item.saturation)
-		if item.name == "golden_apple":
-			heal(item.heal)
-	else:
+	if item != null and item.food > 0:
 		heal(item.heal)
 
 
-## Whether eating makes sense now (hunger: not full; Beta: hurt), golden
-## apples always.
+## Whether eating makes sense now: only when hurt (golden apples always).
 func can_eat(item_id: int) -> bool:
 	var item := Items.get_type(item_id)
 	if item == null or item.food <= 0:
 		return false
-	if is_creative() or item.name == "golden_apple":
-		return true
-	if world == null or world.hunger:
-		return food.food < FoodStats.MAX_FOOD
-	return health < MAX_HEALTH
-
-
-## Exhaustion from breaking a block (BlockInteraction).
-func block_broken() -> void:
-	_exhaust(FoodStats.BREAK_BLOCK)
+	return is_creative() or item.name == "golden_apple" or health < MAX_HEALTH
 
 
 ## Fall damage like the classic game: distance fallen since last standing,

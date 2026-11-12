@@ -97,7 +97,8 @@ func _try_spawn(category: String, around: Vector3) -> bool:
 	var distance := randf_range(MIN_DISTANCE, MAX_DISTANCE)
 	var x := floori(around.x + cos(angle) * distance)
 	var z := floori(around.z + sin(angle) * distance)
-	var y := randi_range(1, WorldGenerator.HEIGHT - 2)
+	# Monsters: any height up to the ground there (not the empty sky above).
+	var y := randi_range(1, maxi(world.surface_height(x, z) + 1, 2))
 	if category != "monster":
 		y = _surface(x, z)
 		if y < 0:
@@ -157,7 +158,7 @@ func _choose(category: String, pos: Vector3i) -> String:
 				return "wolf"
 			return ANIMALS[randi_range(0, ANIMALS.size() - 1)]
 		_:
-			if pos.y < 40 and is_slime_chunk(world.world_generator.world_seed if world.world_generator else 0, pos.x >> 4, pos.z >> 4) \
+			if pos.y < 40 + WorldGenerator.LEGACY_SHIFT and is_slime_chunk(world.world_generator.world_seed if world.world_generator else 0, pos.x >> 4, pos.z >> 4) \
 					and randi_range(0, 4) == 0:
 				return "slime"
 			return MONSTERS[randi_range(0, MONSTERS.size() - 1)]

@@ -115,14 +115,13 @@ func _left_lines() -> PackedStringArray:
 		if player:
 			var states := PackedStringArray()
 			for state: Array in [[player.on_ground, "on ground"], [player.flying, "flying"],
-					[player.sprinting, "sprinting"], [player.sneaking, "sneaking"], [player.in_water, "in water"]]:
+					[player.sneaking, "sneaking"], [player.in_water, "in water"]]:
 				if state[0]:
 					states.append(state[1])
 			var v := player.velocity * 20.0
 			lines.append("Player: %s mode, %.2f m/s%s" % [Player.GameMode.keys()[player.game_mode].capitalize(),
 				Vector2(v.x, v.z).length(), (", " + ", ".join(states)) if not states.is_empty() else ""])
-			lines.append("Health: %d/%d, food: %d (saturation %.1f, exhaustion %.2f)" % [player.health,
-				Player.MAX_HEALTH, player.food.food, player.food.saturation, player.food.exhaustion])
+			lines.append("Health: %d/%d" % [player.health, Player.MAX_HEALTH])
 		if world:
 			lines.append("Biome: %s" % world.biome_at(block.x, block.z))
 			lines.append("Sky light: %d, block light: %d" % [world.get_light(block), world.get_block_light(block)])

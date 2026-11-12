@@ -61,8 +61,9 @@ func _build() -> void:
 	rng.seed = _seed
 	for layer in 4: # wider and fainter layers make the glow
 		var width := 0.1 + layer * 0.08
-		var point := Vector3(0, 128.0 - _y, 0)
-		var step_height := (128.0 - _y) / 8.0
+		var top := float(WorldGenerator.HEIGHT)
+		var point := Vector3(0, top - _y, 0)
+		var step_height := (top - _y) / 8.0
 		var line: Array[Vector3] = [point]
 		rng.seed = _seed
 		for i in 8:

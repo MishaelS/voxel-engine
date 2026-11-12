@@ -587,3 +587,26 @@ Treasure Hunter=Охотник за сокровищами
 Open a dungeon chest=Откройте сундук в подземелье
 Times Loaded=Загружен раз
 Z / X: turn, wheel: zoom, F6: back=Z / X — поворот, колесо — масштаб, F6 — выход
+
+# --- Added: mobs, new blocks, screens
+Air=Воздух
+Carved Pumpkin=Вырезанная тыква
+Double Cobblestone Slab=Двойная булыжная плита
+Double Sandstone Slab=Двойная плита из песчаника
+Double Wooden Slab=Двойная деревянная плита
+Water Spring=Родник
+Lava Spring=Лавовый родник
+Piston Head=Головка поршня
+Chicken=Курица
+Cow=Корова
+Creeper=Крипер
+Pig=Свинья
+Sheep=Овца
+Skeleton=Скелет
+Slime=Слизень
+Spider=Паук
+Squid=Спрут
+Wolf=Волк
+Zombie=Зомби
+Off=Выкл
+Will be saved in:=Будет сохранён в:

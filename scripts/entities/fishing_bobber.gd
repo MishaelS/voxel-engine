@@ -9,7 +9,8 @@ extends Entity
 ## - reeling in a caught creature pulls it toward the player;
 ## - it is gone when reeled in, when the player stops holding the rod or
 ##   goes more than 32 blocks away.
-## A thin line goes from the rod to the bobber.
+## A thin line goes from the rod to the bobber; the bobber is the game's
+## picture (textures/entity/fishing_bobber.png).
 
 const BITE_CHANCE := 500
 const MAX_DISTANCE := 32.0
@@ -20,6 +21,7 @@ var hooked: Entity
 var catchable := 0
 
 var _line: MeshInstance3D
+var _sprite: Sprite3D
 var _line_mesh: ImmediateMesh
 
 
@@ -46,21 +48,17 @@ func can_be_hit() -> bool:
 func _ready() -> void:
 	half_width = 0.125
 	height = 0.25
-	var red := StandardMaterial3D.new()
-	red.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	red.albedo_color = Color(0.85, 0.12, 0.1)
-	var white := red.duplicate() as StandardMaterial3D
-	white.albedo_color = Color(0.95, 0.95, 0.95)
-	for piece: Array in [[Vector3(0.18, 0.1, 0.18), 0.17, red], [Vector3(0.18, 0.1, 0.18), 0.07, white],
-			[Vector3(0.04, 0.08, 0.04), 0.26, red]]:
-		var mesh := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = piece[0]
-		box.material = piece[2]
-		mesh.mesh = box
-		mesh.position.y = piece[1]
-		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mesh)
+	# The game's bobber: its 8 x 8 picture always facing the camera.
+	_sprite = Sprite3D.new()
+	_sprite.texture = TexturePacks.load_texture("res://assets/textures/entity/fishing_bobber.png")
+	_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	_sprite.shaded = false
+	_sprite.pixel_size = 0.5 / 8.0
+	_sprite.position.y = 0.2
+	_sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_sprite)
 	_line_mesh = ImmediateMesh.new()
 	_line = MeshInstance3D.new()
 	_line.mesh = _line_mesh

@@ -112,18 +112,13 @@ static func bone_meal(world: VoxelWorld, pos: Vector3i) -> bool:
 	return true
 
 
-## A slice of cake: food (hunger) or health (Beta). Returns true if eaten.
+## A slice of cake: 3 health at once, like Beta. Returns true if eaten.
 static func eat_cake(world: VoxelWorld, pos: Vector3i, player: Player) -> bool:
 	var id := world.get_block(pos)
 	var eaten := Blocks.family_ids("cake").find(id)
-	if world.hunger:
-		if player.food.food >= FoodStats.MAX_FOOD and not player.is_creative():
-			return false
-		player.food.eat(2, 0.1)
-	else:
-		if player.health >= Player.MAX_HEALTH:
-			return false
-		player.heal(3)
+	if player.health >= Player.MAX_HEALTH:
+		return false
+	player.heal(3)
 	Sounds.play("random/eat", null, 0.5, randf_range(0.9, 1.1))
 	if eaten >= 5:
 		world.set_block(pos, Blocks.AIR)

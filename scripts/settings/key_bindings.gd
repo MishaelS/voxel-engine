@@ -15,7 +15,6 @@ const ACTIONS := [
 	["move_right", "Strafe Right", "Movement"],
 	["jump", "Jump", "Movement"],
 	["sneak", "Sneak", "Movement"],
-	["sprint", "Sprint", "Movement"],
 	["inventory", "Open Inventory", "Inventory"],
 	["drop_item", "Drop Selected Item", "Inventory"],
 	["hotbar_1", "Hotbar Slot 1", "Inventory"],

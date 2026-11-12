@@ -95,6 +95,7 @@ func _process(_delta: float) -> void:
 	if _dirt.visible:
 		# The darker band follows the current screen's list area.
 		var area := _stack[-1].list_area
+		_dirt_list.visible = area != null # screens with their own layout have none
 		if area and area.is_inside_tree():
 			var rect := area.get_global_rect()
 			_dirt_list.global_position = Vector2(0, rect.position.y - 4 * UiTheme.PIXEL)

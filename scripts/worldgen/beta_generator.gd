@@ -9,7 +9,15 @@ extends WorldGenerator
 ##    the overhangs and floating bits typical of the era); a large-scale
 ##    depth noise lifts or lowers the land, a scale noise and the biome's
 ##    dryness set how hilly it is. Density > 0 is stone; below sea level
-##    (64) empty space is water.
+##    empty space is water.
+##
+## The world is 256 high with the sea at 128: the classic generator makes
+## the upper part in its own column (its 128 blocks, sea at 64, 192 in new
+## worlds so mountains can rise higher) put 64 blocks up
+## (WorldGenerator.LEGACY_SHIFT), with the same random numbers as before, so
+## worlds made when the world was 128 high go on without seams. Below it a
+## deep layer of its own: stone with caves (lava at the bottom), lava lakes,
+## dungeons, ores at the classic heights and the bedrock floor.
 ## 2. Biomes from temperature and humidity with the classic table (tundra,
 ##    taiga, swampland, forest, seasonal forest, rainforest, savanna,
 ##    shrubland, plains, desert), each with its own surface and trees.
@@ -24,7 +32,6 @@ extends WorldGenerator
 const GRID_X := 4  # blocks per density cell horizontally
 const GRID_Y := 8  # blocks per density cell vertically
 const CELLS_X := 16 / GRID_X
-const CELLS_Y := HEIGHT / GRID_Y
 ## Noise magnitudes of the classic generator: its octave noises are sums
 ## whose amplitude doubles for every lower octave (16 octaves: up to 65535),
 ## divided by 512 for the limit noises and by 10 for the main noise. The
@@ -106,6 +113,33 @@ var _bedrock := 0
 const GRASS_PATCHES := {"plains": 10, "rainforest": 10, "forest": 2, "seasonal_forest": 2, "taiga": 1, "shrubland": 1, "savanna": 1, "swampland": 1}
 ## Below this height caves are filled with lava (the classic lava level).
 const LAVA_LEVEL := 10
+## The classic generator's own column: its sea level and height (192 in
+## new worlds: "tall" mountains), and its grid height in cells at 128.
+const SEA := 64
+const UPPER_HEIGHT := 128
+const TALL_UPPER_HEIGHT := 192
+const LEGACY_CELLS := 16
+## Ores of the deep layer (WorldGenerator.LEGACY_SHIFT blocks): the classic
+## heights from the bottom of the world.
+const DEEP_ORES := [
+	["dirt", 10, 32, 64],
+	["gravel", 5, 32, 64],
+	["coal_ore", 10, 16, 64],
+	["iron_ore", 20, 8, 64],
+	["gold_ore", 2, 8, 32],
+	["redstone_ore", 8, 7, 16],
+	["diamond_ore", 1, 7, 16],
+	["lapis_ore", 1, 6, 32],
+]
+## In new worlds the deep ores (gold, redstone, diamonds, lapis) are only in
+## the deep layer; worlds from before keep the classic ones up there too.
+const UPPER_ORES := ["dirt", "gravel", "coal_ore", "iron_ore"]
+
+## New worlds: mountains rise about twice as high (worlds from before the
+## world was 256 high keep the classic shape so they join without seams).
+var tall := true
+var _h := TALL_UPPER_HEIGHT
+var _cells := TALL_UPPER_HEIGHT / GRID_Y
 
 
 func _init(seed_value: int) -> void:
@@ -137,6 +171,14 @@ func _init(seed_value: int) -> void:
 	_water = _id["water"]
 	_lava = _id["lava"]
 	_bedrock = _id["bedrock"]
+
+
+## Worlds made before the world was 256 high (converted ones) keep the
+## classic terrain shape. Call before generating.
+func set_tall(value: bool) -> void:
+	tall = value
+	_h = TALL_UPPER_HEIGHT if tall else UPPER_HEIGHT
+	_cells = _h / GRID_Y
 
 
 func _setup(noise: FastNoiseLite, salt: int, frequency: float, octaves: int) -> void:
@@ -239,7 +281,38 @@ func biome_name(x: int, z: int) -> String:
 # --- Generation --------------------------------------------------------------------
 
 func generate_blocks(cx: int, cz: int) -> PackedInt32Array:
-	var blocks := super(cx, cz)
+	var upper := PackedInt32Array()
+	upper.resize(16 * 16 * _h)
+	_generate_upper(upper, cx, cz)
+	# The world column: the deep layer's stone, the upper part, air above.
+	var blocks := PackedInt32Array()
+	blocks.resize(LEGACY_SHIFT * 256)
+	blocks.fill(_id["stone"])
+	blocks.append_array(upper)
+	blocks.resize(COLUMN_VOLUME)
+	_generate_deep(blocks, cx, cz)
+	return blocks
+
+
+## The deep layer under the classic part: bedrock floor, caves (lava below
+## y 10), a lava lake now and then, dungeons and ores.
+func _generate_deep(blocks: PackedInt32Array, cx: int, cz: int) -> void:
+	var rng := column_rng(cx, cz, 700)
+	for i in 256:
+		blocks[i] = _bedrock
+		for y in range(1, 5):
+			if rng.randi_range(0, 4) >= y:
+				blocks[i + 256 * y] = _bedrock
+	_carve_caves(blocks, cx, cz, 702, LEGACY_SHIFT - 8, LEGACY_SHIFT + 12, LAVA_LEVEL)
+	var lakes := column_rng(cx, cz, 703)
+	if lakes.randi_range(0, 3) == 0:
+		_place_lake(blocks, lakes, lakes.randi_range(10, LEGACY_SHIFT - 8), _lava)
+	DungeonBehavior.place(blocks, column_rng(cx, cz, 704), LEGACY_SHIFT + 16, _dungeon_ids)
+	_place_ores(blocks, column_rng(cx, cz, 705), LEGACY_SHIFT + 8, DEEP_ORES)
+
+
+## The classic generator's column (16 x _h x 16, sea at 64).
+func _generate_upper(blocks: PackedInt32Array, cx: int, cz: int) -> void:
 	var climate_values := climate(cx, cz)
 	var biomes := PackedByteArray()
 	biomes.resize(256)
@@ -247,12 +320,12 @@ func generate_blocks(cx: int, cz: int) -> PackedInt32Array:
 		biomes[i] = biome_index(climate_values[i], climate_values[256 + i])
 	var top := _shape_terrain(blocks, cx, cz)
 	_replace_surface(blocks, cx, cz, biomes, top)
-	_carve_caves(blocks, cx, cz)
+	_carve_caves(blocks, cx, cz, 2, 119, _h - 8, -1)
 	var rng := column_rng(cx, cz, 100)
 	_place_water_lake(blocks, column_rng(cx, cz, 250))
 	_place_lava_lake(blocks, column_rng(cx, cz, 200))
-	DungeonBehavior.place(blocks, column_rng(cx, cz, 600), HEIGHT, _dungeon_ids)
-	_place_ores(blocks, rng, top)
+	DungeonBehavior.place(blocks, column_rng(cx, cz, 600), _h, _dungeon_ids)
+	_place_ores(blocks, rng, top, ORES, [] as Array if not tall else UPPER_ORES)
 	_place_trees(blocks, cx, cz, biomes, rng)
 	_place_plants(blocks, biomes, column_rng(cx, cz, 300))
 	_place_clay(blocks, column_rng(cx, cz, 400))
@@ -262,7 +335,6 @@ func generate_blocks(cx: int, cz: int) -> PackedInt32Array:
 	_place_mushrooms(blocks, nature)
 	_place_springs(blocks, nature)
 	_freeze(blocks, biomes)
-	return blocks
 
 
 ## Step 1: density field on a coarse grid, interpolated to blocks.
@@ -271,7 +343,7 @@ func _shape_terrain(blocks: PackedInt32Array, cx: int, cz: int) -> int:
 	var stone: int = _id["stone"]
 	var water: int = _id["water"]
 	var top := -1
-	var stride_y := CELLS_Y + 1
+	var stride_y := _cells + 1
 	var stride_z := (CELLS_X + 1) * stride_y
 	var density := PackedFloat32Array()
 	density.resize((CELLS_X + 1) * (CELLS_X + 1) * stride_y)
@@ -308,12 +380,15 @@ func _shape_terrain(blocks: PackedInt32Array, cx: int, cz: int) -> int:
 			if scale < 0.0:
 				scale = 0.0
 			scale += 0.5
-			depth = depth * CELLS_Y / 16.0
-			var center := CELLS_Y / 2.0 + 0.5 + depth * 4.0
+			depth = depth * LEGACY_CELLS / 16.0
+			var center := LEGACY_CELLS / 2.0 + 0.5 + depth * 4.0
 
 			for gy in stride_y:
 				var wy := float(gy * GRID_Y)
-				var offset := (gy - center) * 12.0 / scale
+				var rise := gy - center
+				if tall and rise > 1.0:
+					rise = 1.0 + (rise - 1.0) * 0.3 # new worlds: hills about twice as high, mountains higher still
+				var offset := rise * 12.0 / scale
 				if offset < 0.0:
 					offset *= 4.0
 				var low := _min_noise.get_noise_3d(wx, wy * 0.5, wz) * LIMIT_AMPLITUDE
@@ -321,15 +396,15 @@ func _shape_terrain(blocks: PackedInt32Array, cx: int, cz: int) -> int:
 				var mix := (_main_noise.get_noise_3d(wx, wy * 0.25, wz) * MAIN_AMPLITUDE + 1.0) * 0.5
 				var value := low if mix < 0.0 else (high if mix > 1.0 else lerpf(low, high, mix))
 				value -= offset
-				if gy > CELLS_Y - 3:
-					var fade := (gy - (CELLS_Y - 3)) / 3.0
+				if gy > _cells - 3:
+					var fade := (gy - (_cells - 3)) / 3.0
 					value = value * (1.0 - fade) - 10.0 * fade
 				density[gx * stride_z + gz * stride_y + gy] = value
 
 	# Trilinear interpolation inside every cell.
 	for gx in CELLS_X:
 		for gz in CELLS_X:
-			for gy in CELLS_Y:
+			for gy in _cells:
 				var base := gx * stride_z + gz * stride_y + gy
 				var d000 := density[base]
 				var d001 := density[base + stride_y]
@@ -358,7 +433,7 @@ func _shape_terrain(blocks: PackedInt32Array, cx: int, cz: int) -> int:
 								blocks[row + 16 * sz] = stone
 								if y > top:
 									top = y
-							elif y < SEA_LEVEL:
+							elif y < SEA:
 								blocks[row + 16 * sz] = water
 	return top
 
@@ -366,14 +441,13 @@ func _shape_terrain(blocks: PackedInt32Array, cx: int, cz: int) -> int:
 ## Step 3: biome surface, beaches and bedrock, top-down per block column.
 ## `stone_top`: the highest stone; above it (and above the sea) is only air.
 func _replace_surface(blocks: PackedInt32Array, cx: int, cz: int, biomes: PackedByteArray, stone_top: int) -> void:
-	var start_y := mini(maxi(stone_top, SEA_LEVEL - 1), HEIGHT - 1)
+	var start_y := mini(maxi(stone_top, SEA - 1), _h - 1)
 	var rng := column_rng(cx, cz, 1)
 	var stone: int = _id["stone"]
 	var water: int = _id["water"]
 	var sand: int = _id["sand"]
 	var gravel: int = _id["gravel"]
 	var sandstone: int = _id["sandstone"]
-	var bedrock: int = _id["bedrock"]
 	for z in 16:
 		for x in 16:
 			var wx := float(cx * 16 + x)
@@ -395,8 +469,7 @@ func _replace_surface(blocks: PackedInt32Array, cx: int, cz: int, biomes: Packed
 			for y in range(start_y, -1, -1):
 				var i := x + 16 * (z + 16 * y)
 				if y <= 4 and (bedrock_mask >> y) & 1 == 1:
-					blocks[i] = bedrock
-					continue
+					continue # the classic bedrock floor: now the deep layer's stone
 				var id := blocks[i]
 				if id == Blocks.AIR:
 					depth_left = -1
@@ -407,7 +480,7 @@ func _replace_surface(blocks: PackedInt32Array, cx: int, cz: int, biomes: Packed
 					if soil_depth <= 0:
 						top = Blocks.AIR
 						filler = stone
-					elif y >= SEA_LEVEL - 4 and y <= SEA_LEVEL + 1:
+					elif y >= SEA - 4 and y <= SEA + 1:
 						top = biome_top
 						filler = biome_filler
 						if gravel_beach:
@@ -416,10 +489,10 @@ func _replace_surface(blocks: PackedInt32Array, cx: int, cz: int, biomes: Packed
 						if sand_beach:
 							top = sand
 							filler = sand
-					if y < SEA_LEVEL and top == Blocks.AIR:
+					if y < SEA and top == Blocks.AIR:
 						top = water
 					depth_left = soil_depth
-					blocks[i] = top if y >= SEA_LEVEL - 1 else filler
+					blocks[i] = top if y >= SEA - 1 else filler
 				elif depth_left > 0:
 					depth_left -= 1
 					blocks[i] = filler
@@ -430,7 +503,9 @@ func _replace_surface(blocks: PackedInt32Array, cx: int, cz: int, biomes: Packed
 
 ## Step 4: worm caves from this and nearby columns, carved where they pass
 ## through this column.
-func _carve_caves(blocks: PackedInt32Array, cx: int, cz: int) -> void:
+## `salt` picks the random numbers, caves start below `start_span` + 8,
+## reach up to `max_y`; below `lava_level` they fill with lava.
+func _carve_caves(blocks: PackedInt32Array, cx: int, cz: int, salt: int, start_span: int, max_y: int, lava_level: int) -> void:
 	for ox in range(-CAVE_RANGE, CAVE_RANGE + 1):
 		for oz in range(-CAVE_RANGE, CAVE_RANGE + 1):
 			# Only 1 column in 15 starts caves: decide that with an inline hash
@@ -441,16 +516,16 @@ func _carve_caves(blocks: PackedInt32Array, cx: int, cz: int) -> void:
 			h ^= h >> 32
 			if (h & 0xFFFFFF) % 15 != 0:
 				continue
-			var rng := column_rng(cx + ox, cz + oz, 2)
+			var rng := column_rng(cx + ox, cz + oz, salt)
 			var count := rng.randi_range(0, rng.randi_range(0, rng.randi_range(0, 39) + 1))
 			for i in count:
 				var start := Vector3(
 					(cx + ox) * 16 + rng.randi_range(0, 15),
-					rng.randi_range(0, rng.randi_range(0, 119) + 8),
+					rng.randi_range(0, rng.randi_range(0, start_span) + 8),
 					(cz + oz) * 16 + rng.randi_range(0, 15))
 				var tunnels := 1
 				if rng.randi_range(0, 3) == 0:
-					_carve_tunnel(blocks, cx, cz, rng.randi(), start, 1.0 + rng.randf() * 6.0, 0.0, 0.0, -1, -1, 0.5)
+					_carve_tunnel(blocks, cx, cz, rng.randi(), start, 1.0 + rng.randf() * 6.0, 0.0, 0.0, -1, -1, 0.5, max_y, lava_level)
 					tunnels += rng.randi_range(0, 3)
 				for t in tunnels:
 					var yaw := rng.randf() * TAU
@@ -458,13 +533,13 @@ func _carve_caves(blocks: PackedInt32Array, cx: int, cz: int) -> void:
 					var width := rng.randf() * 2.0 + rng.randf()
 					if rng.randi_range(0, 9) == 0:
 						width *= rng.randf() * rng.randf() * 3.0 + 1.0
-					_carve_tunnel(blocks, cx, cz, rng.randi(), start, width, yaw, pitch, 0, 0, 1.0)
+					_carve_tunnel(blocks, cx, cz, rng.randi(), start, width, yaw, pitch, 0, 0, 1.0, max_y, lava_level)
 
 
 ## One tunnel (or a room if step == -1): a random walk that carves
 ## ellipsoids. May split into two branches.
 func _carve_tunnel(blocks: PackedInt32Array, cx: int, cz: int, seed_value: int, pos: Vector3,
-		width: float, yaw: float, pitch: float, step: int, length: int, height_ratio: float) -> void:
+		width: float, yaw: float, pitch: float, step: int, length: int, height_ratio: float, max_y: int, lava_level: int) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var center_x := cx * 16 + 8.0
@@ -499,8 +574,8 @@ func _carve_tunnel(blocks: PackedInt32Array, cx: int, cz: int, seed_value: int, 
 		yaw_change += (rng.randf() - rng.randf()) * rng.randf() * 4.0
 
 		if not is_room and step == split_at and width > 1.0:
-			_carve_tunnel(blocks, cx, cz, rng.randi(), pos, rng.randf() * 0.5 + 0.5, yaw - PI / 2.0, pitch / 3.0, step, length, 1.0)
-			_carve_tunnel(blocks, cx, cz, rng.randi(), pos, rng.randf() * 0.5 + 0.5, yaw + PI / 2.0, pitch / 3.0, step, length, 1.0)
+			_carve_tunnel(blocks, cx, cz, rng.randi(), pos, rng.randf() * 0.5 + 0.5, yaw - PI / 2.0, pitch / 3.0, step, length, 1.0, max_y, lava_level)
+			_carve_tunnel(blocks, cx, cz, rng.randi(), pos, rng.randf() * 0.5 + 0.5, yaw + PI / 2.0, pitch / 3.0, step, length, 1.0, max_y, lava_level)
 			return
 		step += 1
 		if not is_room and rng.randi_range(0, 3) == 0:
@@ -515,12 +590,13 @@ func _carve_tunnel(blocks: PackedInt32Array, cx: int, cz: int, seed_value: int, 
 			return
 		if absf(dx) > 8.0 + radius * 2.0 or absf(dz) > 8.0 + radius * 2.0:
 			continue
-		_carve_ellipsoid(blocks, cx, cz, pos, radius, radius_y)
+		_carve_ellipsoid(blocks, cx, cz, pos, radius, radius_y, max_y, lava_level)
 		if is_room:
 			return
 
 
-func _carve_ellipsoid(blocks: PackedInt32Array, cx: int, cz: int, center: Vector3, radius: float, radius_y: float) -> void:
+func _carve_ellipsoid(blocks: PackedInt32Array, cx: int, cz: int, center: Vector3, radius: float, radius_y: float,
+		top_y: int, lava_level: int) -> void:
 	var water := _water
 	var bedrock := _bedrock
 	var min_x := maxi(floori(center.x - radius) - cx * 16 - 1, 0)
@@ -528,14 +604,15 @@ func _carve_ellipsoid(blocks: PackedInt32Array, cx: int, cz: int, center: Vector
 	var min_z := maxi(floori(center.z - radius) - cz * 16 - 1, 0)
 	var max_z := mini(floori(center.z + radius) - cz * 16 + 1, 15)
 	var min_y := maxi(floori(center.y - radius_y) - 1, 1)
-	var max_y := mini(floori(center.y + radius_y) + 1, HEIGHT - 8)
+	var max_y := mini(floori(center.y + radius_y) + 1, top_y)
 	if min_x > max_x or min_z > max_z or min_y > max_y:
 		return
 	# Never open a cave into water.
 	for x in range(min_x, max_x + 1):
 		for z in range(min_z, max_z + 1):
 			for y in range(min_y, max_y + 2):
-				if y < HEIGHT and blocks[x + 16 * (z + 16 * y)] == water:
+				var j := x + 16 * (z + 16 * y)
+				if j < blocks.size() and blocks[j] == water:
 					return
 	for x in range(min_x, max_x + 1):
 		var fx := (x + cx * 16 + 0.5 - center.x) / radius
@@ -549,17 +626,19 @@ func _carve_ellipsoid(blocks: PackedInt32Array, cx: int, cz: int, center: Vector
 					var i := x + 16 * (z + 16 * y)
 					if blocks[i] != bedrock:
 						# Deep caves fill with lava, like the classic game.
-						blocks[i] = _lava if y < LAVA_LEVEL else Blocks.AIR
+						blocks[i] = _lava if y < lava_level else Blocks.AIR
 
 
 ## Step 5: ore veins and dirt / gravel pockets, only inside stone.
 ## `top`: the highest stone in the column; spheres above it only meet air
 ## and are skipped (their random numbers are still drawn, so the result is
 ## the same).
-func _place_ores(blocks: PackedInt32Array, rng: RandomNumberGenerator, top: int) -> void:
+## `only`: the ores placed (all when empty; the others still draw their
+## random numbers).
+func _place_ores(blocks: PackedInt32Array, rng: RandomNumberGenerator, top: int, ores: Array, only: Array = []) -> void:
 	var stone: int = _id["stone"]
-	for ore: Array in ORES:
-		var id: int = _id[ore[0]]
+	for ore: Array in ores:
+		var id: int = _id[ore[0]] if only.is_empty() or only.has(ore[0]) else stone
 		for vein in ore[1]:
 			var start := Vector3(rng.randf() * 16.0, rng.randi_range(0, ore[3] - 1), rng.randf() * 16.0)
 			_place_vein(blocks, rng, id, stone, ore[2], start, top)
@@ -578,7 +657,7 @@ func _place_vein(blocks: PackedInt32Array, rng: RandomNumberGenerator, id: int, 
 		var x0 := maxi(floori(center.x - radius), 0)
 		var x1 := mini(floori(center.x + radius), 15)
 		var y0 := maxi(floori(center.y - radius), 1)
-		var y1 := mini(floori(center.y + radius), HEIGHT - 1)
+		var y1 := mini(floori(center.y + radius), blocks.size() / 256 - 1)
 		var z0 := maxi(floori(center.z - radius), 0)
 		var z1 := mini(floori(center.z + radius), 15)
 		if y0 > top:
@@ -640,7 +719,7 @@ func _place_lava_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> v
 	if rng.randi_range(0, 7) != 0:
 		return
 	var y := rng.randi_range(0, rng.randi_range(0, 119) + 7)
-	if y >= SEA_LEVEL and rng.randi_range(0, 9) != 0:
+	if y >= SEA and rng.randi_range(0, 9) != 0:
 		return
 	_place_lake(blocks, rng, y, _lava)
 
@@ -650,14 +729,14 @@ func _place_lava_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> v
 func _place_water_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
 	if rng.randi_range(0, 3) != 0:
 		return
-	_place_lake(blocks, rng, rng.randi_range(8, HEIGHT - 8), _water)
+	_place_lake(blocks, rng, rng.randi_range(8, _h - 8), _water)
 
 
 ## A lake: a few overlapping blobs, the lower half filled with `liquid`, the
 ## upper half air; skipped where it would open into water or float over air.
 func _place_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator, y: int, liquid: int) -> void:
 	var floor_y := y - 4
-	if floor_y < 2:
+	if floor_y < 2 or floor_y + 8 >= _h:
 		return
 	var shape := PackedByteArray()
 	shape.resize(16 * 16 * 8)
@@ -680,8 +759,6 @@ func _place_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator, y: int, l
 		var block := blocks[index(i % 16, floor_y + ly, (i / 16) % 16)]
 		if block == _water or block == _lava or (ly < 4 and block == Blocks.AIR):
 			return
-	if floor_y + 8 >= HEIGHT:
-		return
 	for i in shape.size():
 		if shape[i] == 1:
 			var ly := i / 256
@@ -715,7 +792,7 @@ func _place_plants(blocks: PackedInt32Array, biomes: PackedByteArray, rng: Rando
 			var x := x0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
 			var y := y0 + rng.randi_range(0, 3) - rng.randi_range(0, 3)
 			var z := z0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
-			if x < 0 or x > 15 or z < 0 or z > 15 or y < 1 or y >= HEIGHT:
+			if x < 0 or x > 15 or z < 0 or z > 15 or y < 1 or y >= _h:
 				continue
 			if blocks[index(x, y, z)] == Blocks.AIR and Blocks.get_type(blocks[index(x, y - 1, z)]).name.begins_with("grass_"):
 				blocks[index(x, y, z)] = Blocks.variant("pumpkin", rng.randi_range(0, 3))
@@ -731,21 +808,21 @@ func _plant_patch(blocks: PackedInt32Array, rng: RandomNumberGenerator, plant: i
 		var x := x0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
 		var y := y0 + rng.randi_range(0, 3) - rng.randi_range(0, 3)
 		var z := z0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
-		if x < 0 or x > 15 or z < 0 or z > 15 or y < 1 or y >= HEIGHT:
+		if x < 0 or x > 15 or z < 0 or z > 15 or y < 1 or y >= _h:
 			continue
 		if blocks[index(x, y, z)] == Blocks.AIR and PlantBehavior.can_stay(plant, blocks[index(x, y - 1, z)]):
 			blocks[index(x, y, z)] = plant
 
 
 func _surface_y(blocks: PackedInt32Array, x: int, z: int) -> int:
-	for y in range(HEIGHT - 1, 0, -1):
+	for y in range(_h - 1, 0, -1):
 		if blocks[index(x, y, z)] != Blocks.AIR:
 			return y
 	return -1
 
 
 func _set_if_air(blocks: PackedInt32Array, x: int, y: int, z: int, id: int) -> void:
-	if x < 0 or x > 15 or z < 0 or z > 15 or y < 0 or y >= HEIGHT:
+	if x < 0 or x > 15 or z < 0 or z > 15 or y < 0 or y >= _h:
 		return
 	var i := index(x, y, z)
 	if blocks[i] == Blocks.AIR:
@@ -753,7 +830,7 @@ func _set_if_air(blocks: PackedInt32Array, x: int, y: int, z: int, id: int) -> v
 
 
 func _trunk_fits(blocks: PackedInt32Array, x: int, y: int, z: int, height: int) -> bool:
-	if y + height + 2 >= HEIGHT:
+	if y + height + 2 >= _h:
 		return false
 	for dy in height:
 		if blocks[index(x, y + dy, z)] != Blocks.AIR:
@@ -835,7 +912,7 @@ func _place_clay(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
 		var y := _surface_y(blocks, x0, z0)
 		while y > 0 and blocks[index(x0, y, z0)] == _water:
 			y -= 1
-		if y >= SEA_LEVEL - 1 or blocks[index(x0, y + 1, z0)] != _water:
+		if y >= SEA - 1 or blocks[index(x0, y + 1, z0)] != _water:
 			continue
 		var radius := rng.randi_range(1, 2)
 		for x in range(x0 - radius, x0 + radius + 1):
@@ -911,7 +988,7 @@ func _place_mushrooms(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> v
 			var x := x0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
 			var y := y0 + rng.randi_range(0, 3) - rng.randi_range(0, 3)
 			var z := z0 + rng.randi_range(0, 7) - rng.randi_range(0, 7)
-			if x < 0 or x > 15 or z < 0 or z > 15 or y < 1 or y >= HEIGHT - 1:
+			if x < 0 or x > 15 or z < 0 or z > 15 or y < 1 or y >= _h - 1:
 				continue
 			# Under a roof: the open sky would be too bright.
 			if blocks[index(x, y, z)] == Blocks.AIR and Blocks.is_opaque_table[blocks[index(x, y - 1, z)]] == 1 \
@@ -933,7 +1010,7 @@ func _place_springs(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> voi
 				y = rng.randi_range(0, rng.randi_range(0, 119) + 7)
 			else:
 				y = rng.randi_range(0, rng.randi_range(0, rng.randi_range(0, 111) + 7) + 7)
-			if y < 1 or y >= HEIGHT - 1 or blocks[index(x, y, z)] != stone:
+			if y < 1 or y >= _h - 1 or blocks[index(x, y, z)] != stone:
 				continue
 			if blocks[index(x, y + 1, z)] != stone or blocks[index(x, y - 1, z)] != stone:
 				continue
@@ -971,7 +1048,7 @@ func _big_oak(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: i
 		for step in length + 1:
 			var t := float(step) / length
 			var cell := Vector3i(roundi(lerpf(x, tip.x, t)), roundi(lerpf(start_y, tip.y, t)), roundi(lerpf(z, tip.z, t)))
-			if cell.y < HEIGHT and blocks[index(cell.x, cell.y, cell.z)] == Blocks.AIR:
+			if cell.y < _h and blocks[index(cell.x, cell.y, cell.z)] == Blocks.AIR:
 				blocks[index(cell.x, cell.y, cell.z)] = log_id
 		clusters.append(tip)
 	for cluster in clusters:
@@ -989,7 +1066,7 @@ func _big_oak(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: i
 func _freeze(blocks: PackedInt32Array, biomes: PackedByteArray) -> void:
 	var water: int = _id["water"]
 	var ice: int = _id["ice"]
-	var y := SEA_LEVEL - 1
+	var y := SEA - 1
 	for z in 16:
 		for x in 16:
 			if _biome_cold[biomes[z * 16 + x]] == 1:
@@ -998,7 +1075,7 @@ func _freeze(blocks: PackedInt32Array, biomes: PackedByteArray) -> void:
 					blocks[i] = ice
 				# A snow layer on the highest block, if it can hold one.
 				var top := _surface_y(blocks, x, z)
-				if top > 0 and top < HEIGHT - 1:
+				if top > 0 and top < _h - 1:
 					var under := blocks[index(x, top, z)]
 					if Blocks.is_opaque_table[under] == 1 or Blocks.get_type(under).name.ends_with("_leaves"):
 						blocks[index(x, top + 1, z)] = _id["snow_layer"]
