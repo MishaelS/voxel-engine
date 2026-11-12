@@ -251,26 +251,40 @@ Array NativeLight::compute_column(const Array &chunks, const Array &heights, con
 
 namespace {
 
-// The 3x3 columns around an edit, read in place (chunk arrays are not
-// copied: a chunk's light is copied only when it changes).
+// The columns around edits (3x3 for one, more for a batch), read in place
+// (chunk arrays are not copied: a chunk's light is copied only when it
+// changes). Columns are indexed cx * columns_z + cz.
 struct EditArea {
-	static constexpr int SLOTS = 9 * CHUNKS;
-	const int32_t *blocks[SLOTS] = {};
-	const uint8_t *light[SLOTS] = {};
-	std::vector<uint8_t> changed[SLOTS];
-	int32_t dirty[SLOTS] = {};
+	int columns_x = 3;
+	int columns_z = 3;
+	std::vector<const int32_t *> blocks;
+	std::vector<const uint8_t *> light;
+	std::vector<std::vector<uint8_t>> changed;
+	std::vector<int32_t> dirty;
 	const uint8_t *opacity;
 	int64_t opacity_size;
 	bool sky;
 
-	static int slot(int x, int y, int z) {
-		return ((x >> 4) * 3 + (z >> 4)) * CHUNKS + (y >> 4);
+	void resize(int cx, int cz) {
+		columns_x = cx;
+		columns_z = cz;
+		const size_t slots = size_t(cx) * cz * CHUNKS;
+		blocks.assign(slots, nullptr);
+		light.assign(slots, nullptr);
+		changed.assign(slots, {});
+		dirty.assign(slots, 0);
+	}
+	size_t slots() const {
+		return light.size();
+	}
+	int slot(int x, int y, int z) const {
+		return ((x >> 4) * columns_z + (z >> 4)) * CHUNKS + (y >> 4);
 	}
 	static int local(int x, int y, int z) {
 		return (x & 15) + ((z & 15) << 4) + ((y & 15) << 8);
 	}
-	static bool in_area(int x, int z) {
-		return x >= 0 && z >= 0 && x < W && z < W;
+	bool in_area(int x, int z) const {
+		return x >= 0 && z >= 0 && x < columns_x * 16 && z < columns_z * 16;
 	}
 	// VoxelWorld.is_inside(): a loaded chunk.
 	bool inside(int x, int y, int z) const {
@@ -443,20 +457,15 @@ void relight_block(EditArea &a, const uint8_t *emission, int64_t emission_size, 
 
 } // namespace
 
-Array NativeLight::relight_edit(bool sky, const Vector3i &pos, const Array &blocks, const Array &light,
-		const PackedByteArray &opacity, const PackedByteArray &emission) {
-	Array result;
-	ERR_FAIL_COND_V(blocks.size() < 9 || light.size() < 9, result);
-	EditArea area;
-	area.sky = sky;
-	area.opacity = opacity.ptr();
-	area.opacity_size = opacity.size();
-	// Keep the arrays referenced while their pointers are used.
-	std::vector<PackedInt32Array> block_refs;
-	std::vector<PackedByteArray> light_refs;
-	block_refs.reserve(EditArea::SLOTS);
-	light_refs.reserve(EditArea::SLOTS);
-	for (int c = 0; c < 9; c++) {
+namespace {
+
+// Points the area at the columns' chunk arrays (kept referenced in `refs`).
+void read_area(EditArea &area, const Array &blocks, const Array &light, std::vector<PackedInt32Array> &block_refs,
+		std::vector<PackedByteArray> &light_refs) {
+	const int columns = area.columns_x * area.columns_z;
+	block_refs.reserve(size_t(columns) * CHUNKS);
+	light_refs.reserve(size_t(columns) * CHUNKS);
+	for (int c = 0; c < columns; c++) {
 		const Array column_blocks = blocks[c];
 		const Array column_light = light[c];
 		for (int k = 0; k < CHUNKS && k < column_light.size() && k < column_blocks.size(); k++) {
@@ -468,27 +477,67 @@ Array NativeLight::relight_edit(bool sky, const Vector3i &pos, const Array &bloc
 			}
 		}
 	}
-	if (sky)
-		relight_sky(area, pos.x, pos.y, pos.z);
-	else
-		relight_block(area, emission.ptr(), emission.size(), pos.x, pos.y, pos.z);
+}
+
+// [chunks (slots), their new light arrays, dirty masks].
+Array area_result(const EditArea &area) {
 	PackedInt32Array chunks;
 	Array arrays;
 	PackedInt32Array masks;
-	for (int s = 0; s < EditArea::SLOTS; s++) {
+	for (size_t s = 0; s < area.slots(); s++) {
 		if (area.changed[s].empty())
 			continue;
 		PackedByteArray out;
 		out.resize(VOLUME);
 		memcpy(out.ptrw(), area.changed[s].data(), VOLUME);
-		chunks.append(s);
+		chunks.append(int32_t(s));
 		arrays.append(out);
 		masks.append(area.dirty[s]);
 	}
+	Array result;
 	result.append(chunks);
 	result.append(arrays);
 	result.append(masks);
 	return result;
+}
+
+} // namespace
+
+Array NativeLight::relight_edit(bool sky, const Vector3i &pos, const Array &blocks, const Array &light,
+		const PackedByteArray &opacity, const PackedByteArray &emission) {
+	ERR_FAIL_COND_V(blocks.size() < 9 || light.size() < 9, Array());
+	PackedInt32Array one;
+	one.append(pos.x);
+	one.append(pos.y);
+	one.append(pos.z);
+	return relight_edits(sky, one, 3, 3, blocks, light, opacity, emission);
+}
+
+Array NativeLight::relight_edits(bool sky, const PackedInt32Array &positions, int columns_x, int columns_z,
+		const Array &blocks, const Array &light, const PackedByteArray &opacity, const PackedByteArray &emission) {
+	ERR_FAIL_COND_V(columns_x < 1 || columns_z < 1 || columns_x * columns_z > 1024, Array());
+	ERR_FAIL_COND_V(blocks.size() < columns_x * columns_z || light.size() < columns_x * columns_z, Array());
+	EditArea area;
+	area.resize(columns_x, columns_z);
+	area.sky = sky;
+	area.opacity = opacity.ptr();
+	area.opacity_size = opacity.size();
+	std::vector<PackedInt32Array> block_refs;
+	std::vector<PackedByteArray> light_refs;
+	read_area(area, blocks, light, block_refs, light_refs);
+	// One after another, like the edits made one by one: each removes the
+	// light its change took away (stale light of edits not done yet goes
+	// when their turn comes) and lets the light around flow in again.
+	for (int64_t i = 0; i + 2 < positions.size(); i += 3) {
+		const int x = positions[i], y = positions[i + 1], z = positions[i + 2];
+		if (!area.inside(x, y, z))
+			continue;
+		if (sky)
+			relight_sky(area, x, y, z);
+		else
+			relight_block(area, emission.ptr(), emission.size(), x, y, z);
+	}
+	return area_result(area);
 }
 
 void NativeLight::_bind_methods() {
@@ -496,6 +545,9 @@ void NativeLight::_bind_methods() {
 			&NativeLight::compute_column);
 	ClassDB::bind_static_method("NativeLight", D_METHOD("relight_edit", "sky", "pos", "blocks", "light", "opacity", "emission"),
 			&NativeLight::relight_edit);
+	ClassDB::bind_static_method("NativeLight",
+			D_METHOD("relight_edits", "sky", "positions", "columns_x", "columns_z", "blocks", "light", "opacity", "emission"),
+			&NativeLight::relight_edits);
 }
 
 } // namespace voxel

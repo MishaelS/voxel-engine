@@ -13,6 +13,9 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- Many block changes at once are lit together: a network packet of block changes, /fill and explosions set their blocks first and then work out the light near the player in one native call for the whole area (`VoxelWorld.begin_batch` / `end_batch`, `NativeLight.relight_edits`) instead of one call per block with the arrays of 9 columns. Measured on a client: digging 16 x 8 x 16 blocks 188 -> 21 ms, a 32 x 2 x 32 roof 248 -> 43 ms, 216 glowstone 39 -> 4 ms; the light is the same as block by block (compared with lighting the columns anew). Columns, entity snapshots and dropped items were measured too and stay in GDScript (a column: 0.1 ms to gather, 0.3 ms to compress, 0.1 ms to unpack; 85 entities' state 0.2 ms).
+
 ### Added
 - Multiplayer, fourth step: jukeboxes, cakes, beds and chest minecarts for clients. A client's disc goes into the host's jukebox (or comes out) through the host, and everyone hears the record (`Net.send_jukebox`, `record_changed`). Clients eat cake themselves (the bite goes to the host). Clients sleep in beds; the night passes only when every player is asleep, like the game's servers (`Net.all_asleep`; a client wakes up when the host's morning comes). A client opens the host's chest minecart like a chest (`Net.open_cart_container`: containers are keyed by a block position or a cart's net id).
 

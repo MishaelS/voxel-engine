@@ -3,6 +3,7 @@
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/vector3i.hpp>
 
 namespace voxel {
@@ -38,6 +39,16 @@ public:
 	static godot::Array relight_edit(bool sky, const godot::Vector3i &pos, const godot::Array &blocks,
 			const godot::Array &light, const godot::PackedByteArray &opacity,
 			const godot::PackedByteArray &emission);
+
+	// relight_edit() for many changed blocks at once (a batch of block
+	// changes: a network packet, /fill, an explosion), each in turn, with the
+	// arrays passed once: the area is columns_x x columns_z columns (`blocks` /
+	// `light` indexed cx * columns_z + cz), `positions` x, y, z triples in area
+	// coordinates. Returns the same as relight_edit() (chunks are slots
+	// (cx * columns_z + cz) * 16 + k; their masks' bits as there).
+	static godot::Array relight_edits(bool sky, const godot::PackedInt32Array &positions, int columns_x,
+			int columns_z, const godot::Array &blocks, const godot::Array &light,
+			const godot::PackedByteArray &opacity, const godot::PackedByteArray &emission);
 };
 
 } // namespace voxel

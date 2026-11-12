@@ -1276,6 +1276,11 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 					for dz in range(-1, 2):
 						_relight_columns[column + Vector2i(dx, dz)] = true
 				_light_scan_needed = true
+			elif _batch_depth > 0 and LightJob.native:
+				# In a batch (end_batch): lit all together.
+				if _opacity[old] != _opacity[id]:
+					_batch_sky.append(pos)
+				_batch_block.append(pos)
 			elif _opacity[old] != _opacity[id]:
 				_relight(pos)
 				_relight_block_light(pos)
@@ -1285,6 +1290,95 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 		_update_block(pos)
 		for offset in NEIGHBORS:
 			_update_block(pos + offset)
+
+
+## Many block changes at once (a network packet, /fill, an explosion):
+## between begin_batch() and end_batch() the light near the player is not
+## worked out block by block (each a native call with the arrays of 9
+## columns, ~100 us) but for all of them in one call at the end.
+var _batch_depth := 0
+var _batch_sky: Array[Vector3i] = []
+var _batch_block: Array[Vector3i] = []
+## A batch's area at most this many columns across, else block by block.
+const BATCH_AREA_COLUMNS := 12
+
+
+func begin_batch() -> void:
+	_batch_depth += 1
+
+
+func end_batch() -> void:
+	_batch_depth = maxi(_batch_depth - 1, 0)
+	if _batch_depth > 0:
+		return
+	var sky := _batch_sky.duplicate()
+	var block := _batch_block.duplicate()
+	_batch_sky.clear()
+	_batch_block.clear()
+	if not sky.is_empty():
+		_relight_batch(sky, true)
+	if not block.is_empty():
+		_relight_batch(block, false)
+
+
+func _relight_batch(cells: Array[Vector3i], sky: bool) -> void:
+	var low := Vector2i(cells[0].x >> 4, cells[0].z >> 4)
+	var high := low
+	for cell in cells:
+		var column := Vector2i(cell.x >> 4, cell.z >> 4)
+		low = Vector2i(mini(low.x, column.x), mini(low.y, column.y))
+		high = Vector2i(maxi(high.x, column.x), maxi(high.y, column.y))
+	low -= Vector2i.ONE
+	high += Vector2i.ONE
+	var size := high - low + Vector2i.ONE
+	if size.x > BATCH_AREA_COLUMNS or size.y > BATCH_AREA_COLUMNS:
+		# Far apart: one by one.
+		for cell in cells:
+			_relight_native(cell, sky)
+		return
+	var no_blocks := PackedInt32Array()
+	var no_light := PackedByteArray()
+	var blocks := []
+	var lights := []
+	for cx in size.x:
+		for cz in size.y:
+			var column_blocks := []
+			var column_light := []
+			for k in WorldGenerator.HEIGHT_CHUNKS:
+				var data: ChunkData = _chunks.get(Vector3i(low.x + cx, k, low.y + cz))
+				column_blocks.append(data.blocks if data else no_blocks)
+				column_light.append((data.light if sky else data.block_light) if data else no_light)
+			blocks.append(column_blocks)
+			lights.append(column_light)
+	var positions := PackedInt32Array()
+	positions.resize(cells.size() * 3)
+	var origin := Vector3i(low.x * 16, 0, low.y * 16)
+	for i in cells.size():
+		var at := cells[i] - origin
+		positions[i * 3] = at.x
+		positions[i * 3 + 1] = at.y
+		positions[i * 3 + 2] = at.z
+	var result: Array = ClassDB.class_call_static("NativeLight", "relight_edits", sky, positions, size.x, size.y,
+		blocks, lights, _opacity, Blocks.light_emission_table)
+	if result.is_empty():
+		return
+	var chunks: PackedInt32Array = result[0]
+	var masks: PackedInt32Array = result[2]
+	for n in chunks.size():
+		var slot := chunks[n]
+		var c := slot / WorldGenerator.HEIGHT_CHUNKS
+		var coord := Vector3i(low.x + c / size.y, slot % WorldGenerator.HEIGHT_CHUNKS, low.y + c % size.y)
+		var data: ChunkData = _chunks.get(coord)
+		if data == null:
+			continue
+		if sky:
+			data.light = result[1][n]
+		else:
+			data.block_light = result[1][n]
+		var mask := masks[n]
+		for bit in 27:
+			if mask & (1 << bit):
+				_mark_dirty_chunk(coord + Vector3i(bit / 9 - 1, (bit / 3) % 3 - 1, bit % 3 - 1))
 
 
 ## Light changes within this many columns of the player are worked out at
@@ -2270,12 +2364,14 @@ func get_stats() -> Dictionary:
 func apply_network_blocks(changes: PackedInt32Array) -> PackedInt32Array:
 	var later := PackedInt32Array()
 	_applying_network = true
+	begin_batch()
 	for i in range(0, changes.size() - 3, 4):
 		var pos := Vector3i(changes[i], changes[i + 1], changes[i + 2])
 		if _chunks.has(chunk_coord_of(pos)):
 			set_block(pos, changes[i + 3], false)
 		else:
 			later.append_array(changes.slice(i, i + 4))
+	end_batch()
 	_applying_network = false
 	return later
 

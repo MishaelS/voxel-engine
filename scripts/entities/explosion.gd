@@ -46,6 +46,7 @@ static func explode(world: VoxelWorld, center: Vector3, power: float, source: Va
 			entity.damage(int((f * f + f) / 2.0 * 8.0 * power + 1.0), center)
 			entity.velocity += (entity.center() - center).normalized() * f
 	var tnt := Blocks.id_of("tnt")
+	world.begin_batch() # the hole's light all together at the end
 	for cell: Vector3i in destroyed:
 		var id: int = destroyed[cell]
 		if world.get_block(cell) != id:
@@ -57,6 +58,7 @@ static func explode(world: VoxelWorld, center: Vector3, power: float, source: Va
 			for drop: Array in Blocks.drops_of(id, world.rng, true):
 				world.items.drop_from_block(cell, drop[0], drop[1])
 		world.set_block(cell, Blocks.AIR)
+	world.end_batch()
 	world.particles.explosion(center, power)
 	Sounds.play("random/explode", center, 4.0, (1.0 + (randf() - randf()) * 0.2) * 0.7)
 
