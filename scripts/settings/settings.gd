@@ -20,15 +20,6 @@ const ANISOTROPY_LEVELS := [
 	Viewport.ANISOTROPY_DISABLED, Viewport.ANISOTROPY_2X, Viewport.ANISOTROPY_4X,
 	Viewport.ANISOTROPY_8X, Viewport.ANISOTROPY_16X,
 ]
-## Quick presets for weak and powerful computers (Video Settings).
-const PRESETS := {
-	"Low": {"graphics": 0, "smooth_lighting": 1, "clouds": 1, "render_distance": 5, "render_scale": 75,
-		"antialiasing": 0, "anisotropic": 0, "vignette": false, "chunk_updates": 3, "shader_pack": "Classic"},
-	"Medium": {"graphics": 1, "smooth_lighting": 2, "clouds": 2, "render_distance": 8, "render_scale": 100,
-		"antialiasing": 1, "anisotropic": 2, "vignette": true, "chunk_updates": 4, "shader_pack": "Classic"},
-	"High": {"graphics": 1, "smooth_lighting": 2, "clouds": 2, "render_distance": 12, "render_scale": 100,
-		"antialiasing": 1, "anisotropic": 4, "vignette": true, "chunk_updates": 5, "shader_pack": "Dynamic Lighting"},
-}
 const GUI_SCALES: Array[float] = [0.0, 1.0, 1.5, 2.0, 3.0, 4.0] # 0 = auto (screen DPI)
 
 var _settings := {}       # key -> Setting
@@ -169,18 +160,6 @@ func set_value(key: String, value: Variant) -> void:
 	changed.emit(key, clean)
 	if not _loading:
 		save_settings()
-
-
-## Applies a quick preset (PRESETS): settings and the shader pack.
-func apply_preset(preset_name: String) -> void:
-	var preset: Dictionary = PRESETS[preset_name]
-	for key: String in preset:
-		if key == "shader_pack":
-			var pack: ShaderPack = ShaderPacks.find(preset[key])
-			if pack:
-				ShaderPacks.select(pack)
-		else:
-			set_value(key, preset[key])
 
 
 func reset_category(category: String) -> void:

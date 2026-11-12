@@ -13,10 +13,16 @@ extends RefCounted
 ##   of the head along;
 ## - the head can't stay without its piston and breaking the head breaks the
 ##   piston too.
+## - the blocks and the head slide over MOVE_TICKS like the game's: their
+##   cells hold a "moving_piston" block (nothing to see, the block is drawn
+##   sliding over it) that becomes the block when it arrives; a retracting
+##   head slides back in.
 ## States: "piston"/"sticky_piston" dir * 2 + extended, "piston_head" dir *
 ## 2 + sticky, with dir in Redstone.DIRS order.
 
 const PUSH_LIMIT := 12
+## Ticks a pushed block takes to slide one block (the game's 0.5 a tick).
+const MOVE_TICKS := 2
 
 
 static func is_base(id: int) -> bool:
@@ -61,7 +67,8 @@ static func on_update(world: VoxelWorld, pos: Vector3i) -> void:
 	if not is_base(id):
 		return
 	var info := base_info(id)
-	if info[1] and Blocks.family_of(world.get_block(pos + info[0])) != "piston_head":
+	var front := Blocks.family_of(world.get_block(pos + info[0]))
+	if info[1] and front != "piston_head" and front != "moving_piston": # (the head may still be sliding out)
 		world.set_block(pos, base_id(info[0], false, info[2]), false) # lost its head
 		return
 	if _powered(world, pos, info[0]) != info[1]:
@@ -106,7 +113,8 @@ static func mobility(world: VoxelWorld, pos: Vector3i) -> String:
 		return "stop"
 	if is_base(id) and base_info(id)[1]:
 		return "stop"
-	if VoxelWorld._entity_type(id) != "" or family == "dungeon_chest" or family.begins_with("mob_spawner"):
+	if VoxelWorld._entity_type(id) != "" or family == "dungeon_chest" or family.begins_with("mob_spawner") \
+			or family == "moving_piston":
 		return "stop"
 	if Blocks.collides_table[id] == 0 or DoorBehavior.is_door(id) or block.name == "cactus" or family == "cake":
 		return "break"
@@ -114,6 +122,7 @@ static func mobility(world: VoxelWorld, pos: Vector3i) -> String:
 
 
 static func _extend(world: VoxelWorld, pos: Vector3i, direction: Vector3i, sticky: bool) -> void:
+	_finish_in_front(world, pos, direction)
 	var moving: Array[Vector3i] = []
 	var cell := pos + direction
 	while true:
@@ -133,9 +142,10 @@ static func _extend(world: VoxelWorld, pos: Vector3i, direction: Vector3i, stick
 		world.set_block(cell, Blocks.AIR, false)
 	for k in range(moving.size() - 1, -1, -1):
 		var from := moving[k]
-		world.set_block(from + direction, world.get_block(from))
+		start_moving(world, from + direction, world.get_block(from), from)
+		world.set_block(from, Blocks.AIR)
 	world.set_block(pos, base_id(direction, true, sticky), false) # first, so the head has its piston
-	world.set_block(pos + direction, head_id(direction, sticky))
+	start_moving(world, pos + direction, head_id(direction, sticky), pos)
 	_push_creatures(world, moving, pos + direction, direction)
 	var player := world.player as Player
 	if not moving.is_empty() and player and player.global_position.distance_to(Vector3(pos)) < 32.0:
@@ -145,14 +155,16 @@ static func _extend(world: VoxelWorld, pos: Vector3i, direction: Vector3i, stick
 
 
 static func _retract(world: VoxelWorld, pos: Vector3i, direction: Vector3i, sticky: bool) -> void:
+	_finish_in_front(world, pos, direction)
 	var head := pos + direction
 	world.set_block(pos, base_id(direction, false, sticky), false)
 	if Blocks.family_of(world.get_block(head)) == "piston_head":
+		_slide(world, world.get_block(head), head, pos) # the head slides back in
 		world.set_block(head, Blocks.AIR)
 	if sticky:
 		var pulled := head + direction
 		if mobility(world, pulled) == "move" and not (is_base(world.get_block(pulled)) and base_info(world.get_block(pulled))[1]):
-			world.set_block(head, world.get_block(pulled))
+			start_moving(world, head, world.get_block(pulled), pulled)
 			world.set_block(pulled, Blocks.AIR)
 	Sounds.play("random/piston_in", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.5, randf() * 0.15 + 0.6)
 	Redstone.notify_around(world, pos)
@@ -199,3 +211,54 @@ static func head_broken(world: VoxelWorld, pos: Vector3i, id: int) -> void:
 	var base := pos - direction
 	if is_base(world.get_block(base)):
 		world.destroy_block(base, true, true)
+
+
+# --- Sliding blocks ---------------------------------------------------------------------
+
+## Starts `id` sliding from `from` into `to`: the cell holds a moving_piston
+## block until it arrives (MOVE_TICKS), the block is drawn sliding.
+static func start_moving(world: VoxelWorld, to: Vector3i, id: int, from: Vector3i) -> void:
+	world.set_block(to, Blocks.id_of("moving_piston"), false)
+	world.moving_blocks[to] = {"id": id, "node": _slide(world, id, from, to)}
+	world.schedule_tick(to, MOVE_TICKS)
+
+
+## Draws `id` sliding from `from` to `to` (gone when it arrives).
+static func _slide(world: VoxelWorld, id: int, from: Vector3i, to: Vector3i) -> Node3D:
+	var node := MeshInstance3D.new()
+	node.mesh = FallingBlocks.block_mesh(id)
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	world.add_child(node)
+	node.position = Vector3(from)
+	var tween := node.create_tween()
+	tween.tween_property(node, "position", Vector3(to), MOVE_TICKS / 20.0)
+	tween.tween_callback(func() -> void:
+		if not world.moving_blocks.values().any(func(entry: Dictionary) -> bool: return entry.node == node):
+			node.queue_free()) # only the drawn-in head goes by itself
+	return node
+
+
+## The moving block arrived: it becomes the block (moving_piston's tick).
+static func finish_moving(world: VoxelWorld, pos: Vector3i) -> void:
+	var entry: Dictionary = world.moving_blocks.get(pos, {})
+	world.moving_blocks.erase(pos)
+	if not entry.is_empty() and is_instance_valid(entry.node):
+		(entry.node as Node).queue_free()
+	if Blocks.family_of(world.get_block(pos)) != "moving_piston":
+		return
+	world.set_block(pos, entry.get("id", Blocks.AIR))
+
+
+## Like the game: blocks still sliding in front of a piston arrive at once
+## before it moves again.
+static func _finish_in_front(world: VoxelWorld, pos: Vector3i, direction: Vector3i) -> void:
+	for k in range(1, PUSH_LIMIT + 3):
+		var cell := pos + direction * k
+		if world.moving_blocks.has(cell):
+			finish_moving(world, cell)
+
+
+## Every sliding block put in place at once (before saving).
+static func finish_all(world: VoxelWorld) -> void:
+	for pos: Vector3i in world.moving_blocks.keys():
+		finish_moving(world, pos)

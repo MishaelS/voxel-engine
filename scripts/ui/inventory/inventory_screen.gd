@@ -717,15 +717,14 @@ func _quick_move_hotbar(slot: Dictionary, id: int, left: int, damage: int) -> in
 func _armor_slot_for(id: int) -> int:
 	if _mode != Mode.INVENTORY or _creative:
 		return -1
-	var item := Items.get_type(id)
-	if item == null or item.armor_slot < 0 or not player.armor.is_empty_slot(item.armor_slot):
+	var slot := Items.armor_slot_of(id)
+	if slot < 0 or not player.armor.is_empty_slot(slot):
 		return -1
-	return item.armor_slot
+	return slot
 
 
 func _fits_armor(id: int, slot: int) -> bool:
-	var item := Items.get_type(id)
-	return item != null and item.armor_slot == slot
+	return Items.armor_slot_of(id) == slot
 
 
 ## Puts items into slots [from, to) of an inventory: existing stacks first,

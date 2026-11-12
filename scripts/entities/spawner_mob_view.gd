@@ -33,7 +33,11 @@ func _ready() -> void:
 	if mob_type == "skeleton":
 		_held = MobModels.held_item(mob_type, Items.id_of("bow"))
 		(_model.parts.right_arm as Node3D).add_child(_held)
-	# Arms ahead like the walking undead.
+	# Standing like the creature itself: a spider's legs on the ground...
+	for part: Dictionary in _model.spec.parts:
+		if str(part.get("role", "")).begins_with("spider_leg") and _model.parts.has(part.name):
+			MobAnimation.pose_spider_leg(_model.parts[part.name], str(part.role), 0.0)
+	# ...arms ahead like the walking undead.
 	if mob_type == "zombie" or mob_type == "skeleton":
 		for arm: String in ["right_arm", "left_arm"]:
 			(_model.parts[arm] as Node3D).rotation.x = -PI / 2.0

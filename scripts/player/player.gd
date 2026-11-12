@@ -136,6 +136,7 @@ var bow_pull := -1.0
 var _bed := Vector3i.ZERO
 var _sleep_fade: ColorRect
 var _fire: TextureRect
+var _pumpkin_view: TextureRect
 
 # Physics state in 64-bit floats (Vector3 is 32-bit: not precise enough for
 # collision far from the origin). Feet, center of the box.
@@ -209,6 +210,16 @@ func _ready() -> void:
 	_fire.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fire.visible = false
 	layer.add_child(_fire)
+	# Wearing a carved pumpkin: looking out through its eyes (first person).
+	_pumpkin_view = TextureRect.new()
+	_pumpkin_view.texture = TexturePacks.load_texture("res://assets/textures/misc/pumpkinblur.png")
+	_pumpkin_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_pumpkin_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_pumpkin_view.stretch_mode = TextureRect.STRETCH_SCALE
+	_pumpkin_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pumpkin_view.visible = false
+	layer.add_child(_pumpkin_view)
+	layer.move_child(_pumpkin_view, 0) # under the HUD
 	var save := WorldSave.current
 	if save:
 		game_mode = save.game_mode as GameMode
@@ -384,6 +395,8 @@ func _process(delta: float) -> void:
 	rotation = Vector3(0, _yaw, 0)
 	_update_camera(alpha, delta)
 	_sleep_fade.color.a = clampf((sleep_ticks + alpha) / SLEEP_TICKS, 0.0, 1.0) * 0.95 if sleeping else 0.0
+	_pumpkin_view.visible = not third_person and not dead and armor.count_at(0) > 0 \
+		and Items.is_block(armor.id_at(0)) and Items.armor_slot_of(armor.id_at(0)) == 0
 	_fire.visible = fire_ticks > 0 and not dead
 	if _fire.visible:
 		_fire.modulate.a = 0.75 + 0.25 * sin(Time.get_ticks_msec() / 60.0)

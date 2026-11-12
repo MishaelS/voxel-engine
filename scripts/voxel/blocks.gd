@@ -224,6 +224,15 @@ static func _register_all() -> bool:
 	_register_rails()
 	# A whole pumpkin, as it grows (appended: ids stay stable).
 	register(BlockType.column("pumpkin", 102, 118, 102).set_hardness(1.0).set_tool("axe"))
+	# A block being moved by a piston (PistonBehavior): shows nothing itself
+	# (the moving block is drawn sliding over it), becomes that block when it
+	# arrives.
+	var moving := BlockType.cube("moving_piston", 0).set_hardness(-1).set_light_opacity(0).set_drop("none") \
+		.set_collides(false).set_scheduled_tick(Callable(PistonBehavior, "finish_moving")).hidden_from_catalog()
+	moving.layer = Layer.CUTOUT
+	moving.shape = BlockType.Shape.MODEL
+	moving.model = BlockModel.register([])
+	register(moving)
 	_set_flammability()
 	return true
 
@@ -1018,6 +1027,8 @@ static func _set_flammability() -> void:
 			block.set_flammable(60, 100)
 		elif n == "tnt":
 			block.set_flammable(15, 100)
+		elif n == "bookshelf":
+			block.set_flammable(30, 20) # like the game's
 
 
 ## The sound material of a block (BlockType.sound), from its kind.

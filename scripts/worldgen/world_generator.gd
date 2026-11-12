@@ -43,11 +43,12 @@ func column_colors(_cx: int, _cz: int) -> Array[PackedColorArray]:
 func convert_legacy(cx: int, cz: int, old: PackedInt32Array) -> PackedInt32Array:
 	var blocks := generate_blocks(cx, cz)
 	var bedrock := Blocks.id_of("bedrock")
+	var stone := Blocks.id_of("stone")
 	for y in LEGACY_HEIGHT:
 		for i in 256:
 			var id := old[i + 256 * y]
 			if y <= 4 and id == bedrock:
-				continue # the old floor: the deep layer goes on below
+				id = stone # the old floor turns to stone: no holes under old lava or water
 			blocks[i + 256 * (y + LEGACY_SHIFT)] = id
 	return blocks
 

@@ -107,6 +107,16 @@ static func pose_quadruped_leg(node: Node3D, front: bool, a_side: bool, swing: f
 	node.rotation.z = (0.15 if a_side == front else -0.15) * fall
 
 
+## A spider's leg (role "spider_leg_<l|r>_<0..3>"): sloping down to the
+## ground like the game's (front and back pairs at 45 degrees, the middle
+## ones flatter), fanned out, swinging with the walk.
+static func pose_spider_leg(node: Node3D, role: String, swing: float) -> void:
+	var side := 1.0 if role.contains("_l_") else -1.0
+	var index := int(role.right(1))
+	node.rotation.z = -side * (PI / 4.0 if index == 0 or index == 3 else PI / 4.0 * 0.74)
+	node.rotation.y = side * ((index - 1.5) * 0.4) + side * swing * 0.4 * (1 if index % 2 == 0 else -1)
+
+
 ## The game's slime squish: `squish` > 0 stretches it up, < 0 squashes
 ## it; returns the model's scale factors for a slime of `size`.
 static func slime_scale(squish: float, size: int) -> Vector3:

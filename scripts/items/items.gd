@@ -280,6 +280,15 @@ static func icons_image() -> Image:
 	return _icons_image
 
 
+## The armor slot an item is worn in (-1 = none): armor pieces, and a
+## carved pumpkin on the head like the game.
+static func armor_slot_of(id: int) -> int:
+	if is_block(id):
+		return 0 if Blocks.family_of(id) == "carved_pumpkin" else -1
+	var item := get_type(id)
+	return item.armor_slot if item else -1
+
+
 ## Display name ("iron_ingot" -> "Iron Ingot"), translated.
 static func display_name(id: int) -> String:
 	return Lang.t(name_of(id).capitalize())

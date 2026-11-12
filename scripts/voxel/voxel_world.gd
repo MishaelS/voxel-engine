@@ -39,6 +39,9 @@ const COLUMN_NEIGHBORS: Array[Vector2i] = [
 ]
 ## Like the classic game: scheduled ticks beyond this per game tick wait.
 const MAX_SCHEDULED_TICKS_PER_TICK := 65536
+## Main-thread time scheduled ticks may take per tick (liquids flooding a
+## cave relight and remesh a lot): the rest waits for the next tick.
+const SCHEDULED_TICK_BUDGET_US := 5000
 
 @export var generator: Generator = Generator.BETA
 @export var world_seed: int = 1337
@@ -71,6 +74,8 @@ var sign_texts: SignTexts
 var world_generator: WorldGenerator
 ## keepInventory game rule: the player keeps the items on death.
 var keep_inventory := false
+## Blocks sliding from pistons: cell -> {id, node} (PistonBehavior).
+var moving_blocks := {}
 ## Maps drawn so far: number -> {x, z (center), colors} (see Maps).
 var maps := {}
 ## The last power state of things that react to its changes (Redstone.edge).
@@ -121,9 +126,10 @@ var culling_enabled := true:
 		_cull_dirty = true
 		_cull_timer = 0.0
 var _water := Blocks.id_of("water")
-## Worker jobs of each kind (generation, light, meshing) at a time; leaves
-## two cores for the main and render threads.
-var _max_jobs := maxi(OS.get_processor_count() - 2, 1)
+## Worker jobs at once: half the cores, so the main thread and the
+## renderer always find one free (on chips with few fast cores the workers
+## took them and frames stalled while the world streamed in).
+var _max_jobs := maxi(OS.get_processor_count() / 2, 2)
 ## While the loading screen waits for the columns within this radius of the
 ## player (-1 = not loading), their chunks are meshed before all others.
 var loading_radius := -1:
@@ -323,6 +329,10 @@ func generate() -> void:
 	items.clear()
 	entities.clear()
 	sign_texts.clear()
+	for entry: Dictionary in moving_blocks.values():
+		if is_instance_valid(entry.node):
+			(entry.node as Node).queue_free()
+	moving_blocks.clear()
 	_block_entities.clear()
 	_scheduled.clear()
 	_scheduled_count = 0
@@ -1239,12 +1249,13 @@ func _run_scheduled_ticks() -> void:
 	var bucket: Dictionary = _scheduled[now]
 	_scheduled.erase(now)
 	var processed := 0
+	var started := Time.get_ticks_usec()
 	for pos: Vector3i in bucket:
-		if processed >= MAX_SCHEDULED_TICKS_PER_TICK:
+		_scheduled_count -= 1
+		if processed >= MAX_SCHEDULED_TICKS_PER_TICK or Time.get_ticks_usec() - started > SCHEDULED_TICK_BUDGET_US:
 			schedule_tick(pos, 1) # over the limit: wait for the next tick
 			continue
 		processed += 1
-		_scheduled_count -= 1
 		var handler := Blocks.get_type(get_block(pos)).scheduled_tick
 		if handler.is_valid():
 			handler.call(self, pos)
@@ -1617,6 +1628,7 @@ func _apply_culling(reached: Dictionary) -> void:
 func save_columns() -> void:
 	if save == null:
 		return
+	PistonBehavior.finish_all(self) # no half-moved blocks in the save
 	for column: Vector2i in _modified.keys():
 		if _columns.has(column):
 			_save_column(column)

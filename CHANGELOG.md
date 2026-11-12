@@ -14,6 +14,9 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Pistons move blocks smoothly like Beta: pushed and pulled blocks and the head slide over 2 ticks; their cells hold an invisible `moving_piston` block that becomes the block when it arrives, a retracting head slides back in, blocks still sliding arrive at once before the piston moves again or the world is saved (`PistonBehavior.start_moving`).
+- A carved pumpkin can be worn on the head (the helmet slot, Shift-click too): in first person the view is through its eyes (`textures/misc/pumpkinblur.png`, ours, texture packs can replace it), in third person the player wears it.
+- Bookshelves burn like the game's (catch 30, burn 20).
 - Drawing the bow like the game since Beta 1.8: hold the button to draw (the string goes back in three steps, with an arrow on it: pictures drawn into free cells of the item atlas unless a texture pack has them, `Items.BOW_PULL_TILES`), let go to shoot; a longer draw shoots faster (up to 3 blocks a tick) and harder (up to 4), a barely drawn bow doesn't shoot. In first person the bow is held up and pulled toward the eye (Beta 1.8's pose, shaking when fully drawn), the view zooms in a little, and in third person both arms come up along the view.
 - Carved pumpkins: pumpkins grow whole now; shears and a pumpkin in the crafting grid make a carved pumpkin (the shears stay, a little worn), and a carved pumpkin over a torch makes a jack o'lantern. Pumpkins in worlds from before stay carved.
 - The world is twice as high and twice as deep: 256 blocks with the sea at 128. The classic generator makes the part from y 64 up exactly as before (moved 64 blocks up); under it a new deep layer of stone with its own caves (lava below y 10), lava lakes, dungeons, ores at the classic heights and the bedrock floor. New worlds have hills about twice as high and mountains higher still (up to about 100 blocks above the sea); clouds float at 172.
@@ -108,6 +111,12 @@ Sections:
 - Player collision lives in `EntityPhysics`, shared with entities.
 
 ### Fixed
+- Frame drops while flying a long way into new land: worker jobs (generation, light, meshes) use half the cores so the main thread and the renderer keep one (with 8 of 10 they took the fast cores and frames stalled), scheduled ticks stop after 5 ms a tick (the rest waits; flooding liquids relight a lot), a slow game runs at most 3 ticks a frame to catch up (10 made each frame slower still), and the scheduled tick count no longer grows when ticks wait. In a 25-second flight at render distance 12: 0-1 frames over 33 ms.
+- Worlds converted to the 256 high world get no holes under their old lava and water: the old bedrock floor turns to stone and the deep caves stay below it.
+- Arrows: the block they are stuck in can be taken away and they fall; they stay for two minutes (was one); they take their light from the shaft, not the tip inside the block (that side was dark).
+- A spider in a spawner stands on its legs (they stuck out flat).
+- The Options screen's buttons are in even pairs (World Settings was alone with gaps around it); in a world it pairs with Shaders.
+- The loading screen has the title screen's shade (`gui/titleBlur.png`) and no longer shows the world's name (only the stage, the bar and the percentage).
 - The cactus is drawn like the game's: the top and bottom fill the block and each side is the whole texture moved a pixel in, so the spines stick out at the edges (it was a squeezed, uneven smaller box).
 - Water (flowing or a source) under a solid block is drawn again: its surface lies lower than the block above, so it can be seen.
 - Ice next to water shows all its side faces (they were cut down to a strip above the surface).
@@ -127,6 +136,7 @@ Sections:
 - Spider legs slope down to the ground like the game's (front and back pairs at 45 degrees, the middle ones flatter); they pointed up.
 
 ### Removed
+- The Low / Medium / High presets in Video Settings (one of them switched the shader pack to Dynamic Lighting); shader packs are only switched by hand in Shaders.
 - Sprinting and hunger, which Beta 1.7.3 didn't have: no sprint key or double-tap, no food bar, saturation or exhaustion, no `doHunger` and `naturalRegeneration` game rules (`FoodStats` is gone). Food is eaten at once with a click and heals right away (apple 4, bread 5, stew 10, golden apple 20, cookie 1, a slice of cake 3), only when hurt; the held-down eating and its hand animation are gone too.
 - The hand-drawn chest tiles in the block atlas and `tools/make_chest_tiles.py` (replaced by the chest model).
 

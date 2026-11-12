@@ -303,7 +303,9 @@ func _generate_deep(blocks: PackedInt32Array, cx: int, cz: int) -> void:
 		for y in range(1, 5):
 			if rng.randi_range(0, 4) >= y:
 				blocks[i + 256 * y] = _bedrock
-	_carve_caves(blocks, cx, cz, 702, LEGACY_SHIFT - 8, LEGACY_SHIFT + 12, LAVA_LEVEL)
+	# New worlds: deep caves reach up into the classic part; converted worlds
+	# keep them under the old floor (their old lava and water stay put).
+	_carve_caves(blocks, cx, cz, 702, LEGACY_SHIFT - 8, LEGACY_SHIFT + 12 if tall else LEGACY_SHIFT - 2, LAVA_LEVEL)
 	var lakes := column_rng(cx, cz, 703)
 	if lakes.randi_range(0, 3) == 0:
 		_place_lake(blocks, lakes, lakes.randi_range(10, LEGACY_SHIFT - 8), _lava)

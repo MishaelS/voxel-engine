@@ -1,9 +1,10 @@
 class_name LoadingScreen
 extends CanvasLayer
 ## Shown over the game while the world around the player is prepared, like
-## the classic game's loading screen: the dark dirt background, the world's
-## name, the current stage ("Generating terrain", "Lighting the world",
-## "Building terrain") and a thin progress bar - grey with a green fill -
+## the classic game's loading screen: the dark dirt background (with the
+## title screen's shade, gui/titleBlur.png), the current stage ("Generating
+## terrain", "Lighting the world", "Building terrain") and a thin progress
+## bar - grey with a green fill -
 ## with the percentage under it. Pixel sparks fly out of the bar's growing
 ## end (more while it moves fast) and burst out when it is full. Then the
 ## screen fades into the game.
@@ -62,6 +63,14 @@ func _ready() -> void:
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	background.modulate = Color(0.25, 0.25, 0.25)
 	_root.add_child(background)
+	# The title screen's shade (gui/titleBlur.png): darker toward the bottom.
+	var shade := TextureRect.new()
+	shade.texture = TexturePacks.load_texture(UiTheme.GUI + "titleBlur.png")
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	shade.stretch_mode = TextureRect.STRETCH_SCALE
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(shade)
 	_build()
 
 
@@ -76,14 +85,9 @@ func _build() -> void:
 	box.add_theme_constant_override("separation", 6 * P)
 	_root.add_child(box)
 
-	var title := Label.new()
-	title.text = WorldSave.current.name if WorldSave.current else Lang.t("Loading World")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_color_override("font_color", Color.WHITE)
-	box.add_child(title)
 	_phase = Label.new()
 	_phase.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_phase.add_theme_color_override("font_color", Color("a0a0a0"))
+	_phase.add_theme_color_override("font_color", Color.WHITE)
 	box.add_child(_phase)
 
 	var bar := Control.new()

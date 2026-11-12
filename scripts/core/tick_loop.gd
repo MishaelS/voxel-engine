@@ -19,8 +19,9 @@ enum Phase {
 
 const DEFAULT_TICK_RATE := 20.0
 ## If the game falls behind, at most this many ticks run in one frame;
-## the rest is dropped (the game slows down instead of freezing).
-const MAX_TICKS_PER_FRAME := 10
+## the rest is dropped (the game slows down instead of freezing: running
+## up to 10 slow ticks in a frame made each frame slower still).
+const MAX_TICKS_PER_FRAME := 3
 
 ## Ticks per second (like /tick rate).
 var tick_rate: float = DEFAULT_TICK_RATE:

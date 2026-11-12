@@ -6,12 +6,14 @@ extends Entity
 ## in blocks, where they stay for a minute and can be picked up.
 
 const DAMAGE := 4
-const STUCK_TICKS := 1200
+const STUCK_TICKS := 2400 # two minutes
 
 var shooter: Node3D
 ## How hard the bow was drawn (0.1..1): the damage scales with it.
 var power := 1.0
 var stuck := false
+## The block it is stuck in: when that is gone, the arrow falls again.
+var _stuck_in := Vector3i.ZERO
 var _stuck_ticks := 0
 var _model: Node3D
 
@@ -82,6 +84,11 @@ static func _arrow_mesh() -> ArrayMesh:
 func tick() -> void:
 	_prev = Vector3(_x, _y, _z)
 	age += 1
+	if stuck and Blocks.collides_table[world.get_block(_stuck_in)] == 0:
+		# The block it was in is gone: it falls, like the game's.
+		stuck = false
+		velocity = Vector3(randf_range(-0.02, 0.02), 0.0, randf_range(-0.02, 0.02))
+		_stuck_ticks = 0
 	if stuck:
 		_stuck_ticks += 1
 		if _stuck_ticks > STUCK_TICKS:
@@ -125,6 +132,7 @@ func tick() -> void:
 		_y = point.y
 		_z = point.z
 		stuck = true
+		_stuck_in = block_hit.pos
 		Sounds.play("random/bowhit", point, 1.0, 1.2 / (randf() * 0.2 + 0.9))
 		return
 	_x = end.x
@@ -155,6 +163,8 @@ func _process(delta: float) -> void:
 		_model.look_at(global_position + velocity, Vector3.UP if absf(velocity.normalized().y) < 0.99 else Vector3.RIGHT)
 		_model.rotate_object_local(Vector3.UP, PI)
 	if world and Engine.get_process_frames() % 6 == 0:
-		var light := world.brightness_at(global_position)
+		# The light where its shaft is (behind the tip: a stuck tip is inside
+		# the block, in the dark).
+		var light := world.brightness_at(global_position - _model.global_basis.z.normalized() * 0.4)
 		for child in _model.get_children():
 			(child as GeometryInstance3D).set_instance_shader_parameter("brightness", light)

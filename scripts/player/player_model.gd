@@ -22,6 +22,7 @@ const ARMOR_PARTS := [
 var player: Player
 var _model := {}
 var _armor_meshes: Array[MeshInstance3D] = []
+var _pumpkin: MeshInstance3D
 var _limb_swing := 0.0
 var _limb_amount := 0.0
 var _last := Vector3.INF
@@ -47,12 +48,25 @@ func _ready() -> void:
 
 ## Rebuilds the armor pieces over the body from what the player wears.
 func _update_armor() -> void:
+	if _pumpkin:
+		_pumpkin.queue_free()
+		_pumpkin = null
 	for mesh in _armor_meshes:
 		mesh.queue_free()
 	_armor_meshes.clear()
 	if player == null:
 		return
 	var spec: Dictionary = _model.spec
+	var helmet := player.armor.id_at(0)
+	if player.armor.count_at(0) > 0 and Items.armor_slot_of(helmet) == 0 and Items.is_block(helmet):
+		# A carved pumpkin on the head, a little bigger than it (10 pixels),
+		# its face forward, like the game.
+		var pumpkin := MeshInstance3D.new()
+		pumpkin.mesh = FallingBlocks.block_mesh(Blocks.variant("carved_pumpkin", 0))
+		pumpkin.transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * 10.0), Vector3(-5, -1, -5))
+		pumpkin.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		(_model.parts.head as Node3D).add_child(pumpkin)
+		_pumpkin = pumpkin
 	for slot in player.armor.size():
 		var item := Items.get_type(player.armor.id_at(slot))
 		if player.armor.count_at(slot) <= 0 or item == null or item.armor_slot != slot:

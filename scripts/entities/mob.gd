@@ -645,12 +645,7 @@ func _process(delta: float) -> void:
 				_turn_head(node)
 			_:
 				if str(part.role).begins_with("spider_leg"):
-					var side := 1.0 if str(part.role).contains("_l_") else -1.0
-					var index := int(str(part.role).right(1))
-					# Legs slope down to the ground like the game's: the front
-					# and back pairs at 45 degrees, the middle ones flatter.
-					node.rotation.z = -side * (PI / 4.0 if index == 0 or index == 3 else PI / 4.0 * 0.74)
-					node.rotation.y = side * ((index - 1.5) * 0.4) + side * swing * 0.4 * (1 if index % 2 == 0 else -1)
+					MobAnimation.pose_spider_leg(node, str(part.role), swing)
 	if mob_type == "wolf" and sitting:
 		_model.root.position.y = -0.15
 	if mob_type == "slime":
