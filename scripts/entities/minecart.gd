@@ -61,6 +61,10 @@ func _ready() -> void:
 		add_child(_cargo)
 
 
+func seat_height() -> float:
+	return 0.3 # inside, on its floor
+
+
 ## The player riding it steers like the game: forward gets a standing cart
 ## going (called by Player each tick).
 func steer(forward: float, look: Vector3) -> void:
@@ -79,6 +83,8 @@ func tick() -> void:
 	else:
 		_off_rail()
 	_push_player()
+	if kind == "minecart":
+		take_creature(Vector2(velocity.x, velocity.z).length_squared() > 0.0004)
 	if fuel > 0:
 		fuel -= 1
 		if randi_range(0, 3) == 0:
@@ -252,7 +258,7 @@ func interact(player: Player, item_id: int) -> bool:
 				push = Vector2(_x - player.global_position.x, _z - player.global_position.z)
 				return true
 			return false
-	if player.vehicle == null:
+	if player.vehicle == null and seat_free():
 		player.mount(self)
 		return true
 	return false
@@ -276,6 +282,8 @@ func damage(amount: int, from: Variant = null) -> bool:
 
 func _break() -> void:
 	removed = true
+	if rider and is_instance_valid(rider):
+		rider.vehicle = null
 	var player := world.player as Player
 	if player and player.vehicle == self:
 		player.vehicle = null

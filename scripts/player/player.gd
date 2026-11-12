@@ -397,7 +397,7 @@ func _process(delta: float) -> void:
 		# Riding: drawn on the seat where the vehicle is drawn (it ticks on the
 		# world's clock, the player on its own: following the ticks the seat
 		# jumped against the boat or cart every frame).
-		global_position = vehicle.render_feet() + Vector3(0, vehicle.height * 0.75 - 0.2, 0)
+		global_position = vehicle.render_feet() + Vector3(0, seat_offset(), 0)
 	_last_rendered = global_position
 	rotation = Vector3(0, _yaw, 0)
 	_update_camera(alpha, delta)
@@ -858,6 +858,15 @@ func mount(creature: Entity) -> void:
 	flying = false
 
 
+## The rider's feet below the vehicle's seat: sitting, the hips (10 pixels
+## up, the legs held straight ahead) rest on the seat.
+const HIP_HEIGHT := 0.625
+
+
+func seat_offset() -> float:
+	return vehicle.seat_height() - HIP_HEIGHT if vehicle else 0.0
+
+
 ## Riding: sitting on the creature (it goes where it wants, like Beta's
 ## pigs); Shift gets off.
 func _tick_riding() -> void:
@@ -874,7 +883,7 @@ func _tick_riding() -> void:
 	if vehicle.has_method("steer"):
 		var forward := 0.0 if GameInput.is_blocked() else Input.get_action_strength("move_forward") - Input.get_action_strength("move_back")
 		vehicle.call("steer", forward, look_direction())
-	var seat := vehicle.feet() + Vector3(0, vehicle.height * 0.75 - 0.2, 0)
+	var seat := vehicle.feet() + Vector3(0, seat_offset(), 0)
 	_x = seat.x
 	_y = seat.y
 	_z = seat.z

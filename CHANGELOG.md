@@ -14,6 +14,7 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Zombies and skeletons get into a free boat or minecart they bump into (when either is moving), like the game's minecarts: one rider each, carried along sitting with the legs ahead, still looking about and attacking (skeletons shoot from it); out again when the boat or cart breaks. An occupied boat or cart can't be taken by the player (`Entity.vehicle`, `Entity.rider`, `Entity.take_creature`, `Entity.seat_free`).
 - Multiplayer, first step (stage 15; `Net` autoload, `scripts/net/`): the classic game's way, a player opens the world from the pause menu ("Open to LAN", port 25565) and is the host; others join from "Multiplayer" on the title screen, by address or from the games found on the local network (UDP broadcast on port 4445). Godot's multiplayer over ENet.
   - The host runs the world (liquids, growth, redstone, ticks, saving). A client generates the columns nobody has changed itself (the same blocks from the same seed) and gets the changed ones from the host (compressed); every block change goes to the clients a frame at a time; the host keeps the columns around the other players loaded.
   - A client's edits (breaking, placing, buckets, beds, doors) show at once and are made by the host with all their effects; levers, buttons, repeaters, doors, trapdoors and note blocks are used by the host. A client's drops go straight into its inventory (dropped items are the host's for now).
@@ -33,6 +34,8 @@ Sections:
 - The cracks of a block being broken follow its shape (slabs, fences, torches, pistons...) at their own size: each face shows the part of the crack picture its place in the block covers, nothing stretched or squeezed.
 
 ### Fixed
+- Boats pushed by creatures no longer smash on the shore (only rowing into it at full speed does).
+- Riding looked like floating: the rider stood at the old height with the legs held out. Now the hips rest on the seat (`Entity.seat_height`: a boat's bottom, a minecart's floor, a pig's back; `Player.seat_offset`), the view lowered with them.
 - Ice in lava let you see through the lava: lava faces next to ice were left out (meant for water under ice only).
 - Riding jittered: the rider (ticked on its own clock) followed the boat or cart (ticked on the world's) a tick at a time; now the rider is drawn on the seat where the vehicle is drawn.
 - An extended piston could be aimed through where the head's arm enters it, and a sliding block blinked out for a frame when it arrived (it waits now until the chunk's new mesh is up).

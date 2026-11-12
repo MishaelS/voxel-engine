@@ -47,6 +47,10 @@ func _exit_tree() -> void:
 	EntityPhysics.solid_entities.erase(self)
 
 
+func seat_height() -> float:
+	return 0.25 # inside, on its bottom
+
+
 func steer(forward: float, look: Vector3) -> void:
 	_rider_forward = forward
 	_rider_look = look
@@ -74,8 +78,9 @@ func tick() -> void:
 		_gone()
 		return
 	_pushed()
-	var rider := _ridden()
-	if rider and _rider_forward != 0.0 and under > 0.0:
+	take_creature(Vector2(velocity.x, velocity.z).length_squared() > 0.0004)
+	var ridden := _ridden()
+	if ridden and _rider_forward != 0.0 and under > 0.0:
 		# Rowing: a little push a tick (backwards at half strength).
 		var row := Vector2(_rider_look.x, _rider_look.z).normalized() * ROW_PUSH \
 			* (_rider_forward if _rider_forward > 0.0 else _rider_forward * 0.5)
@@ -91,7 +96,8 @@ func tick() -> void:
 		velocity.x *= 0.5
 		velocity.z *= 0.5
 	move(velocity)
-	if horizontal_collision and speed_before > CRASH_SPEED:
+	if horizontal_collision and speed_before > CRASH_SPEED and ridden:
+		# Rowed into the shore (pushes by creatures don't smash it).
 		_smash()
 		return
 	# Water drag: the speed falls off little by little (inertia); on land
@@ -104,7 +110,7 @@ func tick() -> void:
 	if flat.length_squared() > 1e-4:
 		# Turns toward where it goes (rowing backwards it keeps its heading).
 		var heading := atan2(flat.x, flat.y)
-		if _rider_forward < 0.0 and rider:
+		if _rider_forward < 0.0 and ridden:
 			heading = wrapf(heading + PI, -PI, PI)
 		_yaw = lerp_angle(_yaw, heading, 0.25)
 	if _y < Player.VOID_Y:
@@ -120,7 +126,8 @@ func _pushed() -> void:
 	if player and player.vehicle != self and not player.dead:
 		others.append([player.global_position, Player.HALF_WIDTH, Player.HEIGHT])
 	for entity in world.entities.all():
-		if entity is Mob and not entity.removed and entity.feet().distance_squared_to(feet()) < 9.0:
+		if entity is Mob and entity != rider and entity.vehicle == null and not entity.removed \
+				and entity.feet().distance_squared_to(feet()) < 9.0:
 			others.append([entity.feet(), entity.half_width, entity.height])
 	for other: Array in others:
 		var at: Vector3 = other[0]
@@ -156,7 +163,7 @@ func _ridden() -> bool:
 
 
 func interact(player: Player, _item_id: int) -> bool:
-	if player.vehicle == null:
+	if player.vehicle == null and seat_free():
 		player.mount(self)
 		return true
 	return false
@@ -188,6 +195,8 @@ func _smash() -> void:
 
 func _gone() -> void:
 	removed = true
+	if rider and is_instance_valid(rider):
+		rider.vehicle = null
 	var player := world.player as Player
 	if player and player.vehicle == self:
 		player.vehicle = null

@@ -87,6 +87,60 @@ func teleport(position: Vector3) -> void:
 	global_position = position
 
 
+## How high above its feet a rider sits (the floor of a boat or cart, a
+## pig's back).
+func seat_height() -> float:
+	return height * 0.9
+
+
+# --- Riding (boats and minecarts carry one rider) ------------------------------------
+
+## The boat or minecart this creature sits in.
+var vehicle: Entity
+## The creature in this boat or minecart (the player rides through
+## Player.vehicle).
+var rider: Entity
+## Creatures that get into a free boat or minecart they bump into, like the
+## game's (one each).
+const RIDING_MOBS: Array[String] = ["zombie", "skeleton"]
+## A sitting rider's hips above its feet (Player.HIP_HEIGHT).
+const RIDER_HIPS := 0.625
+
+
+## Nobody (no creature, not the player) sits in this vehicle.
+func seat_free() -> bool:
+	if rider and is_instance_valid(rider) and not rider.removed and not rider.is_dead() and rider.vehicle == self:
+		return false
+	rider = null
+	var player := world.player as Player if world else null
+	return player == null or player.vehicle != self
+
+
+## A vehicle's tick: a zombie or skeleton touching it (within 0.2 of its
+## sides) gets in when either of them is moving, like the game's minecart.
+func take_creature(moving: bool) -> void:
+	if not seat_free():
+		return
+	for entity in world.entities.all():
+		if not (entity is Mob) or not ((entity as Mob).mob_type in RIDING_MOBS) or entity.vehicle != null \
+				or entity.removed or entity.is_dead():
+			continue
+		var at := entity.feet()
+		var reach := half_width + entity.half_width + 0.2
+		if absf(at.x - _x) >= reach or absf(at.z - _z) >= reach or at.y >= _y + height or at.y + entity.height <= _y:
+			continue
+		var walking := Vector2(entity.velocity.x, entity.velocity.z).length_squared() > 0.0004
+		if moving or walking:
+			entity.vehicle = self
+			rider = entity
+			return
+
+
+## Where a creature riding `vehicle` has its feet (sitting on the seat).
+func _seat_feet(at: Vector3) -> Vector3:
+	return at + Vector3(0, vehicle.seat_height() - RIDER_HIPS, 0)
+
+
 ## Where the entity is drawn this frame (between the last two ticks).
 func render_feet() -> Vector3:
 	return _prev.lerp(Vector3(_x, _y, _z), TickLoop.alpha)
@@ -121,6 +175,17 @@ func tick() -> void:
 	if world and on_ground:
 		RedstoneComponents.step_on(world, Vector3i(floori(_x), floori(_y + 0.01), floori(_z)))
 	_ai_tick()
+	if vehicle and (not is_instance_valid(vehicle) or vehicle.removed):
+		vehicle = null # its boat or cart is gone
+	if vehicle:
+		# Sitting: carried along (it still looks about and attacks).
+		var seat := _seat_feet(vehicle.feet())
+		_x = seat.x
+		_y = seat.y
+		_z = seat.z
+		velocity = Vector3.ZERO
+		on_ground = true
+		return
 	_physics()
 	if _y < Player.VOID_Y:
 		damage(4)
@@ -265,6 +330,8 @@ var _flames: MeshInstance3D
 
 func _process(_delta: float) -> void:
 	global_position = _prev.lerp(Vector3(_x, _y, _z), TickLoop.alpha)
+	if vehicle and is_instance_valid(vehicle) and not vehicle.removed:
+		global_position = _seat_feet(vehicle.render_feet()) # where its seat is drawn
 	_show_flames()
 
 

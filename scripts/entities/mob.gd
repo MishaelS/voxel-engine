@@ -601,7 +601,7 @@ func _process(delta: float) -> void:
 	if _model.is_empty():
 		return
 	var alpha := TickLoop.alpha
-	var moved := Vector2(_x - _prev.x, _z - _prev.z).length()
+	var moved := Vector2(_x - _prev.x, _z - _prev.z).length() if vehicle == null else 0.0 # carried, not walking
 	_limb_amount = lerpf(_limb_amount, minf(moved * 4.0, 1.0), minf(delta * 10.0, 1.0))
 	_limb_swing += moved * 4.0 * delta * 20.0
 	var swing := cos(_limb_swing * 0.6662) * 1.4 * _limb_amount
@@ -619,6 +619,10 @@ func _process(delta: float) -> void:
 	if biped:
 		MobAnimation.pose_biped(parts, t, _limb_swing, _limb_amount, _held != null,
 			mob_type == "zombie" or mob_type == "skeleton", _jump, _fall)
+		if vehicle:
+			# Sitting in a boat or minecart: the legs straight ahead, a little apart.
+			for side: Array in [["right_leg", -1.0], ["left_leg", 1.0]]:
+				(parts[side[0]] as Node3D).rotation = Vector3(-PI * 2.0 / 5.0, float(side[1]) * PI / 10.0, 0)
 	for part: Dictionary in _model.spec.parts:
 		var node: Node3D = parts.get(part.name)
 		if node == null:
