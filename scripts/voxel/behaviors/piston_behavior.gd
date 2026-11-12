@@ -102,7 +102,7 @@ static func scheduled_tick(world: VoxelWorld, pos: Vector3i) -> void:
 ## What a push does to a block: "move", "break" (drops, makes room), "free"
 ## (air or liquid: room) or "stop".
 static func mobility(world: VoxelWorld, pos: Vector3i) -> String:
-	if pos.y < 0 or pos.y >= WorldGenerator.HEIGHT or not world.is_inside(pos):
+	if pos.y < 0 or pos.y >= world.height or not world.is_inside(pos):
 		return "stop"
 	var id := world.get_block(pos)
 	if id == Blocks.AIR or Blocks.liquid_table[id] == 1:

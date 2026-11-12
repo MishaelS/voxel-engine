@@ -55,7 +55,7 @@ func _ready() -> void:
 	_ui.add_child(UiTheme.blur_rect())
 
 	var shade := TextureRect.new()
-	shade.texture = TexturePacks.load_texture(UiTheme.GUI + "titleBlur.png")
+	shade.texture = load("res://assets/textures/extra/title_blur.png")
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	shade.stretch_mode = TextureRect.STRETCH_SCALE
@@ -84,7 +84,7 @@ func _ready() -> void:
 	if not _intro_shown:
 		_intro_shown = true
 		_intro = TextureRect.new()
-		_intro.texture = TexturePacks.load_texture(UiTheme.GUI + "titleIntroLogo.png")
+		_intro.texture = _intro_picture()
 		_intro.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		_intro.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		_intro.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -158,11 +158,36 @@ func _build_main() -> void:
 	_main.add_child(credits)
 
 
-## The logo image is large and smooth: scaled down once with a good filter.
-func _scaled_logo() -> Texture2D:
-	var image: Image = TexturePacks.load_texture(UiTheme.GUI + "titleLogo.png").get_image()
+## The logo: a texture pack's title/mclogo.png drawn like Beta's (its two
+## halves, "MINEC" and "RAFT", side by side), else the game's own.
+static func _logo_image() -> Image:
+	var pack := TexturePacks.pack_image("title/mclogo.png")
+	if pack:
+		var logo := Image.create_empty(310, 44, false, Image.FORMAT_RGBA8)
+		logo.blit_rect(pack, Rect2i(0, 0, 155, 44), Vector2i(0, 0))
+		logo.blit_rect(pack, Rect2i(0, 45, 155, 44), Vector2i(155, 0))
+		return logo
+	var image: Image = (load("res://assets/textures/extra/title_logo.png") as Texture2D).get_image()
 	if image.is_compressed():
 		image.decompress()
+	return image
+
+
+## The intro picture: a texture pack's title/mojang.png on white like
+## Beta's, else the game's own.
+static func _intro_picture() -> Texture2D:
+	var pack := TexturePacks.pack_image("title/mojang.png")
+	if pack == null:
+		return load("res://assets/textures/extra/title_intro.png")
+	var screen := Image.create_empty(480, 270, false, Image.FORMAT_RGBA8)
+	screen.fill(Color.WHITE)
+	screen.blend_rect(pack, Rect2i(Vector2i.ZERO, pack.get_size()), (screen.get_size() - pack.get_size()) / 2)
+	return ImageTexture.create_from_image(screen)
+
+
+## The logo image is large and smooth: scaled down once with a good filter.
+func _scaled_logo() -> Texture2D:
+	var image := _logo_image()
 	var scale := float(LOGO_WIDTH) / image.get_width()
 	var screen_scale := get_tree().root.content_scale_factor
 	# Rendered at screen pixels, shown at UI size: sharp on Retina.
@@ -215,8 +240,6 @@ func _play(save: WorldSave) -> void:
 		return
 	_starting = true
 	save.last_played = int(Time.get_unix_time_from_system())
-	if save.needs_height_upgrade():
-		save.upgrade_height() # made when the world was 128 high
 	save.write_level()
 	WorldSave.current = save
 	var tween := create_tween()

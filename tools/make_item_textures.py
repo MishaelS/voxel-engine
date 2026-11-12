@@ -3,11 +3,11 @@
   time of day behind the clock icon's window (ItemAnimations): the day sky
   with the sun on top, the night with the moon below, like the classic
   clock.
-- assets/textures/misc/map_background.png: the parchment a map is drawn
+- assets/textures/misc/mapbg.png: the parchment a map is drawn
   on in hand;
 - assets/textures/environment/rain.png and snow.png: the falling rain
   streaks and snowflakes the weather draws (64 x 64, repeating);
-- assets/textures/art/paintings.png: our own paintings (little landscapes,
+- assets/textures/art/kz.png: our own paintings (at the places of Beta 1.7.3's) (little landscapes,
   256 x 256, 16 pixels per block) at the places PAINTINGS lists (the same
   table as scripts/entities/painting.gd); the cell at the top right is
   the wooden back.
@@ -68,7 +68,7 @@ def map_background(root):
             k = 1 + rng.uniform(-0.05, 0.05)
             img[y, x, :3] = np.clip(base * k, 0, 255)
             img[y, x, 3] = 255
-    save(img, os.path.join(root, "misc", "map_background.png"))
+    save(img, os.path.join(root, "misc", "mapbg.png"))
 
 
 # name: (width, height in blocks, cell x, cell y, scene)
@@ -238,7 +238,21 @@ def paintings(root):
             shade = 0.85 if y % 4 == 0 else 1.0
             img[y, 240 + x, :3] = np.clip(np.array((150, 110, 65)) * shade + rng.integers(-8, 9), 0, 255)
             img[y, 240 + x, 3] = 255
-    save(img, os.path.join(root, "art", "paintings.png"))
+    # Put at the places of Beta's kz.png (Painting.ARTS): old cell -> new cell.
+    kz = np.zeros_like(img)
+    kz[0:16, 192:208] = img[0:16, 240:256]  # the back
+    for name, (bw, bh, cx, cy, _spec) in PAINTINGS.items():
+        nx, ny = KZ_PLACES.get(name, (cx, cy))
+        kz[ny * 16:(ny + bh) * 16, nx * 16:(nx + bw) * 16] = img[cy * 16:(cy + bh) * 16, cx * 16:(cx + bw) * 16]
+    save(kz, os.path.join(root, "art", "kz.png"))
+
+
+# Where each picture is in kz.png (16 px cells), like Beta's pictures of its size.
+KZ_PLACES = {
+    "hills": (0, 2), "sea": (2, 2), "desert": (4, 2), "road": (6, 2), "clouds": (8, 2),
+    "waterfall": (0, 4), "tree": (1, 4), "mountain": (0, 8), "village": (2, 8), "storm": (4, 8), "garden": (6, 8),
+    "panorama": (0, 6), "river_valley": (12, 4), "night_sky": (0, 12), "volcano": (4, 12),
+}
 
 
 def weather(root):

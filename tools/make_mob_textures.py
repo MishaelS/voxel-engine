@@ -1,4 +1,4 @@
-"""Draws the mob textures (assets/textures/mobs/*.png, 64 x 64, or the model's
+"""Draws the mob textures (assets/textures/mob/*.png and the others at their Beta 1.7.3 places, 64 x 64, or the model's
 "texture_size": the minecart and the boat) from the
 model definitions (assets/models/mobs.json): each part's box is unfolded
 like the game's skins (top and bottom squares, then the strip -X, front +Z,
@@ -9,7 +9,7 @@ classic game's mobs. Replace any file with a hand-drawn skin (same layout).
 Textures that are already there (drawn by hand or taken from elsewhere)
 are kept; name them after the output folder to redraw them anyway.
 
-Usage: python3 tools/make_mob_textures.py assets/models/mobs.json assets/textures/mobs [texture ...]
+Usage: python3 tools/make_mob_textures.py assets/models/mobs.json assets/textures [texture ...]
 Needs Pillow and numpy.
 """
 import json
@@ -161,19 +161,29 @@ def paint(models, mob, part_list, img, texture):
                 face(img, mob, rects["front"])
 
 
+# The model textures' files, where Beta 1.7.3 has them (out_dir: assets/textures).
+FILES = {"player": "mob/char.png", "pale_wolf": "mob/wolf.png", "saddle_pig": "mob/saddle.png",
+         "boat": "item/boat.png", "minecart": "item/cart.png", "wolf_collar": "extra/wolf_collar.png"}
+
+
+def file_of(texture):
+    return FILES.get(texture, "mob/" + texture + ".png")
+
+
 def main(models_path, out_dir, redraw=()):
     models = json.load(open(models_path))
     os.makedirs(out_dir, exist_ok=True)
     for mob, model in models.items():
         textures = {p.get("texture", mob) for p in model["parts"]}
         for texture in textures:
-            path = os.path.join(out_dir, texture + ".png")
+            path = os.path.join(out_dir, file_of(texture))
             if texture not in PALETTES or (os.path.exists(path) and texture not in redraw):
                 continue
             width, height = model.get("texture_size", [64, 64])
             img = np.zeros((height, width, 4), np.uint8)
             paint(models, mob, model["parts"], img, texture)
-            Image.fromarray(img).save(os.path.join(out_dir, texture + ".png"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            Image.fromarray(img).save(path)
             print("wrote", texture)
 
 

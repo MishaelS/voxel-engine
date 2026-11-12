@@ -173,7 +173,7 @@ func _choose(category: String, pos: Vector3i) -> String:
 				return "wolf"
 			return ANIMALS[randi_range(0, ANIMALS.size() - 1)]
 		_:
-			if pos.y < 40 + WorldGenerator.LEGACY_SHIFT and is_slime_chunk(world.world_generator.world_seed if world.world_generator else 0, pos.x >> 4, pos.z >> 4) \
+			if pos.y < 40 + world.sea_level - WorldGenerator.SEA_LEVEL and is_slime_chunk(world.world_generator.world_seed if world.world_generator else 0, pos.x >> 4, pos.z >> 4) \
 					and randi_range(0, 4) == 0:
 				return "slime"
 			return MONSTERS[randi_range(0, MONSTERS.size() - 1)]

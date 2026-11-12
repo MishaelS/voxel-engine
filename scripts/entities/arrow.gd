@@ -56,7 +56,7 @@ static var _mesh: ArrayMesh
 
 ## The arrow like the game's: two crossed pictures 16 x 5 pixels (feathers
 ## to tip along +Z) turned 45 degrees, and the 5 x 5 back seen from behind;
-## textures/entity/arrow.png (32 x 32), 0.05625 blocks a pixel.
+## textures/item/arrows.png (32 x 32, like Beta's), 0.05625 blocks a pixel.
 static func _arrow_mesh() -> ArrayMesh:
 	if _mesh:
 		return _mesh
@@ -76,7 +76,7 @@ static func _arrow_mesh() -> ArrayMesh:
 	_mesh = tool.commit()
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/entity_flat.gdshader")
-	material.set_shader_parameter("picture", TexturePacks.load_texture("res://assets/textures/entity/arrow.png"))
+	material.set_shader_parameter("picture", TexturePacks.load_texture("res://assets/textures/item/arrows.png"))
 	_mesh.surface_set_material(0, material)
 	return _mesh
 

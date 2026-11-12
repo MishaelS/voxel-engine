@@ -2,7 +2,7 @@ class_name LoadingScreen
 extends CanvasLayer
 ## Shown over the game while the world around the player is prepared, like
 ## the classic game's loading screen: the dark dirt background (with the
-## title screen's shade, gui/titleBlur.png), the current stage ("Generating
+## title screen's shade, extra/title_blur.png), the current stage ("Generating
 ## terrain", "Lighting the world", "Building terrain") and a thin progress
 ## bar - grey with a green fill -
 ## with the percentage under it. Pixel sparks fly out of the bar's growing
@@ -63,9 +63,9 @@ func _ready() -> void:
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	background.modulate = Color(0.25, 0.25, 0.25)
 	_root.add_child(background)
-	# The title screen's shade (gui/titleBlur.png): darker toward the bottom.
+	# The title screen's shade (extra/title_blur.png): darker toward the bottom.
 	var shade := TextureRect.new()
-	shade.texture = TexturePacks.load_texture(UiTheme.GUI + "titleBlur.png")
+	shade.texture = load("res://assets/textures/extra/title_blur.png")
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	shade.stretch_mode = TextureRect.STRETCH_SCALE

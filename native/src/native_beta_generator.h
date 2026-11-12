@@ -33,6 +33,8 @@ private:
 	bool tall = true;
 	int h = 192; // the classic part's height
 	int cells = 24;
+	int shift = 64; // where the classic part starts in the column
+	bool deep = true; // the deep layer under it (old 256 high worlds)
 	godot::Ref<godot::FastNoiseLite> noises[NOISE_COUNT];
 
 	// Block ids.
@@ -99,6 +101,10 @@ public:
 	// "grass_"), "leaves" (name ends with "_leaves").
 	void setup(const godot::Dictionary &config);
 	void set_tall(bool value);
+	// The world's layout (WorldSave.layout): the classic part `height` high
+	// from y `shift` up, mountains softened above the middle (`tall`), the deep
+	// layer under it (`deep`).
+	void set_layout(int shift, bool deep, int height, bool tall);
 	godot::PackedInt32Array generate_blocks(int cx, int cz) const;
 
 	// For checking: Godot's own generator against ours (seed, then a mix of

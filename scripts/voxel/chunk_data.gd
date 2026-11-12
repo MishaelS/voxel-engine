@@ -26,10 +26,44 @@ var light := PackedByteArray()
 var block_light := PackedByteArray()
 
 
+## Arrays every chunk of only air / of full sky light / of no light shares
+## (packed arrays copy on write: a chunk that changes gets its own). Most
+## of a 256 high world is sky: this keeps its memory to almost nothing.
+static var _air_blocks := _filled_ints(0)
+static var _full_light := _filled_bytes(15)
+static var _no_light := _filled_bytes(0)
+
+
+static func _filled_ints(value: int) -> PackedInt32Array:
+	var array := PackedInt32Array()
+	array.resize(VOLUME)
+	array.fill(value)
+	return array
+
+
+static func _filled_bytes(value: int) -> PackedByteArray:
+	var array := PackedByteArray()
+	array.resize(VOLUME)
+	array.fill(value)
+	return array
+
+
 func _init() -> void:
-	blocks.resize(VOLUME) # zero-filled = AIR
-	light.resize(VOLUME)
-	block_light.resize(VOLUME)
+	blocks = _air_blocks # (all AIR)
+	light = _no_light
+	block_light = _no_light
+
+
+## Shares the arrays that are all one value (after generating or lighting).
+func share_uniform() -> void:
+	if air_count == VOLUME:
+		blocks = _air_blocks
+	if light.count(15) == VOLUME:
+		light = _full_light
+	elif light.count(0) == VOLUME:
+		light = _no_light
+	if block_light.count(0) == VOLUME:
+		block_light = _no_light
 
 
 ## Layout: x changes fastest, then z, then y (horizontal layers).

@@ -3,7 +3,7 @@ extends RefCounted
 ## The chest model like the modern game (its chest block entity): a base
 ## 14 x 10 x 14 pixels, a lid 14 x 4 x 14 on top and a latch 2 x 4 x 1 on
 ## the front; a large chest is two halves 15 pixels wide each with a 1 pixel
-## latch at the seam. Textures come from assets/textures/chest-atlas.png,
+## latch at the seam. Textures come from assets/textures/extra/chest-atlas.png (the game's own: Beta draws chests as blocks),
 ## laid out like the game's chest textures (64 x 64 cells, box textures with
 ## the faces unfolded: two squares, then the side strip).
 ##
@@ -16,7 +16,7 @@ extends RefCounted
 ## down (their bottom row is the face's top), seen from outside left to
 ## right; the up and down squares run along -X.
 
-const ATLAS_PATH := "res://assets/textures/chest-atlas.png"
+const ATLAS_PATH := "res://assets/textures/extra/chest-atlas.png"
 ## First tile array layer of the chest faces (after the 16 x 16 atlas tiles).
 const FIRST_LAYER := 256
 

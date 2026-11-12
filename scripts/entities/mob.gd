@@ -569,6 +569,22 @@ func _update_wool() -> void:
 			instance.set_instance_shader_parameter("tint", WOOL_TINTS.get(wool_color, Color.WHITE))
 
 
+## A wolf's skin like Beta's: mob/wolf_tame.png when tame, wolf_angry.png
+## when angry, else wolf.png (a texture pack can draw each).
+var _wolf_skin := ""
+
+
+func _update_wolf_skin() -> void:
+	var skin := "wolf_tame" if tamed else ("wolf_angry" if angry else "")
+	if skin == _wolf_skin:
+		return
+	_wolf_skin = skin
+	var material: Material = MobModels.state_material("pale_wolf", skin) if skin != "" else null
+	for part: Dictionary in _model.spec.parts:
+		if part.get("texture", "pale_wolf") == "pale_wolf":
+			(_model.instances[part.name] as MeshInstance3D).material_override = material
+
+
 # --- Health ---------------------------------------------------------------------------
 
 func damage(amount: int, from: Variant = null) -> bool:
@@ -627,6 +643,8 @@ func _process(delta: float) -> void:
 	super(delta)
 	if _model.is_empty():
 		return
+	if mob_type == "wolf":
+		_update_wolf_skin()
 	var alpha := TickLoop.alpha
 	var moved := Vector2(_x - _prev.x, _z - _prev.z).length() if vehicle == null else 0.0 # carried, not walking
 	_limb_amount = lerpf(_limb_amount, minf(moved * 4.0, 1.0), minf(delta * 10.0, 1.0))

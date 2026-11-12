@@ -1,13 +1,13 @@
 """Draws the armor and player textures (our own simple pixel art):
-- assets/textures/gui/armor/armor0.png, armor1.png, armor2.png: the armor
+- assets/textures/extra/unused/armor/armor0.png, armor1.png, armor2.png: the armor
   bar's full, half and empty chestplate icons (9 x 9), like the classic
   HUD;
-- assets/textures/mobs/armor_<material>_1.png (helmet, chestplate, boots)
+- assets/textures/armor/<cloth|chain|iron|gold|diamond>_1.png (helmet, chestplate, boots)
   and armor_<material>_2.png (leggings), 64 x 64 in the biped skin layout
   (head at 0,0, body at 16,16, arm at 40,16, leg at 0,16), drawn over the
   player model a little bigger than its parts, like the game's armor
   layers; chainmail has holes;
-- assets/textures/mobs/player.png: the player's skin (the "player" model
+- assets/textures/mob/char.png: the player's skin (the "player" model
   in assets/models/mobs.json).
 
 Textures that are already there are kept (add --force to redraw them).
@@ -45,6 +45,8 @@ ICON = [
 
 
 FORCE = "--force" in sys.argv
+# Beta 1.7.3's names of the armor materials (armor/<name>_1.png).
+BETA = {"leather": "cloth", "chainmail": "chain", "golden": "gold"}
 
 
 def save(img, path):
@@ -138,7 +140,7 @@ def armor(out_dir):
         paint(img, leg["bottom"], rgb, holes=holes)
         for rect in sides(leg):
             paint(img, rect, rgb, rows=range(8, 12), holes=holes)
-        save(img, os.path.join(out_dir, f"armor_{material}_1.png"))
+        save(img, os.path.join(out_dir, f"{BETA.get(material, material)}_1.png"))
         # Layer 2: leggings.
         img = np.zeros((64, 64, 4), np.uint8)
         for rect in [body["bottom"]] + sides(body):
@@ -146,7 +148,7 @@ def armor(out_dir):
         paint(img, leg["top"], rgb, holes=holes)
         for rect in sides(leg):
             paint(img, rect, rgb, rows=range(0, 9), holes=holes)
-        save(img, os.path.join(out_dir, f"armor_{material}_2.png"))
+        save(img, os.path.join(out_dir, f"{BETA.get(material, material)}_2.png"))
 
 
 def player(out_dir):
@@ -186,12 +188,12 @@ def player(out_dir):
         paint(img, leg["bottom"], shoes)
         for rect in sides(leg):
             paint(img, rect, shoes, rows=range(10, 12))
-    save(img, os.path.join(out_dir, "player.png"))
+    save(img, os.path.join(out_dir, "char.png"))
 
 
 if __name__ == "__main__":
     root = sys.argv[1]
-    icons(os.path.join(root, "gui", "armor"))
-    bubbles(os.path.join(root, "gui", "bubble"))
-    armor(os.path.join(root, "mobs"))
-    player(os.path.join(root, "mobs"))
+    icons(os.path.join(root, "extra", "unused", "armor"))
+    bubbles(os.path.join(root, "extra", "unused", "bubble"))
+    armor(os.path.join(root, "armor"))
+    player(os.path.join(root, "mob"))

@@ -540,7 +540,62 @@ Array NativeLight::relight_edits(bool sky, const PackedInt32Array &positions, in
 	return area_result(area);
 }
 
+PackedInt32Array NativeLight::heightmap(const PackedInt32Array &blocks, const PackedByteArray &opacity) {
+	PackedInt32Array heights;
+	heights.resize(256);
+	ERR_FAIL_COND_V(blocks.size() < 256 * H, heights);
+	const int32_t *b = blocks.ptr();
+	const uint8_t *op = opacity.ptr();
+	const int64_t op_size = opacity.size();
+	int32_t *out = heights.ptrw();
+	for (int column = 0; column < 256; column++) {
+		int top = -1;
+		for (int y = H - 1; y >= 0; y--) {
+			const int32_t id = b[column + 256 * y];
+			if (id >= 0 && id < op_size && op[id] > 0) {
+				top = y;
+				break;
+			}
+		}
+		out[column] = top;
+	}
+	return heights;
+}
+
+PackedInt32Array NativeLight::chunk_counts(const PackedInt32Array &blocks, const PackedByteArray &ticks,
+		const PackedByteArray &emission) {
+	PackedInt32Array counts;
+	counts.resize(CHUNKS * 3);
+	ERR_FAIL_COND_V(blocks.size() < 256 * H, counts);
+	const int32_t *b = blocks.ptr();
+	const uint8_t *t = ticks.ptr();
+	const uint8_t *e = emission.ptr();
+	const int64_t t_size = ticks.size(), e_size = emission.size();
+	int32_t *out = counts.ptrw();
+	for (int k = 0; k < CHUNKS; k++) {
+		int air = 0, tick = 0, glow = 0;
+		for (int i = k * VOLUME; i < (k + 1) * VOLUME; i++) {
+			const int32_t id = b[i];
+			if (id == 0) {
+				air++;
+				continue;
+			}
+			if (id > 0 && id < t_size)
+				tick += t[id];
+			if (id > 0 && id < e_size && e[id] > 0)
+				glow++;
+		}
+		out[k * 3] = air;
+		out[k * 3 + 1] = tick;
+		out[k * 3 + 2] = glow;
+	}
+	return counts;
+}
+
 void NativeLight::_bind_methods() {
+	ClassDB::bind_static_method("NativeLight", D_METHOD("heightmap", "blocks", "opacity"), &NativeLight::heightmap);
+	ClassDB::bind_static_method("NativeLight", D_METHOD("chunk_counts", "blocks", "ticks", "emission"),
+			&NativeLight::chunk_counts);
 	ClassDB::bind_static_method("NativeLight", D_METHOD("compute_column", "chunks", "heights", "glowing", "opacity", "emission"),
 			&NativeLight::compute_column);
 	ClassDB::bind_static_method("NativeLight", D_METHOD("relight_edit", "sky", "pos", "blocks", "light", "opacity", "emission"),

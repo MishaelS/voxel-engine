@@ -51,7 +51,7 @@ static func grow(world: VoxelWorld, pos: Vector3i, kind: String, rng: RandomNumb
 						continue
 					blocks[pos + Vector3i(x, y, z)] = leaves
 	# Room for the trunk: air, plants or the sapling itself.
-	if pos.y + height + 2 >= WorldGenerator.HEIGHT:
+	if pos.y + height + 2 >= world.height:
 		return false
 	for y in height:
 		var there := world.get_block(pos + Vector3i(0, y, 0))

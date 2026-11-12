@@ -1,4 +1,4 @@
-"""Draws the title logo (assets/textures/gui/titleLogo.png) the way the
+"""Draws the title logo (assets/textures/extra/title_logo.png) the way the
 classic logo was made: every letter is built from blocks on a grid, each
 block shows the stone texture on its face, with a darker 3D side below it,
 a crisp black outline and a soft shadow. The lower line uses smaller blocks.
@@ -6,7 +6,7 @@ a crisp black outline and a soft shadow. The lower line uses smaller blocks.
 Pixel art: drawn at native size (CELL texels per block) and scaled up by
 SCALE with nearest neighbour, so it stays sharp.
 
-Usage: python3 tools/make_title_logo.py assets/textures/terrain.png assets/textures/gui/titleLogo.png
+Usage: python3 tools/make_title_logo.py assets/textures/terrain.png assets/textures/extra/title_logo.png
 Needs Pillow and numpy.
 """
 import random

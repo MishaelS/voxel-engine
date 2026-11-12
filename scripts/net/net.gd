@@ -418,7 +418,7 @@ func _hello(joining_name: String, version: String, tag: String) -> void:
 	var save := world.save
 	_welcome.rpc_id(id, {
 		"name": save.name if save else "World", "seed": world.world_seed, "generator": world.generator,
-		"tall": save.tall_terrain if save else true, "game_mode": lan_game_mode, "cheats": cheats,
+		"tall": save.tall_terrain if save else false, "terrain": save.terrain if save else WorldSave.CLASSIC, "game_mode": lan_game_mode, "cheats": cheats,
 		"spawn": world.find_spawn(), # the world spawn (not the host's bed)
 		"game_time": world.clock.game_time, "day_time": world.clock.day_time,
 		"your_name": unique_name, "player": saved_players.get(tag, {}),
@@ -453,7 +453,9 @@ func _welcome(info: Dictionary) -> void:
 	save.name = info.get("name", "World")
 	save.world_seed = info.get("seed", 0)
 	save.generator = info.get("generator", 0)
-	save.tall_terrain = info.get("tall", true)
+	save.tall_terrain = info.get("tall", false)
+	save.terrain = info.get("terrain", WorldSave.CLASSIC)
+	save.height = int(save.layout().height)
 	save.game_mode = info.get("game_mode", 0)
 	var saved_player: Dictionary = info.get("player", {})
 	save.state = {"player": saved_player if not saved_player.is_empty() else {"position": info.get("spawn", Vector3(8, 140, 8))}}

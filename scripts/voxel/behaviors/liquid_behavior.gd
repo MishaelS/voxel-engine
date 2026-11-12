@@ -167,7 +167,7 @@ static func _flow_into(world: VoxelWorld, pos: Vector3i, family: String, level: 
 
 ## Air or a plant in a loaded chunk: liquid can move in.
 static func _can_flow_into(world: VoxelWorld, pos: Vector3i) -> bool:
-	if pos.y < 0 or pos.y >= WorldGenerator.HEIGHT or not world.is_inside(pos):
+	if pos.y < 0 or pos.y >= world.height or not world.is_inside(pos):
 		return false
 	var id := world.get_block(pos)
 	return id == Blocks.AIR or Blocks.replaceable_table[id] == 1
@@ -175,7 +175,7 @@ static func _can_flow_into(world: VoxelWorld, pos: Vector3i) -> bool:
 
 ## Anything but air, plants and the same liquid stops it (unloaded chunks too).
 static func _blocks_flow(world: VoxelWorld, pos: Vector3i, family: String) -> bool:
-	if pos.y < 0 or pos.y >= WorldGenerator.HEIGHT or not world.is_inside(pos):
+	if pos.y < 0 or pos.y >= world.height or not world.is_inside(pos):
 		return true
 	var id := world.get_block(pos)
 	if id == Blocks.AIR or Blocks.replaceable_table[id] == 1:

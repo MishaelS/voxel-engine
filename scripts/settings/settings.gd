@@ -59,6 +59,9 @@ func _register_all() -> void:
 	define("texture_packs", Setting.choice("texture_pack", "Texture Pack", TexturePacks.choices(), 0))
 	define("video", Setting.range_of("render_distance", "Render Distance", 2, 16, 6) \
 		.format_with(func(v: float) -> String: return Lang.t("%d chunks") % int(v)))
+	# Far terrain (FarTerrain): the land beyond the render distance, simplified.
+	define("video", Setting.choice("far_terrain", "Far Terrain",
+		PackedStringArray(["OFF", "16 chunks", "24 chunks", "32 chunks"]), 1))
 	define("video", Setting.choice("smooth_lighting", "Smooth Lighting",
 		PackedStringArray(["OFF", "Minimum", "Maximum"]), 2))
 	define("video", Setting.choice("max_fps", "Max Framerate",

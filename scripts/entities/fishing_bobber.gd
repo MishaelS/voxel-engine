@@ -10,7 +10,7 @@ extends Entity
 ## - it is gone when reeled in, when the player stops holding the rod or
 ##   goes more than 32 blocks away.
 ## A thin line goes from the rod to the bobber; the bobber is the game's
-## picture (textures/entity/fishing_bobber.png).
+## picture (in particles.png at 8, 16, like Beta's).
 
 const BITE_CHANCE := 500
 const MAX_DISTANCE := 32.0
@@ -50,7 +50,8 @@ func _ready() -> void:
 	height = 0.25
 	# The game's bobber: its 8 x 8 picture always facing the camera.
 	_sprite = Sprite3D.new()
-	_sprite.texture = TexturePacks.load_texture("res://assets/textures/entity/fishing_bobber.png")
+	# The hook in particles.png, at its Beta place.
+	_sprite.texture = ImageTexture.create_from_image(TexturePacks.region("particles.png", Rect2i(8, 16, 8, 8)))
 	_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	_sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD

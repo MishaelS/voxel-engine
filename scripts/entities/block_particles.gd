@@ -7,7 +7,7 @@ extends Node3D
 ## - a lit furnace gives off smoke and flames;
 ## - smoke, flames, lava sparks, hearts, notes, splashes, explosions and the
 ##   fight (hurt hearts, critical hits, the sword's sweep) are pictures of
-##   the particle atlas (textures/particles-atlas.png, the game's), animated
+##   the particle atlas (textures/extra/particles-atlas.png, the game's), animated
 ##   frame by frame like the game's (smoke shrinks as it rises, the sweep
 ##   swings, explosion puffs fade).
 ## - lava bubbles (embers, pops), rain and snow hiss into steam on lava, fire
@@ -30,7 +30,7 @@ const GRAVITY := 0.04
 
 enum Kind { TILE, ITEM, PLAIN }
 
-const ATLAS_PATH := "res://assets/textures/particles-atlas.png"
+const ATLAS_PATH := "res://assets/textures/extra/particles-atlas.png"
 const ATLAS_SIZE := Vector2(512, 256)
 ## Picture size codes (particle.gdshader): 8 x 8, 16 x 16, 32 x 16 pixels.
 enum Picture { SMALL, BIG, WIDE }
@@ -53,6 +53,34 @@ const ANIMS := [
 	[Picture.BIG, [[0, 224], [16, 224], [32, 224], [48, 224], [64, 224], [80, 224], [96, 224], [112, 224]]],
 	[Picture.SMALL, [[288, 128], [288, 136], [288, 144], [288, 152]]],
 ]
+
+## Where Beta 1.7.3's particles.png has the pictures the atlas has (a
+## texture pack's particles.png draws them): atlas [x, y] -> Beta cell
+## (8 x 8 pixels, index = row * 16 + column, like the game's
+## particleTextureIndex). Smoke: Beta's cells 7..0, big to small.
+const BETA_CELLS := [
+	[[272, 184], 7], [[272, 176], 6], [[272, 168], 5], [[272, 160], 4],
+	[[272, 152], 3], [[272, 144], 2], [[272, 136], 1], [[272, 128], 0],
+	[[288, 128], 19], [[288, 136], 20], [[288, 144], 21], [[288, 152], 22], # rain splashes
+	[[272, 48], 48], [[272, 216], 49], [[272, 232], 64], [[272, 200], 80], # flame, lava, note, heart
+]
+
+
+## The atlas: the game's, with a texture pack's particles.png pictures put
+## in at their places (BETA_CELLS); the game's own (critical hits, the
+## sweep, big smoke) stay.
+static func atlas_texture() -> Texture2D:
+	var pack := TexturePacks.pack_image("particles.png")
+	if pack == null:
+		return TexturePacks.load_texture(ATLAS_PATH)
+	var atlas := TexturePacks.load_image(ATLAS_PATH)
+	for entry: Array in BETA_CELLS:
+		var cell: int = entry[1]
+		var at := Vector2i(entry[0][0], entry[0][1])
+		atlas.fill_rect(Rect2i(at, Vector2i(8, 8)), Color(0, 0, 0, 0))
+		atlas.blit_rect(pack, Rect2i((cell % 16) * 8, (cell / 16) * 8, 8, 8), at)
+	return ImageTexture.create_from_image(atlas)
+
 
 var world: VoxelWorld
 
@@ -79,7 +107,7 @@ func _ready() -> void:
 	_material.shader = preload("res://shaders/particle.gdshader")
 	_material.set_shader_parameter("tiles", BlockMaterials.tiles())
 	_material.set_shader_parameter("items", Items.icons_texture())
-	_material.set_shader_parameter("atlas", TexturePacks.load_texture(ATLAS_PATH))
+	_material.set_shader_parameter("atlas", atlas_texture())
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	quad.material = _material

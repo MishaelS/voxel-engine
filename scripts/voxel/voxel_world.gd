@@ -1,6 +1,7 @@
 class_name VoxelWorld
 extends Node3D
-## An endless world of 16^3 chunks, 128 blocks high (columns of 8 chunks),
+## An endless world of 16^3 chunks in columns of 16 (256 blocks; classic
+## worlds use the lower 128 like Beta 1.7.3, see `height`),
 ## loaded around the player; its clock and everything that happens in ticks.
 ##
 ## Streaming, all on worker threads, nearest first:
@@ -88,6 +89,12 @@ var next_map_id := 0
 ## Where this world is saved (WorldSave.current when started from the
 ## title screen); null = not saved.
 var save: WorldSave
+## The simplified land beyond the render distance (the "far_terrain" setting).
+var far_terrain: FarTerrain
+## The world's height (no blocks at or above it: 128 in classic worlds like
+## Beta 1.7.3) and sea level (WorldSave.layout).
+var height := 128
+var sea_level := 64
 ## A network game's client (Net): the host runs the world; this one draws
 ## it, asks the host for changed columns, sends its player's edits and runs
 ## no world ticks of its own.
@@ -253,7 +260,7 @@ class GenerationJob:
 		if blocks.is_empty() and save and save.has_column(column):
 			blocks = save.load_column(column) # generated or changed before: saved
 		if blocks.size() == WorldGenerator.LEGACY_VOLUME:
-			# Saved when the world was 128 high: moved up onto the new deep layer.
+			# Saved 128 high: air above (classic), or up onto the deep layer (old).
 			blocks = generator.convert_legacy(column.x, column.y, blocks)
 			save.save_column(column, blocks)
 		elif blocks.is_empty():
@@ -291,6 +298,10 @@ func _ready() -> void:
 	weather_effects.name = "WeatherEffects"
 	weather_effects.world = self
 	add_child(weather_effects)
+	far_terrain = FarTerrain.new()
+	far_terrain.name = "FarTerrain"
+	far_terrain.world = self
+	add_child(far_terrain)
 	entities = EntityManager.new()
 	entities.name = "Entities"
 	entities.world = self
@@ -386,10 +397,13 @@ func generate() -> void:
 	_connectivity.clear()
 	_cull_dirty = true
 	_restore_state()
+	var layout := save.layout() if save else WorldSave.layout_of(WorldSave.CLASSIC)
+	height = layout.height
+	sea_level = layout.sea
 	match generator:
 		Generator.BETA:
 			var beta := BetaGenerator.new(world_seed)
-			beta.set_tall(save.tall_terrain if save else true)
+			beta.set_layout(layout)
 			world_generator = beta
 		Generator.RANDOM_BLOCKS:
 			world_generator = RandomBlocksGenerator.new(world_seed, random_density)
@@ -412,7 +426,7 @@ const SPAWN_SEARCH_RADIUS := 6
 
 func find_spawn() -> Vector3:
 	if remote:
-		return Net.world_info.get("spawn", Vector3(8.5, WorldGenerator.SEA_LEVEL + 1.0, 8.5))
+		return Net.world_info.get("spawn", Vector3(8.5, sea_level + 1.0, 8.5))
 	if generator == Generator.RANDOM_BLOCKS:
 		_generate_now(Vector2i.ZERO)
 		return Vector3(24, 20, 24)
@@ -427,9 +441,9 @@ func find_spawn() -> Vector3:
 					var x: int = column.x * 16 + local.x
 					var z: int = column.y * 16 + local.y
 					var top := _top_block_y(x, z)
-					if top >= WorldGenerator.SEA_LEVEL - 1 and get_block(Vector3i(x, top, z)) != _water:
+					if top >= sea_level - 1 and get_block(Vector3i(x, top, z)) != _water:
 						return Vector3(x + 0.5, top + 1.0, z + 0.5) # feet on the block
-	return Vector3(8.5, WorldGenerator.SEA_LEVEL + 1.0, 8.5)
+	return Vector3(8.5, sea_level + 1.0, 8.5)
 
 
 func _generate_now(column: Vector2i) -> void:
@@ -539,6 +553,11 @@ func _update_streaming() -> void:
 				near_other = near_other or (absi(column.x - other.x) <= REMOTE_RADIUS + 2 and absi(column.y - other.y) <= REMOTE_RADIUS + 2)
 			if not near_other:
 				_unload_column(column)
+
+
+## No column near the player waits to be generated (far work may start).
+func is_streaming_idle() -> bool:
+	return _wanted_columns.is_empty() and _gen_jobs.is_empty() and _remote_waiting.is_empty()
 
 
 func _start_generation_jobs() -> void:
@@ -731,6 +750,7 @@ func _finish_light_jobs() -> void:
 			if data:
 				data.light = job.light[k]
 				data.block_light = job.block_light[k]
+				data.share_uniform()
 		if _lit.has(column):
 			# Lit again after far changes: its chunks show the new light.
 			for k in WorldGenerator.HEIGHT_CHUNKS:
@@ -1239,6 +1259,8 @@ func _ray_shape_hit(origin: Vector3, dir: Vector3, pos: Vector3i, id: int, norma
 ## for re-meshing its chunk and the neighbor chunks that see it (their
 ## border faces and AO). Ignored where no chunk is loaded.
 func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
+	if pos.y >= height and id != Blocks.AIR:
+		return # above the world (classic worlds: 128, like Beta 1.7.3)
 	var coord := chunk_coord_of(pos)
 	var data: ChunkData = _chunks.get(coord)
 	if data == null:
@@ -1938,7 +1960,7 @@ func _rebuild_mesh_queue() -> void:
 	var queue_start := Time.get_ticks_usec()
 	_mesh_queue.clear()
 	_mesh_backlog.clear() # everything waiting is sorted again here
-	var center := Vector3(_player_column.x, (player.global_position.y if player else float(WorldGenerator.SEA_LEVEL)) / ChunkData.SIZE, _player_column.y)
+	var center := Vector3(_player_column.x, (player.global_position.y if player else float(sea_level)) / ChunkData.SIZE, _player_column.y)
 	var meshable_columns := {} # Vector2i -> bool, checked once per column
 	var view: Vector3 = player.look_direction() if player and player.has_method("look_direction") else Vector3.ZERO
 	var keys := PackedInt64Array()

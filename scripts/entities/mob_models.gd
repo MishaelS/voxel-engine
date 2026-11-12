@@ -18,7 +18,24 @@ extends RefCounted
 ##   outer jelly).
 
 const MODELS_PATH := "res://assets/models/mobs.json"
-const SKINS := "res://assets/textures/mobs/"
+const SKINS := "res://assets/textures/"
+## The skins' files, where Beta 1.7.3 has them (TexturePacks): mob/<name>.png
+## unless named here.
+const SKIN_FILES := {
+	"player": "mob/char.png", "pale_wolf": "mob/wolf.png", "saddle_pig": "mob/saddle.png",
+	"boat": "item/boat.png", "minecart": "item/cart.png", "wolf_collar": "extra/wolf_collar.png",
+}
+
+
+## A skin's file: mob/zombie.png, armor/iron_1.png (armor_iron_1)...
+static func skin_path(texture: String) -> String:
+	if SKIN_FILES.has(texture):
+		return SKINS + SKIN_FILES[texture]
+	if texture.begins_with("armor_"):
+		var parts := texture.split("_") # armor_<material>_<1|2>
+		var material: String = {"leather": "cloth", "chainmail": "chain", "golden": "gold"}.get(parts[1], parts[1])
+		return SKINS + "armor/%s_%s.png" % [material, parts[2]]
+	return SKINS + "mob/" + texture + ".png"
 
 static var _models := {}
 static var _meshes := {} # "mob/part" -> ArrayMesh
@@ -127,7 +144,7 @@ static func _v(a: Array) -> Vector3:
 
 ## A skin's size in pixels (64 x 64, or 64 x 32 for the classic ones).
 static func _skin_size(texture: String) -> Vector2:
-	var image := TexturePacks.load_texture(SKINS + texture + ".png")
+	var image := default_skin(texture)
 	return Vector2(image.get_size()) if image else Vector2(64, 64)
 
 
@@ -153,7 +170,28 @@ static func skin_texture(texture: String) -> Texture2D:
 
 
 static func default_skin(texture: String) -> Texture2D:
-	return TexturePacks.load_texture(SKINS + texture + ".png")
+	var skin := TexturePacks.load_texture(skin_path(texture))
+	if texture == "player" and skin and skin.get_height() == 32:
+		# A texture pack's classic 64 x 32 char.png: widened like the
+		# player's own skins (the left arm and leg copied).
+		if not _wide_skins.has(skin):
+			var image := skin.get_image()
+			PlayerProfile.normalize_skin(image)
+			_wide_skins[skin] = ImageTexture.create_from_image(image)
+		return _wide_skins[skin]
+	return skin
+
+
+static var _wide_skins := {}
+
+
+## The material of `texture`'s parts drawn with another skin of the same
+## layout (a wolf's tame and angry skins), kept for all of them.
+static func state_material(texture: String, skin: String) -> ShaderMaterial:
+	var key := texture + "@" + skin
+	if not _materials.has(key):
+		_materials[key] = material_with_skin(texture, default_skin(skin))
+	return _materials[key]
 
 
 ## Replaces a model's skin everywhere it is drawn (null: back to its file).

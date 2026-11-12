@@ -4,17 +4,23 @@ extends RefCounted
 ## (16 x HEIGHT x 16 blocks) at a time; columns are generated on worker
 ## threads, so generate_blocks() must only read shared state.
 
+## The columns' storage: 256 high, whatever the world's own height
+## (WorldSave.layout: classic worlds 128 like Beta 1.7.3, the rest above air).
 const HEIGHT := 256
 const HEIGHT_CHUNKS := HEIGHT / ChunkData.SIZE
-const SEA_LEVEL := 128
+## The sea of classic and tall worlds (the old 256 high worlds: 128).
+const SEA_LEVEL := 64
 const COLUMN_VOLUME := ChunkData.SIZE * ChunkData.SIZE * HEIGHT
-## Worlds made when the world was 128 high (sea at 64): their blocks are
-## LEGACY_SHIFT lower; converted on load (convert_legacy, WorldSave).
+## Columns saved 128 high (classic worlds from before, and old worlds
+## from before they became 256 high, LEGACY_SHIFT lower): convert_legacy.
 const LEGACY_HEIGHT := 128
 const LEGACY_SHIFT := 64
 const LEGACY_VOLUME := ChunkData.SIZE * ChunkData.SIZE * LEGACY_HEIGHT
 
 var world_seed := 0
+## Where a column saved 128 high goes (WorldSave.layout "shift"): 0 in
+## classic worlds, LEGACY_SHIFT up onto the deep layer in old ones.
+var legacy_shift := LEGACY_SHIFT
 
 
 func _init(seed_value: int) -> void:
@@ -41,6 +47,11 @@ func column_colors(_cx: int, _cz: int) -> Array[PackedColorArray]:
 ## under it and air above, both from the generator (which makes the same
 ## terrain there in converted worlds).
 func convert_legacy(cx: int, cz: int, old: PackedInt32Array) -> PackedInt32Array:
+	if legacy_shift == 0:
+		# A classic world's column: as it was, air above.
+		var padded := old.duplicate()
+		padded.resize(COLUMN_VOLUME)
+		return padded
 	var blocks := generate_blocks(cx, cz)
 	var bedrock := Blocks.id_of("bedrock")
 	var stone := Blocks.id_of("stone")
@@ -49,7 +60,7 @@ func convert_legacy(cx: int, cz: int, old: PackedInt32Array) -> PackedInt32Array
 			var id := old[i + 256 * y]
 			if y <= 4 and id == bedrock:
 				id = stone # the old floor turns to stone: no holes under old lava or water
-			blocks[i + 256 * (y + LEGACY_SHIFT)] = id
+			blocks[i + 256 * (y + legacy_shift)] = id
 	return blocks
 
 
@@ -61,6 +72,8 @@ func biome_name(_x: int, _z: int) -> String:
 ## Highest block that affects sky light (light opacity > 0) per block
 ## column, index x + 16 * z; -1 if none. Everything above it gets full sky.
 static func heightmap(blocks: PackedInt32Array) -> PackedInt32Array:
+	if _native_light:
+		return ClassDB.class_call_static("NativeLight", "heightmap", blocks, Blocks.light_opacity_table)
 	var opacity := Blocks.light_opacity_table
 	var heights := PackedInt32Array()
 	heights.resize(256)
@@ -84,12 +97,26 @@ func generate_column(cx: int, cz: int) -> Array[ChunkData]:
 ## Chunks of a generated column, bottom to top.
 static func split_column(blocks: PackedInt32Array) -> Array[ChunkData]:
 	var chunks: Array[ChunkData] = []
+	var counts := PackedInt32Array()
+	if _native_light:
+		counts = ClassDB.class_call_static("NativeLight", "chunk_counts", blocks, Blocks.ticks_randomly, Blocks.light_emission_table)
 	for k in HEIGHT_CHUNKS:
 		var chunk := ChunkData.new()
-		chunk.blocks = blocks.slice(k * ChunkData.VOLUME, (k + 1) * ChunkData.VOLUME)
-		chunk.count_tickable()
+		if counts.is_empty():
+			chunk.blocks = blocks.slice(k * ChunkData.VOLUME, (k + 1) * ChunkData.VOLUME)
+			chunk.count_tickable()
+		else:
+			chunk.air_count = counts[k * 3]
+			chunk.tickable_count = counts[k * 3 + 1]
+			chunk.glow_count = counts[k * 3 + 2]
+			if chunk.air_count < ChunkData.VOLUME: # (an empty one keeps the shared air)
+				chunk.blocks = blocks.slice(k * ChunkData.VOLUME, (k + 1) * ChunkData.VOLUME)
+		chunk.share_uniform()
 		chunks.append(chunk)
 	return chunks
+
+
+static var _native_light := ClassDB.class_exists("NativeLight")
 
 
 static func index(x: int, y: int, z: int) -> int:

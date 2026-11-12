@@ -1,11 +1,11 @@
-"""Draws the intro logo (assets/textures/gui/titleIntroLogo.png): white text
+"""Draws the intro logo (assets/textures/extra/title_intro.png): white text
 in a blocky font on red, in the style of the original studio logo.
 
 Glyphs are 5 units high with 1-unit strokes, built from rounded rectangles
 (white) and holes (red); outer corners round, inner corners nearly square,
 stepped joints. Rendered 4x supersampled for smooth edges.
 
-Usage: python3 tools/make_intro_logo.py "https://github.com/MishaelS" assets/textures/gui/titleIntroLogo.png
+Usage: python3 tools/make_intro_logo.py "https://github.com/MishaelS" assets/textures/extra/title_intro.png
 Needs Pillow. Add glyphs to G for other characters.
 """
 import math, sys

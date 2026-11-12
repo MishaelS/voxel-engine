@@ -102,6 +102,13 @@ tools/run.sh --release      # ... with the release build's short F3 screen
 ```
 `tools/build.sh` imports the project, exports the "macOS" preset, checks the signature and that the native library is inside; logs go to `build/import.log` and `build/export.log`.
 
+## World types and texture packs
+Create New World → World Type: **Default** is Beta 1.7.3's world, 128 blocks high with the sea at 64 (building stops at 128); **Tall Mountains** is the same land 256 high, the sea still at 64, mountains rising far above. Worlds made before (256 high, sea at 128) open as they were.
+
+Texture packs are Beta 1.7.3's: put a pack's `.zip` (or the folder, unpacked) into the pack folder (Options → Texture Packs → Open Pack Folder) and pick it there; it shows its `pack.png` and the two lines of `pack.txt` and is used from the next start. Every file of a Beta pack is used at its place (terrain, items, GUI, icons, mobs, armor, boat, minecart, arrows, paintings `art/kz.png`, rain, snow, clouds, grass and foliage colors, map, clock, pumpkin blur, sun, moon, title logo and Mojang screen); a picture of another size is scaled to Beta's. A pack's `particles.png` and `font/default.png` are used too (Cyrillic stays in the game's font).
+
+Video Settings → Far Terrain (16, 24 or 32 chunks) draws the land beyond the render distance simplified with the blocks' own textures, in 1, 2 and 4 block cells further and further out (`scripts/render/far_terrain.gd`).
+
 ## Multiplayer
 Open a world to the network from the pause menu ("Open to LAN", port 25565); others join from "Multiplayer" on the title screen (the address, or a game found on the local network). The host runs the world; see `scripts/net/net.gd`. Tab shows the players and their signal. The host's commands: `/players` (with each player's tag), `/kick <player>`, `/ban <player>` (bans that computer from this server), `/pardon <tag or name>`.
 
@@ -123,8 +130,7 @@ Without the library (`bin/libvoxel_native.framework`) the game uses the GDScript
 * `scripts/save/world_save.gd` - saved worlds: level.cfg (world, time, rules, player) and changed columns
 * `scripts/ui/title/` - title screen and its live world panorama
 * `scripts/ui/loading_screen.gd` - loading screen with the island that builds itself as the world loads
-* `assets/textures/terrain.png` - block texture atlas (16×16 tiles)
-* `assets/textures/sky/` - sun and moon textures (32×32, 8×8 disc with a halo)
+* `assets/textures/` - the game's textures laid out exactly like a Minecraft Beta 1.7.3 texture pack (`terrain.png`, `gui/`, `mob/`, `armor/`, `item/`, `misc/`, `environment/`, `terrain/sun.png`...), so they are the "Default" pack; `extra/` holds the game's own pictures Beta has no file for (the creative inventory, the particle and chest atlases, the title logo). See `scripts/render/texture_packs.gd`
 * `shaders/` - block shaders (opaque, cutout, translucent with animated water, icon, held block, cracks), sky, clouds, screen overlay
 * `scripts/voxel/blocks.gd` - block registry: all block types and their atlas tiles (with facings, flowing water levels, bed halves)
 * `scripts/items/` - item registry (tools, ingots, food, buckets, the bed) and the 3D shapes of flat items in hand
@@ -132,7 +138,7 @@ Without the library (`bin/libvoxel_native.framework`) the game uses the GDScript
 * `scripts/voxel/block_model.gd` - block models made of boxes; `scripts/voxel/block_light.gd` - light from glowing blocks
 * `scripts/entities/entity.gd`, `entity_manager.gd`, `entity_physics.gd` - entities (base for mobs) and box collision
 * `scripts/core/sounds.gd` - sound effects and music; `tools/make_sounds.py` - the placeholder sounds
-* `scripts/voxel/chest_model.gd` - the chest model (single and large) from `assets/textures/chest-atlas.png`
+* `scripts/voxel/chest_model.gd` - the chest model (single and large) from `assets/textures/extra/chest-atlas.png`
 * `scripts/entities/item_entities.gd`, `scripts/entities/block_particles.gd` - dropped items and particles
 * `scripts/voxel/behaviors/` - block behaviors: flowing water and lava, falling sand, grass, plants, leaf decay
 * `scripts/voxel/block_type.gd` - block type description (faces, overlay, tint, render layer)
@@ -140,7 +146,7 @@ Without the library (`bin/libvoxel_native.framework`) the game uses the GDScript
 * `scripts/voxel/chunk_data.gd` - block storage of a 16×16×16 chunk
 * `scripts/voxel/chunk_mesher.gd` - chunk meshing on a padded volume (neighbor borders): face culling, voxel AO and smooth sky light across chunks
 * `scripts/voxel/sky_light.gd` - sky light (0..15) for a column, computed from the 3x3 columns around it
-* `scripts/worldgen/world_generator.gd` - base of column generators (16 x 128 x 16)
+* `scripts/worldgen/world_generator.gd` - base of column generators (16 x 256 x 16 columns; `WorldSave.layout` sets the world's own height and sea)
 * `scripts/worldgen/beta_generator.gd` - Beta 1.7.3 style terrain, biomes, caves, ores, trees
 * `scripts/core/tick_loop.gd` - autoload: fixed-rate game tick loop (20 TPS), phases, freeze/step
 * `scripts/core/game_input.gd` - blocks gameplay input while typing

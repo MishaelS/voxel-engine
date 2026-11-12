@@ -27,11 +27,63 @@ static var _theme: Theme
 
 static func font() -> Font:
 	if _font == null:
-		_font = load(FONT_PATH)
-		_font.antialiasing = TextServer.FONT_ANTIALIASING_NONE
-		_font.hinting = TextServer.HINTING_NONE
-		_font.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+		var own: FontFile = load(FONT_PATH)
+		own.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+		own.hinting = TextServer.HINTING_NONE
+		own.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+		_font = own
+		var pack := pack_font()
+		if pack:
+			pack.fallbacks = [own] # (letters Beta's font has not: Cyrillic...)
+			_font = pack
 	return _font
+
+
+## Beta 1.7.3's characters after "~" in its font (font.txt): cell 32 + the
+## index in " !\"#...~" + this.
+const BETA_FONT_EXTRA := "⌂ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»"
+
+
+## A texture pack's font/default.png like Beta's: 16 x 16 cells of 8 x 8,
+## a letter as wide as its pixels reach (+1 apart, the space 4), drawn at
+## whole multiples of 8 pixels. Null without one.
+static func pack_font() -> FontFile:
+	var image := TexturePacks.pack_image("font/default.png")
+	if image == null:
+		return null
+	var font := FontFile.new()
+	font.fixed_size = 8
+	font.fixed_size_scale_mode = TextServer.FIXED_SIZE_SCALE_INTEGER_ONLY
+	font.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+	font.hinting = TextServer.HINTING_NONE
+	font.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+	var size := Vector2i(8, 0)
+	font.set_cache_ascent(0, 8, 7)
+	font.set_cache_descent(0, 8, 1)
+	font.set_texture_image(0, size, 0, image)
+	var chars := []
+	for code in range(32, 127):
+		chars.append(code)
+	for letter in BETA_FONT_EXTRA:
+		chars.append(letter.unicode_at(0))
+	for i in chars.size():
+		var cell := 32 + i
+		var origin := Vector2i((cell % 16) * 8, (cell / 16) * 8)
+		var width := 0
+		for x in range(7, -1, -1):
+			for y in 8:
+				if image.get_pixel(origin.x + x, origin.y + y).a > 0.0:
+					width = x + 1
+					break
+			if width > 0:
+				break
+		var glyph: int = chars[i]
+		font.set_glyph_advance(0, 8, glyph, Vector2(4 if glyph == 32 else width + 1, 0))
+		font.set_glyph_offset(0, size, glyph, Vector2(0, -7))
+		font.set_glyph_size(0, size, glyph, Vector2(8, 8))
+		font.set_glyph_uv_rect(0, size, glyph, Rect2(origin, Vector2(8, 8)))
+		font.set_glyph_texture_idx(0, size, glyph, 0)
+	return font
 
 
 static func theme() -> Theme:
@@ -123,11 +175,48 @@ static func release() -> void:
 	_font = null
 
 
+## The GUI pictures by name, and where they are in Beta 1.7.3's files
+## (TexturePacks): [file, rect], [file, size, [[rect, place]...]] (drawn in
+## pieces like Beta), or a file of the game's own (extra/).
+const GUI_PARTS := {
+	"hotbar.png": ["gui/gui.png", Rect2i(0, 0, 182, 22)],
+	"hotbarSelector.png": ["gui/gui.png", Rect2i(0, 22, 24, 24)],
+	"widgets/widget0.png": ["gui/gui.png", Rect2i(0, 46, 200, 20)], # disabled button
+	"widgets/widget1.png": ["gui/gui.png", Rect2i(0, 66, 200, 20)], # button
+	"widgets/widget2.png": ["gui/gui.png", Rect2i(0, 86, 200, 20)], # button under the mouse
+	# A slider's knob: the button's ends, like Beta's.
+	"widgets/widget3.png": ["gui/gui.png", Vector2i(7, 20), [[Rect2i(0, 66, 4, 20), Vector2i(0, 0)], [Rect2i(197, 66, 3, 20), Vector2i(4, 0)]]],
+	"widgets/widget4.png": ["gui/gui.png", Vector2i(7, 20), [[Rect2i(0, 86, 4, 20), Vector2i(0, 0)], [Rect2i(197, 86, 3, 20), Vector2i(4, 0)]]],
+	"cursor.png": ["gui/icons.png", Rect2i(2, 2, 11, 11)],
+	"optionsBackground.png": ["gui/background.png", Rect2i(0, 0, 16, 16)],
+	"container/container0.png": ["gui/inventory.png", Rect2i(0, 0, 176, 166)],
+	"container/container1.png": ["gui/crafting.png", Rect2i(0, 0, 176, 166)],
+	"container/container2.png": ["gui/furnace.png", Rect2i(0, 0, 176, 166)],
+	"container/fuelProgress.png": ["gui/furnace.png", Rect2i(176, 0, 14, 14)],
+	"container/smeltingProgress.png": ["gui/furnace.png", Rect2i(176, 14, 24, 17)],
+	# A chest: container.png's three rows and its inventory part, like Beta.
+	"container/container3.png": ["gui/container.png", Vector2i(176, 166), [[Rect2i(0, 0, 176, 71), Vector2i(0, 0)], [Rect2i(0, 127, 176, 95), Vector2i(0, 71)]]],
+	"container/container4.png": ["gui/container.png", Rect2i(0, 0, 176, 222)],
+	"container/dispenser.png": ["gui/trap.png", Rect2i(0, 0, 176, 166)],
+	"container/container5.png": "res://assets/textures/extra/creative.png",
+}
+
+
+## A GUI picture by name (GUI_PARTS), from the texture pack or the game.
+static func gui_image(name: String) -> Image:
+	var part: Variant = GUI_PARTS.get(name)
+	if part is String:
+		return TexturePacks.load_image(part)
+	if part is Array and (part as Array).size() == 2:
+		return TexturePacks.region(part[0], part[1])
+	if part is Array:
+		return TexturePacks.pieces(part[0], part[1], part[2])
+	return TexturePacks.load_image(GUI + name)
+
+
 ## A GUI texture scaled by PIXEL with nearest filtering.
 static func _scaled_texture(path: String) -> Texture2D:
-	var image: Image = TexturePacks.load_texture(GUI + path).get_image()
-	if image.is_compressed():
-		image.decompress()
+	var image := gui_image(path)
 	image.resize(image.get_width() * PIXEL, image.get_height() * PIXEL, Image.INTERPOLATE_NEAREST)
 	return ImageTexture.create_from_image(image)
 

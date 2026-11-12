@@ -13,7 +13,7 @@ const STEP := 8 * P ## icons overlap by one pixel
 const ICON := 9 * P
 const WIDTH := 182 * P
 const LOW_HEALTH := 4
-const ICONS_PATH := "res://assets/textures/icons.png"
+const ICONS_PATH := "res://assets/textures/gui/icons.png"
 
 @export var player: Player
 

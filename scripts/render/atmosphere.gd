@@ -160,7 +160,8 @@ func _update_fog(to_sun: Vector3) -> void:
 		environment.fog_depth_begin = 0.0
 		environment.fog_depth_end = WATER_FOG_END
 		return
-	var distance := float(Settings.get_value("render_distance")) * ChunkData.SIZE
+	# The fog ends at the far terrain's edge when it is on (FarTerrain).
+	var distance := float(maxi(int(Settings.get_value("render_distance")), FarTerrain.radius_setting())) * ChunkData.SIZE
 	environment.fog_enabled = Settings.get_value("fog")
 	if isometric or snapshot:
 		environment.fog_enabled = Settings.get_value("iso_fog") and not snapshot

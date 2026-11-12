@@ -7,7 +7,14 @@ extends MenuScreen
 ## empty seed is random, text is hashed.
 
 const MODES := ["Survival", "Creative"]
-const TYPES := ["Default", "Random Blocks"]
+## World types: [name, generator (VoxelWorld.Generator), terrain (WorldSave)].
+## Default is Beta 1.7.3's world, 128 high with the sea at 64; Tall
+## Mountains the same land 256 high.
+const TYPES := [
+	["Default", VoxelWorld.Generator.BETA, WorldSave.CLASSIC],
+	["Tall Mountains", VoxelWorld.Generator.BETA, WorldSave.TALL],
+	["Random Blocks", VoxelWorld.Generator.RANDOM_BLOCKS, WorldSave.CLASSIC],
+]
 const P := UiTheme.PIXEL
 const GRAY := Color("a0a0a0")
 
@@ -115,10 +122,11 @@ func _button(column: VBoxContainer, on_pressed: Callable) -> Button:
 
 func _update_labels() -> void:
 	_mode_button.text = Lang.t("Game Mode: %s") % Lang.t(MODES[_mode])
-	_type_button.text = Lang.t("World Type: %s") % Lang.t(TYPES[_type])
+	_type_button.text = Lang.t("World Type: %s") % Lang.t(TYPES[_type][0])
 	_cheats_button.text = Lang.t("Allow Cheats: %s") % Lang.t("ON" if _cheats else "OFF")
 
 
 func _create() -> void:
-	var save := WorldSave.create(_name.text, WorldSave.seed_from_text(_seed.text), _type, _mode, _cheats)
+	var save := WorldSave.create(_name.text, WorldSave.seed_from_text(_seed.text), TYPES[_type][1], _mode, _cheats,
+		TYPES[_type][2])
 	on_play.call(save)

@@ -503,6 +503,9 @@ func _place_cell() -> Variant:
 	if target.normal == Vector3i.ZERO:
 		return null
 	var pos: Vector3i = target.pos + target.normal
+	if pos.y >= world.height:
+		player.message.emit(Lang.t("Height limit for building is %d blocks") % world.height)
+		return null
 	if not world.is_inside(pos) or Blocks.collides_table[world.get_block(pos)] == 1:
 		return null
 	return pos

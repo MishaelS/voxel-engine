@@ -4,19 +4,37 @@ extends Entity
 ## of a block with a painting hangs one there, picked at random among the
 ## pictures that fit (solid wall behind every block of it, nothing in front,
 ## no other painting in the way). Hitting it, or losing the wall behind,
-## drops it as an item. Our own pictures (assets/textures/art/paintings.png,
-## tools/make_item_textures.py), 1x1 to 4x4 blocks.
+## drops it as an item. Our own pictures, at the places of Beta 1.7.3's in
+## art/kz.png (a texture pack's kz.png shows its pictures), 1x1 to 4x4 blocks.
 
-const ATLAS := "res://assets/textures/art/paintings.png"
+const ATLAS := "res://assets/textures/art/kz.png"
 ## name -> [width, height (blocks), cell x, cell y (16 px cells)].
 const ARTS := {
 	"sunrise": [1, 1, 0, 0], "lake": [1, 1, 1, 0], "flower": [1, 1, 2, 0], "tower": [1, 1, 3, 0],
 	"moon": [1, 1, 4, 0], "forest_path": [1, 1, 5, 0], "star": [1, 1, 6, 0],
-	"hills": [2, 1, 0, 1], "sea": [2, 1, 2, 1], "desert": [2, 1, 4, 1], "road": [2, 1, 6, 1], "clouds": [2, 1, 8, 1],
-	"waterfall": [1, 2, 0, 2], "tree": [1, 2, 1, 2],
-	"mountain": [2, 2, 2, 2], "village": [2, 2, 4, 2], "storm": [2, 2, 6, 2], "garden": [2, 2, 8, 2],
-	"panorama": [4, 2, 0, 4], "river_valley": [4, 3, 0, 6], "night_sky": [4, 4, 0, 9], "volcano": [4, 4, 4, 9],
+	"hills": [2, 1, 0, 2], "sea": [2, 1, 2, 2], "desert": [2, 1, 4, 2], "road": [2, 1, 6, 2], "clouds": [2, 1, 8, 2],
+	"waterfall": [1, 2, 0, 4], "tree": [1, 2, 1, 4],
+	"mountain": [2, 2, 0, 8], "village": [2, 2, 2, 8], "storm": [2, 2, 4, 8], "garden": [2, 2, 6, 8],
+	"panorama": [4, 2, 0, 6], "river_valley": [4, 3, 12, 4], "night_sky": [4, 4, 0, 12], "volcano": [4, 4, 4, 12],
+	# Beta's places the game has no picture for: hung when a texture pack's
+	# kz.png has one there.
+	"spare_2x2": [2, 2, 8, 8], "spare_4x3": [4, 3, 12, 7], "spare_4x4": [4, 4, 8, 12],
 }
+const SPARE: Array[String] = ["spare_2x2", "spare_4x3", "spare_4x4"]
+static var _empty := {} # spare pictures the texture has nothing at
+
+
+## Whether a picture can be hung (the spare places: only with a picture there).
+static func _drawn(name: String) -> bool:
+	if not name in SPARE:
+		return true
+	if not _empty.has(name):
+		var size: Array = ARTS[name]
+		var image := TexturePacks.load_image(ATLAS)
+		var cell := image.get_size().x / 16
+		var rect := Rect2i(int(size[2]) * cell, int(size[3]) * cell, int(size[0]) * cell, int(size[1]) * cell)
+		_empty[name] = image.get_region(rect).is_invisible()
+	return not _empty[name]
 const DEPTH := 1.0 / 16.0
 
 static var _material: ShaderMaterial
@@ -37,7 +55,7 @@ static func hang(world: VoxelWorld, wall: Vector3i, normal: Vector3i) -> Paintin
 		return null
 	var fitting: Array[String] = []
 	for name: String in ARTS:
-		if _fits(world, name, wall + normal, normal):
+		if _drawn(name) and _fits(world, name, wall + normal, normal):
 			fitting.append(name)
 	if fitting.is_empty():
 		return null
@@ -118,7 +136,7 @@ func _build() -> void:
 	var w := float(size[0])
 	var h := float(size[1])
 	var front := Rect2(float(size[2]) * 16.0, float(size[3]) * 16.0, w * 16.0, h * 16.0)
-	var back := Rect2(240, 0, 16, 16)
+	var back := Rect2(192, 0, 16, 16) # (Beta's back of the pictures)
 	# Built facing +Z, then turned to its facing.
 	var x0 := -w / 2.0
 	var x1 := w / 2.0

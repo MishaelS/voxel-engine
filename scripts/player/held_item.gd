@@ -10,7 +10,7 @@ extends Node3D
 ##   placed and swung exactly like the classic game's empty hand;
 ## - a map is held in both hands like the classic game's: low in the view
 ##   while looking ahead, rising toward the eyes when looking down, with the
-##   player's marker (textures/misc/map_icons.png) on it and their
+##   player's marker (textures/misc/mapicons.png) on it and their
 ##   coordinates written small across its top (F3 is only in debug builds).
 ## It is a child of the camera and is drawn over the world.
 
@@ -247,8 +247,8 @@ func _arm_pose() -> void:
 ## arm at its pivot, the model upside down), as at the end of ARM_IN_VIEW.
 static var ARM_MODEL := Transform3D(Basis.IDENTITY, Vector3(-5, 2, 0) / 16.0) \
 	* Transform3D(Basis(Vector3.RIGHT, PI).scaled(Vector3.ONE / 16.0), Vector3.ZERO)
-const MAP_ICONS := "res://assets/textures/misc/map_icons.png"
-const MAP_BACKGROUND := "res://assets/textures/misc/map_background.png"
+const MAP_ICONS := "res://assets/textures/misc/mapicons.png"
+const MAP_BACKGROUND := "res://assets/textures/misc/mapbg.png"
 
 var _map: Node3D
 var _map_arms: Array[MeshInstance3D] = []

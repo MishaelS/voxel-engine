@@ -44,6 +44,10 @@ var _sky_material: ShaderMaterial
 func _ready() -> void:
 	if world_environment and world_environment.environment and world_environment.environment.sky:
 		_sky_material = world_environment.environment.sky.sky_material as ShaderMaterial
+		if _sky_material:
+			# The texture pack's sun and moon (terrain/sun.png, terrain/moon.png).
+			_sky_material.set_shader_parameter("sun_texture", TexturePacks.load_texture("res://assets/textures/terrain/sun.png"))
+			_sky_material.set_shader_parameter("moon_texture", TexturePacks.load_texture("res://assets/textures/terrain/moon.png"))
 	_apply()
 
 

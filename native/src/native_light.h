@@ -46,6 +46,16 @@ public:
 	// `light` indexed cx * columns_z + cz), `positions` x, y, z triples in area
 	// coordinates. Returns the same as relight_edit() (chunks are slots
 	// (cx * columns_z + cz) * 16 + k; their masks' bits as there).
+	// WorldGenerator.heightmap(): the highest block with opacity > 0 of each
+	// of a column's 256 block columns (-1: none), from the column's blocks.
+	static godot::PackedInt32Array heightmap(const godot::PackedInt32Array &blocks,
+			const godot::PackedByteArray &opacity);
+
+	// ChunkData.count_tickable() for the 16 chunks of a column: [air, tickable,
+	// glowing] for each, from Blocks' tables.
+	static godot::PackedInt32Array chunk_counts(const godot::PackedInt32Array &blocks,
+			const godot::PackedByteArray &ticks, const godot::PackedByteArray &emission);
+
 	static godot::Array relight_edits(bool sky, const godot::PackedInt32Array &positions, int columns_x,
 			int columns_z, const godot::Array &blocks, const godot::Array &light,
 			const godot::PackedByteArray &opacity, const godot::PackedByteArray &emission);

@@ -8,7 +8,7 @@ extends RefCounted
 const FIRST_ITEM := 32768
 ## Where items started in saves before block ids went past 256.
 const OLD_FIRST_ITEM := 256
-const ICONS_PATH := "res://assets/textures/items.png"
+const ICONS_PATH := "res://assets/textures/gui/items.png"
 const MAX_STACK := 64
 
 ## Tool materials like the classic game: [name, tier, speed, uses, icon column].

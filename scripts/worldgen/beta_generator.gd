@@ -11,13 +11,14 @@ extends WorldGenerator
 ##    dryness set how hilly it is. Density > 0 is stone; below sea level
 ##    empty space is water.
 ##
-## The world is 256 high with the sea at 128: the classic generator makes
-## the upper part in its own column (its 128 blocks, sea at 64, 192 in new
-## worlds so mountains can rise higher) put 64 blocks up
-## (WorldGenerator.LEGACY_SHIFT), with the same random numbers as before, so
-## worlds made when the world was 128 high go on without seams. Below it a
-## deep layer of its own: stone with caves (lava at the bottom), lava lakes,
-## dungeons, ores at the classic heights and the bedrock floor.
+## World types (WorldSave.layout, set_layout):
+## - classic: like Beta 1.7.3, 128 high with the sea at 64;
+## - tall ("Tall Mountains"): the same land, 256 high, the sea at 64 and
+##   mountains rising far above (softer slopes above the middle);
+## - old worlds made 256 high with the sea at 128: the classic part (128,
+##   or 192 for higher mountains) put 64 blocks up (LEGACY_SHIFT) on a deep
+##   layer of its own: stone with caves (lava at the bottom), lava lakes,
+##   dungeons, ores at the classic heights and the bedrock floor.
 ## 2. Biomes from temperature and humidity with the classic table (tundra,
 ##    taiga, swampland, forest, seasonal forest, rainforest, savanna,
 ##    shrubland, plains, desert), each with its own surface and trees.
@@ -139,6 +140,8 @@ const UPPER_ORES := ["dirt", "gravel", "coal_ore", "iron_ore"]
 ## world was 256 high keep the classic shape so they join without seams).
 var tall := true
 var _h := TALL_UPPER_HEIGHT
+var _shift := LEGACY_SHIFT
+var _deep := true
 var _cells := TALL_UPPER_HEIGHT / GRID_Y
 ## The same generator in native code (NativeBetaGenerator,
 ## native/src/native_beta_generator.cpp): block for block the same columns,
@@ -177,6 +180,9 @@ func _init(seed_value: int) -> void:
 	_lava = _id["lava"]
 	_bedrock = _id["bedrock"]
 	_setup_native()
+	set_layout(WorldSave.layout_of(WorldSave.CLASSIC)) # (set_layout for the others)
+	if _grass_map.is_empty() and OS.get_thread_caller_id() == OS.get_main_thread_id():
+		load_color_maps()
 
 
 ## Hands the noises, block ids and tables to the native generator.
@@ -204,11 +210,21 @@ func _setup_native() -> void:
 ## Worlds made before the world was 256 high (converted ones) keep the
 ## classic terrain shape. Call before generating.
 func set_tall(value: bool) -> void:
-	tall = value
-	_h = TALL_UPPER_HEIGHT if tall else UPPER_HEIGHT
+	set_layout({"shift": LEGACY_SHIFT, "deep": true, "upper": TALL_UPPER_HEIGHT if value else UPPER_HEIGHT, "tall": value})
+
+
+## The world's layout (WorldSave.layout): the classic part "upper" high from
+## y "shift" up, softer mountains above the middle ("tall"), the deep layer
+## under it ("deep"). Call before generating.
+func set_layout(layout: Dictionary) -> void:
+	tall = layout.get("tall", false)
+	_shift = layout.get("shift", 0)
+	_deep = layout.get("deep", false)
+	legacy_shift = _shift
+	_h = clampi(int(layout.get("upper", UPPER_HEIGHT)) / GRID_Y * GRID_Y, UPPER_HEIGHT, HEIGHT - _shift)
 	_cells = _h / GRID_Y
 	if _native:
-		_native.call("set_tall", tall)
+		_native.call("set_layout", _shift, _deep, _h, tall)
 
 
 func _setup(noise: FastNoiseLite, salt: int, frequency: float, octaves: int) -> void:
@@ -265,7 +281,43 @@ func climate(cx: int, cz: int) -> PackedFloat32Array:
 ## Grass and foliage colors (linear) of every block column, like the
 ## classic color maps: from bluish green in the cold to yellow-green when
 ## hot and dry and lush green when hot and wet. Smooth across biomes.
+## Grass and foliage colors like Beta's: looked up in misc/grasscolor.png and
+## misc/foliagecolor.png (256 x 256; a texture pack's too) at x = (1 -
+## temperature) * 255, y = (1 - humidity * temperature) * 255. The game's
+## own maps hold the colors of color_formula().
+static var _grass_map := PackedByteArray()
+static var _foliage_map := PackedByteArray()
+
+
+## Loads the color maps (on the main thread, before columns are generated).
+static func load_color_maps() -> void:
+	for pair: Array in [["grasscolor", "_grass_map"], ["foliagecolor", "_foliage_map"]]:
+		var image := TexturePacks.load_image("res://assets/textures/misc/%s.png" % pair[0])
+		if image.get_size() != Vector2i(256, 256):
+			image.resize(256, 256, Image.INTERPOLATE_NEAREST)
+		if pair[1] == "_grass_map":
+			_grass_map = image.get_data()
+		else:
+			_foliage_map = image.get_data()
+
+
+## The color between the corners (the game's maps are made from it).
+static func color_formula(temp: float, humid: float, foliage: bool) -> Color:
+	if foliage:
+		return FOLIAGE_COLD.lerp(FOLIAGE_DRY.lerp(FOLIAGE_WET, humid), temp)
+	return GRASS_COLD.lerp(GRASS_DRY.lerp(GRASS_WET, humid), temp)
+
+
+static func _map_color(map: PackedByteArray, temp: float, humid: float) -> Color:
+	var x := clampi(int((1.0 - temp) * 255.0), 0, 255)
+	var y := clampi(int((1.0 - humid * temp) * 255.0), 0, 255)
+	var i := (x + y * 256) * 4
+	return Color8(map[i], map[i + 1], map[i + 2])
+
+
 func column_colors(cx: int, cz: int) -> Array[PackedColorArray]:
+	if _grass_map.is_empty():
+		load_color_maps()
 	var values := climate(cx, cz)
 	var grass := PackedColorArray()
 	var foliage := PackedColorArray()
@@ -274,8 +326,8 @@ func column_colors(cx: int, cz: int) -> Array[PackedColorArray]:
 	for i in 256:
 		var temp := values[i]
 		var humid := values[256 + i]
-		grass[i] = GRASS_COLD.lerp(GRASS_DRY.lerp(GRASS_WET, humid), temp).srgb_to_linear()
-		foliage[i] = FOLIAGE_COLD.lerp(FOLIAGE_DRY.lerp(FOLIAGE_WET, humid), temp).srgb_to_linear()
+		grass[i] = _map_color(_grass_map, temp, humid).srgb_to_linear()
+		foliage[i] = _map_color(_foliage_map, temp, humid).srgb_to_linear()
 	return [grass, foliage]
 
 
@@ -323,23 +375,29 @@ func generate_blocks_script(cx: int, cz: int) -> PackedInt32Array:
 	_generate_upper(upper, cx, cz)
 	# The world column: the deep layer's stone, the upper part, air above.
 	var blocks := PackedInt32Array()
-	blocks.resize(LEGACY_SHIFT * 256)
+	blocks.resize(_shift * 256)
 	blocks.fill(_id["stone"])
 	blocks.append_array(upper)
 	blocks.resize(COLUMN_VOLUME)
-	_generate_deep(blocks, cx, cz)
+	_place_floor(blocks, cx, cz)
+	if _deep:
+		_generate_deep(blocks, cx, cz)
 	return blocks
 
 
-## The deep layer under the classic part: bedrock floor, caves (lava below
-## y 10), a lava lake now and then, dungeons and ores.
-func _generate_deep(blocks: PackedInt32Array, cx: int, cz: int) -> void:
+## The bedrock floor, uneven like the game's: y 0 and up to 4 above.
+func _place_floor(blocks: PackedInt32Array, cx: int, cz: int) -> void:
 	var rng := column_rng(cx, cz, 700)
 	for i in 256:
 		blocks[i] = _bedrock
 		for y in range(1, 5):
 			if rng.randi_range(0, 4) >= y:
 				blocks[i + 256 * y] = _bedrock
+
+
+## The deep layer under the classic part (on the bedrock floor): caves (lava below
+## y 10), a lava lake now and then, dungeons and ores.
+func _generate_deep(blocks: PackedInt32Array, cx: int, cz: int) -> void:
 	# New worlds: deep caves reach up into the classic part; converted worlds
 	# keep them under the old floor (their old lava and water stay put).
 	_carve_caves(blocks, cx, cz, 702, LEGACY_SHIFT - 8, LEGACY_SHIFT + 12 if tall else LEGACY_SHIFT - 2, LAVA_LEVEL)

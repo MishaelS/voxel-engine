@@ -172,8 +172,14 @@ void NativeBetaGenerator::setup(const Dictionary &config) {
 }
 
 void NativeBetaGenerator::set_tall(bool value) {
-	tall = value;
-	h = tall ? 192 : 128;
+	set_layout(LEGACY_SHIFT, true, value ? 192 : 128, value);
+}
+
+void NativeBetaGenerator::set_layout(int new_shift, bool new_deep, int height, bool new_tall) {
+	shift = std::clamp(new_shift, 0, LEGACY_SHIFT);
+	deep = new_deep;
+	h = std::clamp(height - height % GRID_Y, 128, HEIGHT - shift);
+	tall = new_tall;
 	cells = h / GRID_Y;
 }
 
@@ -239,9 +245,9 @@ PackedInt32Array NativeBetaGenerator::generate_blocks(int cx, int cz) const {
 	PackedInt32Array result;
 	result.resize(COLUMN_VOLUME);
 	int32_t *column = result.ptrw();
-	std::fill(column, column + LEGACY_SHIFT * 256, stone);
-	std::fill(column + LEGACY_SHIFT * 256, column + COLUMN_VOLUME, AIR);
-	int32_t *upper = column + LEGACY_SHIFT * 256;
+	std::fill(column, column + shift * 256, stone);
+	std::fill(column + shift * 256, column + COLUMN_VOLUME, AIR);
+	int32_t *upper = column + shift * 256;
 	const int upper_size = 256 * h;
 
 	// The classic part (BetaGenerator._generate_upper), in place: its array
@@ -294,7 +300,7 @@ PackedInt32Array NativeBetaGenerator::generate_blocks(int cx, int cz) const {
 	}
 	freeze(upper, biomes);
 
-	// The deep layer (BetaGenerator._generate_deep).
+	// The bedrock floor, uneven like the game's (BetaGenerator._place_floor).
 	Pcg floor(column_seed(cx, cz, 700));
 	for (int i = 0; i < 256; i++) {
 		column[i] = bedrock;
@@ -302,6 +308,9 @@ PackedInt32Array NativeBetaGenerator::generate_blocks(int cx, int cz) const {
 			if (floor.randi_range(0, 4) >= y)
 				column[i + 256 * y] = bedrock;
 	}
+	if (!deep)
+		return result;
+	// The deep layer (BetaGenerator._generate_deep).
 	carve_caves(column, COLUMN_VOLUME, cx, cz, 702, LEGACY_SHIFT - 8, tall ? LEGACY_SHIFT + 12 : LEGACY_SHIFT - 2, LAVA_LEVEL);
 	{
 		Pcg lakes(column_seed(cx, cz, 703));
@@ -1210,6 +1219,7 @@ PackedFloat64Array NativeBetaGenerator::check_random(int64_t seed_value, int cou
 void NativeBetaGenerator::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("setup", "config"), &NativeBetaGenerator::setup);
 	ClassDB::bind_method(D_METHOD("set_tall", "value"), &NativeBetaGenerator::set_tall);
+	ClassDB::bind_method(D_METHOD("set_layout", "shift", "deep", "height", "tall"), &NativeBetaGenerator::set_layout);
 	ClassDB::bind_method(D_METHOD("generate_blocks", "cx", "cz"), &NativeBetaGenerator::generate_blocks);
 	ClassDB::bind_static_method("NativeBetaGenerator", D_METHOD("check_random", "seed", "count"),
 			&NativeBetaGenerator::check_random);

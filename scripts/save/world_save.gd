@@ -5,10 +5,9 @@ extends RefCounted
 ##                                         time, game rules and the player
 ##   user://saves/<folder>/columns/x.z.bin - every column generated so far
 ##                                           (with the player's changes)
-## Columns are zstd-compressed (256 KB raw each: 32-bit ids, 256 high).
-## Worlds made when the world was 128 high are upgraded when opened
-## (upgrade_height: a backup in user://backups, everything 64 blocks up)
-## and their columns one by one as they load (WorldGenerator.convert_legacy). A column is written when it
+## Columns are zstd-compressed (256 KB raw each: 32-bit ids, 256 high
+## whatever the world's own height). Columns saved 128 high are filled up
+## with air as they load (WorldGenerator.convert_legacy). A column is written when it
 ## is first generated, so loading the world again reads it instead of
 ## generating it, and again when the player changed it.
 ##
@@ -32,10 +31,18 @@ var game_mode := 0 # Player.GameMode
 ## Commands that change the world or the player (/gamemode, /time, /tp...)
 ## are allowed, like the game's "Allow Cheats". Worlds from before: allowed.
 var allow_cheats := true
-## The world's height (WorldGenerator.LEGACY_HEIGHT for worlds made before
-## it was 256) and whether its terrain has the taller mountains (new worlds).
-var height := WorldGenerator.HEIGHT
-var tall_terrain := true
+## The world type: "classic" (Beta 1.7.3: 128 high, the sea at 64), "tall"
+## (Tall Mountains: 256 high, the sea at 64) or "old" (made 256 high with
+## the sea at 128 and a deep layer, before the world types).
+const CLASSIC := "classic"
+const TALL := "tall"
+const OLD := "old"
+const TYPES: Array[String] = [CLASSIC, TALL]
+var terrain := CLASSIC
+## The world's height (128 or 256) and, in old worlds, whether the terrain
+## has the taller mountains.
+var height := WorldGenerator.LEGACY_HEIGHT
+var tall_terrain := false
 var created := 0      # unix time
 var last_played := 0  # unix time
 ## World and player state, written by save_state(); empty for a new world.
@@ -58,9 +65,12 @@ static func list_all() -> Array[WorldSave]:
 
 
 ## Creates the folder of a new world (the name is made unique on disk).
-static func create(world_name: String, seed_value: int, world_generator: int, mode: int, cheats: bool = true) -> WorldSave:
+static func create(world_name: String, seed_value: int, world_generator: int, mode: int, cheats: bool = true,
+		world_type: String = CLASSIC) -> WorldSave:
 	var save := WorldSave.new()
 	save.allow_cheats = cheats
+	save.terrain = world_type if world_type in TYPES else CLASSIC
+	save.height = WorldGenerator.LEGACY_HEIGHT if save.terrain == CLASSIC else WorldGenerator.HEIGHT
 	save.name = world_name.strip_edges() if not world_name.strip_edges().is_empty() else "New World"
 	save.world_seed = seed_value
 	save.generator = world_generator
@@ -113,6 +123,9 @@ func load_level() -> bool:
 	last_played = config.get_value("world", "last_played", 0)
 	height = config.get_value("world", "height", WorldGenerator.LEGACY_HEIGHT)
 	tall_terrain = config.get_value("world", "tall_terrain", false)
+	# Worlds from before the world types: 128 high ones are classic, 256
+	# high ones old.
+	terrain = config.get_value("world", "terrain", CLASSIC if height < WorldGenerator.HEIGHT else OLD)
 	state = config.get_value("state", "data", {})
 	return true
 
@@ -130,71 +143,28 @@ func write_level() -> void:
 	config.set_value("world", "last_played", last_played)
 	config.set_value("world", "height", height)
 	config.set_value("world", "tall_terrain", tall_terrain)
+	config.set_value("world", "terrain", terrain)
 	config.set_value("state", "data", state)
 	DirAccess.make_dir_recursive_absolute(path())
 	config.save(path(LEVEL_FILE))
 
 
-func needs_height_upgrade() -> bool:
-	return height < WorldGenerator.HEIGHT
+## How the world is laid out: "height" (where building stops), "sea",
+## and for the generator "shift" (the classic part's bottom), "deep" (the
+## old worlds' deep layer under it), "upper" (the classic part's height)
+## and "tall" (softer slopes above the middle: higher mountains).
+static func layout_of(world_type: String, old_tall: bool = false) -> Dictionary:
+	match world_type:
+		TALL:
+			return {"height": 256, "sea": 64, "shift": 0, "deep": false, "upper": 256, "tall": true}
+		OLD:
+			return {"height": 256, "sea": 128, "shift": WorldGenerator.LEGACY_SHIFT, "deep": true,
+				"upper": 192 if old_tall else 128, "tall": old_tall}
+	return {"height": 128, "sea": 64, "shift": 0, "deep": false, "upper": 128, "tall": false}
 
 
-## A world made when the world was 128 high: copied to user://backups first,
-## then its saved state moves 64 blocks up (the player, the bed, block
-## entities, items, creatures, paintings); its terrain keeps the classic
-## shape so new columns join the old ones. Columns are converted as they
-## load.
-func upgrade_height() -> void:
-	_copy_recursive(path(), _backup_path())
-	var shift := WorldGenerator.LEGACY_SHIFT
-	var up := Vector3(0, shift, 0)
-	var player_state: Dictionary = state.get("player", {})
-	if player_state.get("position") is Vector3:
-		player_state.position = (player_state.position as Vector3) + up
-	if player_state.get("spawn") is Vector3 and (player_state.spawn as Vector3).is_finite():
-		player_state.spawn = (player_state.spawn as Vector3) + up
-	var world_state: Dictionary = state.get("world", {})
-	var moved := {}
-	var old_entities: Dictionary = world_state.get("block_entities", {})
-	for pos: Vector3i in old_entities:
-		moved[pos + Vector3i(0, shift, 0)] = old_entities[pos]
-	if world_state.has("block_entities"):
-		world_state.block_entities = moved
-	for entry: Variant in world_state.get("items", []):
-		if entry is Array and (entry as Array).size() >= 4 and entry[3] is Vector3:
-			entry[3] = (entry[3] as Vector3) + up
-	for entity: Dictionary in world_state.get("entities", []):
-		if entity.get("position") is Vector3:
-			entity.position = (entity.position as Vector3) + up
-		if entity.get("anchor") is Vector3i:
-			entity.anchor = (entity.anchor as Vector3i) + Vector3i(0, shift, 0)
-		elif entity.get("anchor") is Vector3:
-			entity.anchor = (entity.anchor as Vector3) + up
-	height = WorldGenerator.HEIGHT
-	tall_terrain = false
-	write_level()
-
-
-## A free folder in user://backups for this world's copy.
-func _backup_path() -> String:
-	var base := "user://backups".path_join(folder + "_height_%d" % height)
-	var candidate := base
-	var n := 1
-	while DirAccess.dir_exists_absolute(candidate):
-		n += 1
-		candidate = "%s_%d" % [base, n]
-	return candidate
-
-
-static func _copy_recursive(from: String, to: String) -> void:
-	DirAccess.make_dir_recursive_absolute(to)
-	var dir := DirAccess.open(from)
-	if dir == null:
-		return
-	for file in dir.get_files():
-		DirAccess.copy_absolute(from.path_join(file), to.path_join(file))
-	for sub in dir.get_directories():
-		_copy_recursive(from.path_join(sub), to.path_join(sub))
+func layout() -> Dictionary:
+	return layout_of(terrain, tall_terrain)
 
 
 ## Deletes the world folder and everything in it.

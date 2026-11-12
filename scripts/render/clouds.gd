@@ -1,16 +1,19 @@
 class_name Clouds
 extends MeshInstance3D
 ## The cloud layer, like the classic game's fancy clouds: 12x12-block
-## cells, 4 blocks thick, 44 blocks above the sea (y = 172), drifting east with the game ticks.
+## cells, 4 blocks thick, 44 blocks above the sea (y = 108 with the sea at 64), drifting east with the game ticks.
 ##
-## The shape comes from a repeating 256x256 pattern (made once from
-## seamless noise). The mesh is built once: a grid of boxes that follows
+## The shape comes from environment/clouds.png like Beta's (256 x 256,
+## repeating; a texture pack's too): a cell is cloud where its pixel is
+## not transparent. The game's own picture was made from seamless noise
+## (make_pattern_image). The mesh is built once: a grid of boxes that follows
 ## the camera cell by cell; the shader hides empty cells and inner faces
 ## (see clouds.gdshader), so nothing is rebuilt while playing.
 
 const CELL := 12.0
 const THICKNESS := 4.0
-const HEIGHT := WorldGenerator.SEA_LEVEL + 44.0
+## Above the sea like the classic game's clouds (y 108 with the sea at 64).
+const ABOVE_SEA := 44.0
 const GRID := 48            ## cells across the mesh (576 blocks)
 const PATTERN_SIZE := 256
 ## Blocks per game tick (the classic speed).
@@ -28,7 +31,7 @@ func _ready() -> void:
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_material = ShaderMaterial.new()
 	_material.shader = preload("res://shaders/clouds.gdshader")
-	_material.set_shader_parameter("pattern", _make_pattern())
+	_material.set_shader_parameter("pattern", _pattern())
 	_material.set_shader_parameter("fade_end", GRID * CELL * 0.5)
 	_material.set_shader_parameter("fade_start", GRID * CELL * 0.25)
 	mesh = _make_mesh()
@@ -60,13 +63,28 @@ func _process(_delta: float) -> void:
 	var eye := camera.global_position
 	var base_x := floori((eye.x + scroll) / CELL) - GRID / 2
 	var base_z := floori(eye.z / CELL) - GRID / 2
-	global_position = Vector3(base_x * CELL - scroll, HEIGHT, base_z * CELL)
+	global_position = Vector3(base_x * CELL - scroll, (world.sea_level if world else WorldGenerator.SEA_LEVEL) + ABOVE_SEA, base_z * CELL)
 	_material.set_shader_parameter("offset", Vector2i(base_x, base_z))
 	_material.set_shader_parameter("camera_position", eye)
 
 
-## 1 = cloud, 0 = sky. Seamless noise, so the pattern tiles.
-func _make_pattern() -> ImageTexture:
+## 1 = cloud, 0 = sky: environment/clouds.png (a cloud where a pixel is
+## not transparent).
+static func _pattern() -> ImageTexture:
+	var image := TexturePacks.load_image("res://assets/textures/environment/clouds.png")
+	if image.get_size() != Vector2i(PATTERN_SIZE, PATTERN_SIZE):
+		image.resize(PATTERN_SIZE, PATTERN_SIZE, Image.INTERPOLATE_NEAREST)
+	var values := PackedByteArray()
+	values.resize(PATTERN_SIZE * PATTERN_SIZE)
+	var data := image.get_data()
+	for i in values.size():
+		values[i] = 255 if data[i * 4 + 3] > 127 else 0
+	return ImageTexture.create_from_image(Image.create_from_data(PATTERN_SIZE, PATTERN_SIZE, false, Image.FORMAT_L8, values))
+
+
+## The game's clouds.png: seamless noise (so the pattern tiles), white where
+## a cloud is (tools: made once, kept in assets/textures/environment).
+static func make_pattern_image() -> Image:
 	var noise := FastNoiseLite.new()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	noise.frequency = 0.035
@@ -79,9 +97,15 @@ func _make_pattern() -> ImageTexture:
 	var sorted := values.duplicate()
 	sorted.sort()
 	var threshold := sorted[int((1.0 - COVERAGE) * (sorted.size() - 1))]
+	var rgba := PackedByteArray()
+	rgba.resize(values.size() * 4)
 	for i in values.size():
-		values[i] = 255 if values[i] > threshold else 0
-	return ImageTexture.create_from_image(Image.create_from_data(PATTERN_SIZE, PATTERN_SIZE, false, Image.FORMAT_L8, values))
+		var cloud := values[i] > threshold
+		rgba[i * 4] = 255
+		rgba[i * 4 + 1] = 255
+		rgba[i * 4 + 2] = 255
+		rgba[i * 4 + 3] = 255 if cloud else 0
+	return Image.create_from_data(PATTERN_SIZE, PATTERN_SIZE, false, Image.FORMAT_RGBA8, rgba)
 
 
 ## A box for every cell of the grid; UV = the cell's index.
