@@ -391,6 +391,11 @@ func _process(delta: float) -> void:
 	var alpha := _accumulator / TICK
 	var current := Vector3(_x, _y, _z)
 	global_position = _prev.lerp(current, alpha)
+	if vehicle and not vehicle.removed:
+		# Riding: drawn on the seat where the vehicle is drawn (it ticks on the
+		# world's clock, the player on its own: following the ticks the seat
+		# jumped against the boat or cart every frame).
+		global_position = vehicle.render_feet() + Vector3(0, vehicle.height * 0.75 - 0.2, 0)
 	_last_rendered = global_position
 	rotation = Vector3(0, _yaw, 0)
 	_update_camera(alpha, delta)

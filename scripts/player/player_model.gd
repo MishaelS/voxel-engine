@@ -145,6 +145,13 @@ func _process(delta: float) -> void:
 		_pose_asleep(parts)
 	else:
 		MobAnimation.pose_biped(parts, t, _limb_swing, _limb_amount, _held != null, false, _jump, _fall)
+		if player.vehicle:
+			# Sitting (a boat, a minecart, a pig), like the game's riding pose:
+			# the legs straight ahead and a little apart, the arms forward.
+			for side: Array in [["right_leg", -1.0], ["left_leg", 1.0]]:
+				(parts[side[0]] as Node3D).rotation = Vector3(-PI * 2.0 / 5.0, float(side[1]) * PI / 10.0, 0)
+			(parts.right_arm as Node3D).rotation.x += -PI / 5.0
+			(parts.left_arm as Node3D).rotation.x += -PI / 5.0
 		var right_arm := parts.right_arm as Node3D
 		var hit := player.held_item.swing_progress() if player.held_item else -1.0
 		if hit >= 0.0:

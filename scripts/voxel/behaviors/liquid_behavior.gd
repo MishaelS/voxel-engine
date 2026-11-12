@@ -100,6 +100,15 @@ static func scheduled_tick(world: VoxelWorld, pos: Vector3i) -> void:
 
 ## Lava sets things on fire like the classic game: on a random tick it
 ## tries a few cells above it; air next to something that burns catches fire.
+## Ice melts into water like the classic game where block light is
+## brighter than 8 (a torch within about 5 blocks, lava or fire next to it),
+## and now and then (1 in 6 random ticks) outside the cold biomes.
+static func ice_random_tick(world: VoxelWorld, pos: Vector3i) -> void:
+	var warm := not Weather.snows_at(world, pos.x, pos.z)
+	if world.get_block_light(pos) > 8 or (warm and world.rng.randi_range(0, 5) == 0):
+		world.set_block(pos, Blocks.id_of("water"))
+
+
 static func lava_random_tick(world: VoxelWorld, pos: Vector3i) -> void:
 	var cell := pos
 	for i in world.rng.randi_range(0, 2):

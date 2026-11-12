@@ -646,8 +646,9 @@ static func _build_layer(padded: PackedInt32Array, light: PackedByteArray, cells
 				continue # hidden by an opaque block (a liquid's surface lies lower: still seen)
 			if self_culls and cull_groups[neighbor] == group:
 				continue # glass next to glass, water next to water, bed halves
-			if liquid[id] == 1 and neighbor != Blocks.AIR and layer_of[neighbor] == Blocks.Layer.TRANSLUCENT:
-				continue # water under ice: only the ice face is drawn
+			if liquid[id] == 1 and layer_of[id] == Blocks.Layer.TRANSLUCENT and neighbor != Blocks.AIR \
+					and layer_of[neighbor] == Blocks.Layer.TRANSLUCENT:
+				continue # water under ice: only the ice face is drawn (not lava: it would leave a hole)
 			# Ice next to water draws its whole side: translucent surfaces get a
 			# depth pass first (block_translucent_depth), so only the nearest
 			# one shows - no ghost walls through the water.

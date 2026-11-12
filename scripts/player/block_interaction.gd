@@ -68,7 +68,6 @@ func _ready() -> void:
 	_cracks.mesh = _make_crack_mesh()
 	_cracks.visible = false
 	_cracks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_cracks.scale = Vector3.ONE * (1.0 + CRACK_GROW)
 	add_child(_cracks)
 
 
@@ -213,7 +212,8 @@ func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 		_break_delay = BREAK_DELAY_TICKS
 		return
 	_cracks.visible = true
-	_cracks.global_position = Vector3(pos) - Vector3.ONE * CRACK_GROW * 0.5
+	_cracks.mesh = _crack_mesh_for(world.get_block(pos))
+	_cracks.global_position = Vector3(pos)
 	_crack_material.set_shader_parameter("stage", CRACK_TILE + mini(int(break_progress * 10.0), 9))
 
 
@@ -686,7 +686,7 @@ static func _outline_mesh(id: int) -> ArrayMesh:
 	if _outline_material == null:
 		_outline_material = ShaderMaterial.new()
 		_outline_material.shader = preload("res://shaders/outline.gdshader")
-	var boxes: Array = Blocks.collision_table[id] if Blocks.collision_table[id].size() > 1 else [Blocks.selection_table[id]]
+	var boxes: Array = Blocks.outline_table[id]
 	var vertices := PackedVector3Array()
 	var ends := PackedVector2Array()
 	var others := PackedVector2Array()
@@ -721,11 +721,50 @@ static func _outline_mesh(id: int) -> ArrayMesh:
 	return mesh
 
 
-## A block cube (the mesher's, so UVs are 0..1 per face) drawn with the
-## crack texture multiplied over the block; the node is slightly enlarged.
+## The crack texture multiplied over a block, made on first use.
 func _make_crack_mesh() -> ArrayMesh:
 	_crack_material = ShaderMaterial.new()
 	_crack_material.shader = preload("res://shaders/block_cracks.gdshader")
 	_crack_material.set_shader_parameter("tiles",
 		BlockMaterials.tiles())
-	return ChunkMesher.block_mesh(Blocks.id_of("stone"), _crack_material)
+	return _crack_mesh_for(Blocks.id_of("stone"))
+
+
+static var _crack_meshes := {} # block id -> ArrayMesh
+
+
+## The cracks over a block's shape (its outline boxes: slabs, fences,
+## torches, pistons...), a hair bigger. Like the game, each face shows the
+## part of the crack picture its place in the block covers (texture
+## coordinates from the position in the block), so the cracks keep their
+## size on small faces instead of being squeezed into them.
+func _crack_mesh_for(id: int) -> ArrayMesh:
+	if _crack_meshes.has(id):
+		return _crack_meshes[id]
+	var vertices := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	for box: AABB in Blocks.outline_table[id]:
+		var grown := box.grow(CRACK_GROW * 0.5)
+		for face in 6:
+			var start := vertices.size()
+			for corner: Vector3 in ChunkMesher.FACE_CORNERS[face]:
+				var p := grown.position + corner * grown.size
+				vertices.append(p)
+				var uv: Vector2
+				match face:
+					0, 1: uv = Vector2(p.x, p.z)       # top, bottom
+					2, 3: uv = Vector2(p.z, 1.0 - p.y) # east, west
+					_: uv = Vector2(p.x, 1.0 - p.y)    # south, north
+				uvs.append(uv.clamp(Vector2.ZERO, Vector2.ONE))
+			indices.append_array(PackedInt32Array([start, start + 1, start + 2, start, start + 2, start + 3]))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(0, _crack_material)
+	_crack_meshes[id] = mesh
+	return mesh

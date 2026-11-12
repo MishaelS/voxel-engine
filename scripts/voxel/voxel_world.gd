@@ -1131,7 +1131,7 @@ func raycast(origin: Vector3, direction: Vector3, max_distance: float, hit_water
 ## when it passes by (a snow layer, a slab, a torch: the ray goes on to the
 ## block behind, like the game's). Full blocks are hit where entered.
 func _ray_shape_hit(origin: Vector3, dir: Vector3, pos: Vector3i, id: int, normal: Vector3i, distance: float) -> Array:
-	var boxes: Array = Blocks.collision_table[id] if Blocks.collision_table[id].size() > 1 else [Blocks.selection_table[id]]
+	var boxes: Array = Blocks.outline_table[id]
 	if boxes.size() == 1 and (boxes[0] as AABB).is_equal_approx(AABB(Vector3.ZERO, Vector3.ONE)):
 		return [distance, normal]
 	var best: Array = []

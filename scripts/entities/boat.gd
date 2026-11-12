@@ -9,6 +9,9 @@ extends Entity
 ##   slower than Beta's (about 4.5 blocks a second), picking up speed
 ##   smoothly and gliding on when the rowing stops, slowing down little by
 ##   little (water drag);
+## - pushed aside by the player and creatures pressing against it (the
+##   game's entity collision);
+## - burns up in lava;
 ## - running into the shore at full speed smashes it into 3 planks and 2
 ##   sticks; hits break it whole (it drops itself).
 
@@ -64,6 +67,13 @@ func tick() -> void:
 		if velocity.y < 0.0:
 			velocity.y /= 2.0
 		velocity.y += 0.007
+	if EntityPhysics.touches_liquid(world, _x, _y, _z, half_width, height, "lava"):
+		# Burns up: smoke, flames, embers and a hiss; nothing is left.
+		world.particles.burn(center(), true)
+		Sounds.play("random/fizz", center(), 0.6, randf_range(2.0, 2.6))
+		_gone()
+		return
+	_pushed()
 	var rider := _ridden()
 	if rider and _rider_forward != 0.0 and under > 0.0:
 		# Rowing: a little push a tick (backwards at half strength).
@@ -99,6 +109,33 @@ func tick() -> void:
 		_yaw = lerp_angle(_yaw, heading, 0.25)
 	if _y < Player.VOID_Y:
 		removed = true
+
+
+## Pushed aside by whoever presses against it, like the game's
+## applyEntityCollision: within 0.2 of its sides, a push of up to 0.05 a
+## tick away from them.
+func _pushed() -> void:
+	var others: Array[Array] = [] # [feet, half width, height]
+	var player := world.player as Player
+	if player and player.vehicle != self and not player.dead:
+		others.append([player.global_position, Player.HALF_WIDTH, Player.HEIGHT])
+	for entity in world.entities.all():
+		if entity is Mob and not entity.removed and entity.feet().distance_squared_to(feet()) < 9.0:
+			others.append([entity.feet(), entity.half_width, entity.height])
+	for other: Array in others:
+		var at: Vector3 = other[0]
+		var reach: float = half_width + float(other[1]) + 0.2
+		if absf(at.x - _x) >= reach or absf(at.z - _z) >= reach or at.y >= _y + height or at.y + float(other[2]) <= _y:
+			continue
+		var dx := at.x - _x
+		var dz := at.z - _z
+		var d := maxf(absf(dx), absf(dz))
+		if d < 0.01:
+			continue
+		d = sqrt(d)
+		var f := minf(1.0 / d, 1.0)
+		velocity.x -= dx / d * f * 0.05
+		velocity.z -= dz / d * f * 0.05
 
 
 ## Whether water fills any block a horizontal slice of the boat (heights y0..y1)

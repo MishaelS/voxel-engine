@@ -381,7 +381,8 @@ void build_layer(const Tables &t, const Input &in, const std::vector<int> &cells
 				continue;
 			if (self_culls && t.cull_group[neighbor] == group)
 				continue;
-			if (is_liquid && neighbor != AIR && t.layer[neighbor] == TRANSLUCENT)
+			// Water under ice: only the ice face (not lava, which would leave a hole).
+			if (is_liquid && t.layer[id] == TRANSLUCENT && neighbor != AIR && t.layer[neighbor] == TRANSLUCENT)
 				continue;
 			const int index = id * 6 + face;
 			const bool flowing_top = face == 0 && flow != Vector2();

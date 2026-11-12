@@ -135,6 +135,9 @@ var flat_item := false
 ## targeted (empty AABB = the collision boxes' bounds, or the full block).
 var collision_boxes: Array[AABB] = []
 var selection_box := AABB()
+## The shape aimed at and outlined (block units), when it is not the
+## collision boxes or the selection box (a fence: post and rails).
+var outline_boxes: Array[AABB] = []
 ## Entities climb it (ladders).
 var climbable := false
 
@@ -308,6 +311,14 @@ func set_collision(boxes_in_pixels: Array) -> BlockType:
 	collision_boxes.clear()
 	for box: AABB in boxes_in_pixels:
 		collision_boxes.append(AABB(box.position / 16.0, box.size / 16.0))
+	return self
+
+
+## The aimed / outlined shape in pixels (0..16).
+func set_outline(boxes_in_pixels: Array) -> BlockType:
+	outline_boxes.clear()
+	for box: AABB in boxes_in_pixels:
+		outline_boxes.append(AABB(box.position / 16.0, box.size / 16.0))
 	return self
 
 

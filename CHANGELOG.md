@@ -14,6 +14,23 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Ice melts into water like the classic game where block light is brighter than 8 (a torch within about 5 blocks, lava or fire next to it), and now and then outside the cold biomes (`LiquidBehavior.ice_random_tick`).
+- Boats burn up in lava (smoke, flames, embers and a hiss) and are pushed aside by the player and creatures pressing against them (the game's entity collision).
+- Buttons and levers go on all six sides: buttons on floors and ceilings, levers hanging from ceilings (new block states appended, ids stay stable).
+- The sitting pose: riding a boat, a minecart or a pig the player sits with the legs straight ahead and the arms forward, like the game's.
+
+### Changed
+- Fences are not full blocks: aimed at and outlined as their post and bars, bumped into as the post and bars 1.5 blocks high (`BlockType.outline_boxes`, `Blocks.outline_table`).
+- The ladder is a flat item: its picture in the inventory, in hand and on the ground.
+- The cracks of a block being broken follow its shape (slabs, fences, torches, pistons...) at their own size: each face shows the part of the crack picture its place in the block covers, nothing stretched or squeezed.
+
+### Fixed
+- Ice in lava let you see through the lava: lava faces next to ice were left out (meant for water under ice only).
+- Riding jittered: the rider (ticked on its own clock) followed the boat or cart (ticked on the world's) a tick at a time; now the rider is drawn on the seat where the vehicle is drawn.
+- An extended piston could be aimed through where the head's arm enters it, and a sliding block blinked out for a frame when it arrived (it waits now until the chunk's new mesh is up).
+- Curved rails turning south-west and north-east bulged the wrong way (four curves made a cross instead of a circle).
+
+### Added
 - The void near the bedrock like the game since Beta 1.8: below y 32 the fog turns black, and in survival it closes in where no sky light reaches (down to 5 blocks at the very bottom); dark specks of dust drift in the air below y 8, more the deeper (`VoxelWorld._void_dust`, `BlockParticles.void_speck`).
 - Lava bubbles: now and then tiny embers jump out of a lava surface (besides the pops).
 - Rain and snow hiss into steam on lava, fire and torches (with a fizz now and then); snow falling on water melts into white specks; rain splashes use the game's splash picture, smaller on water with a few droplets.

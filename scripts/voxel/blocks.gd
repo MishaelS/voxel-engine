@@ -76,6 +76,9 @@ static var chest_part_table := PackedByteArray()
 ## Collision boxes per block (Array[AABB], block units) and the outline box.
 static var collision_table: Array = []
 static var selection_table: Array[AABB] = []
+## Per id: the boxes aimed at and outlined (outline_boxes, else the
+## collision boxes when several, else the selection box).
+static var outline_table: Array = []
 ## 1 if the block has display effects (BlockType.display_tick).
 static var display_table := PackedByteArray()
 ## Light given off per block (BlockType.light_emission) and the ids that glow.
@@ -156,8 +159,10 @@ static func _register_all() -> bool:
 	register(BlockType.column("snowy_grass", 66, 68, 2).set_hardness(0.6).set_drop("dirt").set_tool("shovel"))
 	register(BlockType.cube("snow", 66).set_hardness(0.2).set_tool("shovel", 0) \
 		.set_drops([{"item": "snowball", "min": 4, "max": 4}]))
-	register(BlockType.cube("ice", 67).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2) \
-		.set_hardness(0.5).set_slipperiness(0.98).set_drop("none").set_tool("pickaxe"))
+	var ice := BlockType.cube("ice", 67).set_layer(Layer.TRANSLUCENT).set_cull_self().set_light_opacity(2) \
+		.set_hardness(0.5).set_slipperiness(0.98).set_drop("none").set_tool("pickaxe")
+	ice.random_tick = Callable(LiquidBehavior, "ice_random_tick") # melts near heat and in warm biomes
+	register(ice)
 
 	# Oriented variants, containers, flowing water and beds (appended: ids stay stable).
 	for facing in range(1, 4):
@@ -233,6 +238,14 @@ static func _register_all() -> bool:
 	moving.shape = BlockType.Shape.MODEL
 	moving.model = BlockModel.register([])
 	register(moving)
+	# Levers on ceilings, buttons on floors and ceilings: all six sides
+	# (appended: ids stay stable).
+	for place in [6, 7]:
+		for on in [false, true]:
+			register(_lever(place, on))
+	for facing in [4, 5]:
+		for pressed in [false, true]:
+			register(_button(facing, pressed))
 	_set_flammability()
 	return true
 
@@ -274,7 +287,10 @@ static func _rail(family: String, tile: int, curve_tile: int, shape: int, on: bo
 		block.set_selection(AABB(Vector3.ZERO, Vector3(16, 8, 16)))
 	elif shape >= 6:
 		block.model = BlockModel.register([{"from": Vector3(0, 0, 0), "to": Vector3(16, 1, 16),
-			"faces": {BlockModel.UP: {"layer": curve_tile, "uv_turn": [0, 1, 2, 3][shape - 6]}}}])
+			# The curve picture joins south and east (shape 6); our uv turns go
+			# the other way round from the game's, so south-west and north-east
+			# take 3 and 1 (they bulged the wrong way).
+			"faces": {BlockModel.UP: {"layer": curve_tile, "uv_turn": [0, 3, 2, 1][shape - 6]}}}])
 	else:
 		block.model = BlockModel.register([{"from": Vector3(0, 0, 0), "to": Vector3(16, 1, 16),
 			"faces": {BlockModel.UP: {"layer": tile, "uv_turn": shape}}}])
@@ -432,8 +448,9 @@ static func _all_faces(tile: int) -> Dictionary:
 	return faces
 
 
-## A lever (`place`: 0 floor along x, 1 floor along z, 2.. on a wall facing
-## place - 2): a cobblestone base and a stick leaning one way or the other.
+## A lever (`place`: 0 floor along x, 1 floor along z, 2..5 on a wall facing
+## place - 2, 6 / 7 on the ceiling along x / z): a cobblestone base and a
+## stick leaning one way or the other.
 static func _lever(place: int, on: bool) -> BlockType:
 	var index := place * 2 + (1 if on else 0)
 	var block := BlockType.cube("lever" if index == 0 else "lever_%d" % index, 16).set_layer(Layer.CUTOUT) \
@@ -450,7 +467,17 @@ static func _lever(place: int, on: bool) -> BlockType:
 		BlockModel.SOUTH: {"layer": 96, "uv": Rect2(7, 6, 2, 10)}, BlockModel.NORTH: {"layer": 96, "uv": Rect2(7, 6, 2, 10)},
 	}
 	var tilt := -40.0 if on else 40.0
-	if place < 2:
+	if place >= 6:
+		# Hanging from the ceiling: the floor lever upside down.
+		var along_x := place == 6
+		var base := {"from": Vector3(4, 13, 5) if along_x else Vector3(5, 13, 4),
+			"to": Vector3(12, 16, 11) if along_x else Vector3(11, 16, 12), "faces": _all_faces(16)}
+		var lever := {"from": Vector3(7, 5, 7), "to": Vector3(9, 15, 9), "faces": stick,
+			"rotation": {"axis": "z" if along_x else "x", "angle": -tilt, "origin": Vector3(8, 15, 8)}}
+		block.model = BlockModel.register([base, lever])
+		block.set_selection(AABB(Vector3(4, 6, 4), Vector3(8, 10, 8)))
+		block.in_catalog = false
+	elif place < 2:
 		var along_x := place == 0
 		var base := {"from": Vector3(4, 0, 5) if along_x else Vector3(5, 0, 4),
 			"to": Vector3(12, 3, 11) if along_x else Vector3(11, 3, 12), "faces": _all_faces(16)}
@@ -487,9 +514,16 @@ static func _button(facing: int, pressed: bool) -> BlockType:
 	block.family = "stone_button"
 	block.item = "stone_button"
 	block.in_catalog = index == 0
-	block.facing = facing
 	block.shape = BlockType.Shape.MODEL
 	var depth := 1.0 if pressed else 2.0
+	if facing >= 4:
+		# 4: on the floor, 5: on the ceiling.
+		var low := 0.0 if facing == 4 else 16.0 - depth
+		block.model = BlockModel.register([{"from": Vector3(5, low, 6), "to": Vector3(11, low + depth, 10),
+			"faces": _all_faces(1)}])
+		block.set_selection(AABB(Vector3(5, low, 6), Vector3(6, depth, 4)))
+		return block
+	block.facing = facing
 	block.model = BlockModel.register([{"from": Vector3(5, 6, 0), "to": Vector3(11, 10, depth), "faces": _all_faces(1)}], facing)
 	block.set_selection(_facing_box(AABB(Vector3(5, 6, 0), Vector3(6, 4, depth)), facing))
 	return block
@@ -585,7 +619,9 @@ static func _piston(dir: int, extended: bool, sticky: bool) -> BlockType:
 		sides[BlockModel.UP] = {"layer": 110}
 		block.model = BlockModel.register(_piston_boxes([{"from": Vector3(0, 0, 0), "to": Vector3(16, 12, 16), "faces": sides}], dir))
 		var box := _piston_box(AABB(Vector3.ZERO, Vector3(16, 12, 16)), dir)
-		block.set_collision([box]).set_selection(box)
+		# The head's arm reaches 4 pixels into the base: aimed at too.
+		var arm := _piston_box(AABB(Vector3(6, 12, 6), Vector3(4, 4, 4)), dir)
+		block.set_collision([box, arm]).set_selection(box)
 	else:
 		sides[BlockModel.UP] = {"layer": front}
 		block.model = BlockModel.register(_piston_boxes([{"from": Vector3(0, 0, 0), "to": Vector3(16, 16, 16), "faces": sides}], dir))
@@ -834,8 +870,20 @@ static func _turned_box(from: Vector3, to: Vector3, turn: Basis) -> AABB:
 ## north, east). Collides 1.5 blocks high like the game.
 static func _fence(mask: int) -> BlockType:
 	var block := BlockType.cube("fence" if mask == 0 else "fence_%d" % mask, 4).set_hardness(2.0).set_tool("axe") \
-		.set_height(0.999).set_light_opacity(0).set_on_update(Callable(FenceBehavior, "on_update")) \
-		.set_collision([AABB(Vector3.ZERO, Vector3(16, 24, 16))]).set_selection(AABB(Vector3.ZERO, Vector3(16, 16, 16)))
+		.set_height(0.999).set_light_opacity(0).set_on_update(Callable(FenceBehavior, "on_update"))
+	# Not a full block: the post and a bar to each neighbor it joins, aimed
+	# at and outlined as they are; bumped into 1.5 blocks high (nothing jumps
+	# over a fence), like the modern game's.
+	var outline := [AABB(Vector3(6, 0, 6), Vector3(4, 16, 4))]
+	var collision := [AABB(Vector3(6, 0, 6), Vector3(4, 24, 4))]
+	for d in 4:
+		if mask & (1 << d) == 0:
+			continue
+		var bar: AABB = [AABB(Vector3(7, 6, 10), Vector3(2, 9, 6)), AABB(Vector3(0, 6, 7), Vector3(6, 9, 2)),
+			AABB(Vector3(7, 6, 0), Vector3(2, 9, 6)), AABB(Vector3(10, 6, 7), Vector3(6, 9, 2))][d]
+		outline.append(bar)
+		collision.append(AABB(Vector3(bar.position.x, 0, bar.position.z), Vector3(bar.size.x, 24, bar.size.z)))
+	block.set_collision(collision).set_outline(outline)
 	block.family = "fence"
 	if mask != 0:
 		block.item = "fence"
@@ -875,6 +923,7 @@ static func _ladder(facing: int) -> BlockType:
 	block.family = "ladder"
 	block.facing = facing
 	block.climbable = true
+	block.flat_item = true # its picture in the inventory, in hand and on the ground
 	if facing != 0:
 		block.item = "ladder"
 		block.in_catalog = false
@@ -1230,6 +1279,10 @@ static func register(block: BlockType) -> int:
 				bounds = bounds.merge(box)
 		block.selection_box = bounds
 	selection_table.append(block.selection_box)
+	if not block.outline_boxes.is_empty():
+		outline_table.append(block.outline_boxes)
+	else:
+		outline_table.append(block.collision_boxes if block.collision_boxes.size() > 1 else [block.selection_box])
 	light_emission_table.append(block.light_emission)
 	if block.light_emission > 0:
 		glowing_ids.append(id)

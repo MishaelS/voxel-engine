@@ -244,7 +244,12 @@ static func finish_moving(world: VoxelWorld, pos: Vector3i) -> void:
 	var entry: Dictionary = world.moving_blocks.get(pos, {})
 	world.moving_blocks.erase(pos)
 	if not entry.is_empty() and is_instance_valid(entry.node):
-		(entry.node as Node).queue_free()
+		# Kept a moment until the chunk's new mesh with the arrived block is
+		# up (built in the background): gone at once, the block blinked out.
+		var node: Node = entry.node
+		node.get_tree().create_timer(0.15).timeout.connect(func() -> void:
+			if is_instance_valid(node):
+				node.queue_free())
 	if Blocks.family_of(world.get_block(pos)) != "moving_piston":
 		return
 	world.set_block(pos, entry.get("id", Blocks.AIR))

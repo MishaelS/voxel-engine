@@ -51,7 +51,7 @@ static func torch_id(lit: bool, attached: Vector3i) -> int:
 static func lever_info(id: int) -> Array:
 	var index := Blocks.family_ids("lever").find(id)
 	var place := index / 2
-	var attached := Vector3i.DOWN if place < 2 else -Blocks.FACING_DIRECTIONS[place - 2]
+	var attached := Vector3i.DOWN if place < 2 else (Vector3i.UP if place >= 6 else -Blocks.FACING_DIRECTIONS[place - 2])
 	return [index % 2 == 1, attached, place]
 
 
@@ -59,10 +59,12 @@ static func lever_id(on: bool, place: int) -> int:
 	return Blocks.family_ids("lever")[place * 2 + (1 if on else 0)]
 
 
-## Button: [pressed, attached direction].
+## Button: [pressed, attached direction] (on a wall, the floor or the ceiling).
 static func button_info(id: int) -> Array:
 	var index := Blocks.family_ids("stone_button").find(id)
-	return [index % 2 == 1, -Blocks.FACING_DIRECTIONS[index / 2]]
+	var place := index / 2
+	var attached := Vector3i.DOWN if place == 4 else (Vector3i.UP if place == 5 else -Blocks.FACING_DIRECTIONS[place])
+	return [index % 2 == 1, attached]
 
 
 ## Repeater: facing (output direction index), delay 1..4, powered.
@@ -330,15 +332,24 @@ static func placement(world: VoxelWorld, family: String, pos: Vector3i, normal: 
 				return -1
 			return torch_id(true, -normal)
 		"lever":
+			var along := 0 if absf(look.x) > absf(look.z) else 1
 			if normal == Vector3i.UP:
-				return lever_id(false, 0 if absf(look.x) > absf(look.z) else 1) if below_solid else -1
-			if normal.y != 0 or not Redstone.is_solid(world.get_block(pos - normal)):
+				return lever_id(false, along) if below_solid else -1
+			if normal == Vector3i.DOWN:
+				# Under a block: hanging from the ceiling.
+				return lever_id(false, 6 + along) if Redstone.is_solid(world.get_block(pos + Vector3i.UP)) else -1
+			if normal == Vector3i.ZERO or not Redstone.is_solid(world.get_block(pos - normal)):
 				return -1
 			return lever_id(false, 2 + Blocks.FACING_DIRECTIONS.find(normal))
 		"stone_button":
-			if normal.y != 0 or normal == Vector3i.ZERO or not Redstone.is_solid(world.get_block(pos - normal)):
+			if normal == Vector3i.ZERO or not Redstone.is_solid(world.get_block(pos - normal)):
 				return -1
-			return Blocks.family_ids("stone_button")[Blocks.FACING_DIRECTIONS.find(normal) * 2]
+			var buttons := Blocks.family_ids("stone_button")
+			if normal == Vector3i.UP:
+				return buttons[8] # on the floor
+			if normal == Vector3i.DOWN:
+				return buttons[10] # on the ceiling
+			return buttons[Blocks.FACING_DIRECTIONS.find(normal) * 2]
 		"stone_pressure_plate", "wooden_pressure_plate":
 			return Blocks.family_ids(family)[0] if below_solid else -1
 		"repeater":

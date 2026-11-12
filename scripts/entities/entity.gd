@@ -87,6 +87,11 @@ func teleport(position: Vector3) -> void:
 	global_position = position
 
 
+## Where the entity is drawn this frame (between the last two ticks).
+func render_feet() -> Vector3:
+	return _prev.lerp(Vector3(_x, _y, _z), TickLoop.alpha)
+
+
 func feet() -> Vector3:
 	return Vector3(_x, _y, _z)
 
