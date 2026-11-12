@@ -693,10 +693,16 @@ static func _register_nature() -> void:
 		.set_random_tick(Callable(NatureBehavior, "random_tick")) \
 		.set_collision([AABB(Vector3(1, 0, 1), Vector3(14, 15, 14))]).set_selection(AABB(Vector3(1, 0, 1), Vector3(14, 16, 14)))
 	cactus.shape = BlockType.Shape.MODEL
-	cactus.model = BlockModel.register([{"from": Vector3(1, 0, 1), "to": Vector3(15, 16, 15), "faces": {
-		BlockModel.UP: {"layer": 69, "uv": Rect2(0, 0, 16, 16)}, BlockModel.DOWN: {"layer": 71, "uv": Rect2(0, 0, 16, 16)},
-		BlockModel.EAST: {"layer": 70}, BlockModel.WEST: {"layer": 70}, BlockModel.SOUTH: {"layer": 70}, BlockModel.NORTH: {"layer": 70},
-	}}])
+	# Like the game's: the top and bottom fill the block, each side is the
+	# whole texture moved 1 pixel in (so the spines stick out at the edges).
+	cactus.model = BlockModel.register([
+		{"from": Vector3(0, 16, 0), "to": Vector3(16, 16, 16), "faces": {BlockModel.UP: {"layer": 69}}},
+		{"from": Vector3(0, 0, 0), "to": Vector3(16, 0, 16), "faces": {BlockModel.DOWN: {"layer": 71}}},
+		{"from": Vector3(15, 0, 0), "to": Vector3(15, 16, 16), "faces": {BlockModel.EAST: {"layer": 70}}},
+		{"from": Vector3(1, 0, 0), "to": Vector3(1, 16, 16), "faces": {BlockModel.WEST: {"layer": 70}}},
+		{"from": Vector3(0, 0, 15), "to": Vector3(16, 16, 15), "faces": {BlockModel.SOUTH: {"layer": 70}}},
+		{"from": Vector3(0, 0, 1), "to": Vector3(16, 16, 1), "faces": {BlockModel.NORTH: {"layer": 70}}},
+	])
 	register(cactus)
 	var reeds := BlockType.cube("sugar_cane_block", 73).as_plant().set_item("sugar_cane") \
 		.set_on_update(Callable(NatureBehavior, "on_update")).set_random_tick(Callable(NatureBehavior, "random_tick")) \

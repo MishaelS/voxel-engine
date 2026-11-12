@@ -27,6 +27,26 @@ var enabled := true
 ## (DungeonBehavior).
 var block_spawners := {}
 var _counter := 0
+## The little mobs turning inside the known spawners: position -> view.
+var _views := {}
+
+
+## Keeps a SpawnerMobView inside every spawner known (and none in gone
+## ones).
+func _update_views() -> void:
+	for pos: Vector3i in _views.keys():
+		if not block_spawners.has(pos) or not is_instance_valid(_views[pos]):
+			if is_instance_valid(_views[pos]):
+				(_views[pos] as Node).queue_free()
+			_views.erase(pos)
+	for pos: Vector3i in block_spawners:
+		if not _views.has(pos):
+			var type := Blocks.get_type(world.get_block(pos)).name.trim_prefix("mob_spawner_")
+			if not Mob.TYPES.has(type):
+				continue
+			var view := SpawnerMobView.create(world, pos, type)
+			world.add_child(view)
+			_views[pos] = view
 
 
 func _init(owner: VoxelWorld) -> void:
@@ -40,6 +60,7 @@ func tick() -> void:
 			block_spawners.erase(pos)
 		else:
 			block_spawners[pos] = delay
+	_update_views()
 	_counter += 1
 	if not enabled or _counter % INTERVAL != 0:
 		return

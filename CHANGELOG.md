@@ -76,6 +76,7 @@ Sections:
 
 - The undead (`Mob.is_undead()`: zombies and skeletons) burn in daylight under the open sky; anything burning is wrapped in the fire block's flames, as big as the creature.
 - Held items on models like the game's: skeletons hold a bow, and in third person the player holds what is in their hand (tools pointing forward from the fist, the bow by its grip, other items and blocks small in the hand) (`MobModels.held_item()`).
+- A little mob turns inside every mob spawner, like the game's (`SpawnerMobView`): the spawner's mob at 7/16 of its size, tilted 30 degrees, spinning fast while the player is near (faster as the next spawn nears).
 - Creature and player animations in the style of Beta 1.7.3's models (`MobAnimation`): idle arm sway and a little head nod, idle glances around (and looking at the player only for a while, like the game's); the arm raised a little when holding something; walking with the game's leg and arm swing (zombies and skeletons keep their arms ahead and sway them); Beta's sneaking pose for the player (body bent forward, arms along, legs stepped back, head down a pixel); jumping (a leg ahead, front legs ahead on four-legged animals) and falling (arms spread, legs apart); slimes stretch when they jump and squash when they land like the game's; a short flinch when hurt; the player in third person also falls over when dead, like the mobs; a puff of smoke when a dead creature is gone; the player lies in the bed asleep (seen in third person).
 - Double doors: a door placed next to another one gets its hinges on the other side (like Beta: it is an open door turned a quarter), so the two meet in the middle; otherwise the hinges go to the side with more solid blocks.
 
@@ -91,6 +92,7 @@ Sections:
 - Player collision lives in `EntityPhysics`, shared with entities.
 
 ### Fixed
+- The cactus is drawn like the game's: the top and bottom fill the block and each side is the whole texture moved a pixel in, so the spines stick out at the edges (it was a squeezed, uneven smaller box).
 - Water (flowing or a source) under a solid block is drawn again: its surface lies lower than the block above, so it can be seen.
 - Ice next to water shows all its side faces (they were cut down to a strip above the surface).
 - The skeleton's spine and other thin parts are seen from both sides (the mob shader draws back faces).
