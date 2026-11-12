@@ -188,6 +188,7 @@ func _ready() -> void:
 	map_view = MapView.new()
 	map_view.player = self
 	layer.add_child(map_view)
+	layer.add_child(PlayerList.new()) # Tab in a network game
 	layer.add_child(AchievementToast.new())
 	_sleep_fade = ColorRect.new()
 	_sleep_fade.color = Color(0.03, 0.03, 0.06, 0.0)
@@ -322,6 +323,7 @@ func wake_up() -> void:
 ## Arm swing (breaking, placing), shown by the block in hand.
 func swing() -> void:
 	held_item.swing()
+	Net.swung() # shown on the others' screens
 
 
 func reach() -> float:

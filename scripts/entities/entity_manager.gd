@@ -110,7 +110,7 @@ var tick_times := {}
 func _tick(_tick_index: int) -> void:
 	tick_times.clear()
 	var started := Time.get_ticks_usec()
-	if spawner == null and world:
+	if spawner == null and world and not world.remote: # (a client's creatures come from the host: next step)
 		spawner = MobSpawner.new(world)
 	if spawner:
 		spawner.tick()

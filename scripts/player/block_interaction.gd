@@ -327,8 +327,41 @@ func _use() -> void:
 			_place_sign()
 
 
+## Blocks a network client has the host use (Net.send_use): levers,
+## buttons, repeaters, doors, trapdoors and note blocks.
+const SHARED_USE: Array[String] = ["lever", "stone_button", "repeater", "trapdoor", "trapdoor_open", "note_block"]
+## Not shared yet in a network game (the next step): their contents and
+## state are the host's.
+const HOST_ONLY_USE: Array[String] = ["chest", "chest_left", "chest_right", "furnace", "furnace_lit", "dispenser",
+	"dungeon_chest", "jukebox", "cake", "bed_foot", "bed_head"]
+
+
+## The host does what a client's player used (Net._client_use).
+static func use_shared(world: VoxelWorld, pos: Vector3i) -> void:
+	var id := world.get_block(pos)
+	if RedstoneComponents.use(world, pos, id):
+		return
+	var family := Blocks.family_of(id)
+	if family == "trapdoor" or family == "trapdoor_open":
+		var open := family == "trapdoor"
+		world.set_block(pos, Blocks.variant("trapdoor_open" if open else "trapdoor", Blocks.facing_table[id]))
+		Sounds.play("door/" + ("open" if open else "close"), Vector3(pos) + Vector3(0.5, 0.5, 0.5), 1.0, randf() * 0.1 + 0.9)
+	elif family == "note_block":
+		MusicBehavior.tune(world, pos)
+	elif DoorBehavior.is_door(id) and DoorBehavior.parts(id)[0] == "wooden":
+		DoorBehavior.toggle(world, pos)
+
+
 ## Crafting table, chest, furnace and bed react to RMB. Returns true if used.
 func _use_block(pos: Vector3i, id: int) -> bool:
+	if world.remote:
+		var shared_family := Blocks.family_of(id)
+		if shared_family in SHARED_USE or (DoorBehavior.is_door(id) and DoorBehavior.parts(id)[0] == "wooden"):
+			Net.send_use(pos)
+			return true
+		if shared_family in HOST_ONLY_USE:
+			player.message.emit(Lang.t("Not in network games yet"))
+			return true
 	if RedstoneComponents.use(world, pos, id):
 		return true
 	if Blocks.family_of(id) == "dispenser":

@@ -14,6 +14,14 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Multiplayer, first step (stage 15; `Net` autoload, `scripts/net/`): the classic game's way, a player opens the world from the pause menu ("Open to LAN", port 25565) and is the host; others join from "Multiplayer" on the title screen, by address or from the games found on the local network (UDP broadcast on port 4445). Godot's multiplayer over ENet.
+  - The host runs the world (liquids, growth, redstone, ticks, saving). A client generates the columns nobody has changed itself (the same blocks from the same seed) and gets the changed ones from the host (compressed); every block change goes to the clients a frame at a time; the host keeps the columns around the other players loaded.
+  - A client's edits (breaking, placing, buckets, beds, doors) show at once and are made by the host with all their effects; levers, buttons, repeaters, doors, trapdoors and note blocks are used by the host. A client's drops go straight into its inventory (dropped items are the host's for now).
+  - Players see each other (`RemotePlayer`: the player model with the skin, the name above, walking, sneaking, sitting, sleeping, swinging, the item in hand); chat, the time of day and the weather are shared; joining and leaving show in the chat. The game goes on behind the pause menu while online.
+  - Tab shows the players (`PlayerList`): the face from the skin, the name and the signal bars from `icons.png` by the round trip the host measures each second (under 150 ms five bars ... a red cross while unknown).
+  - Not shared yet (the next step): creatures, dropped items, chests, furnaces and dispensers, arrows, minecarts and boats, signs' text; a client's player is not saved.
+
+### Added
 - Ice melts into water like the classic game where block light is brighter than 8 (a torch within about 5 blocks, lava or fire next to it), and now and then outside the cold biomes (`LiquidBehavior.ice_random_tick`).
 - Boats burn up in lava (smoke, flames, embers and a hiss) and are pushed aside by the player and creatures pressing against them (the game's entity collision).
 - Buttons and levers go on all six sides: buttons on floors and ceilings, levers hanging from ceilings (new block states appended, ids stay stable).

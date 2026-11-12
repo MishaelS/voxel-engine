@@ -16,6 +16,14 @@ func build() -> void:
 	add_list_wide_button("Statistics", func() -> void: menu.push(StatsScreen.new()))
 	add_list_wide_button("Options...", func() -> void: menu.push(OptionsScreen.new()))
 	var game := Game.find(menu.get_tree())
+	if game and game.is_saved() and not Net.is_online():
+		# Like the classic game's "Open to LAN": others can join this world.
+		add_list_wide_button("Open to LAN", func() -> void:
+			var error := Net.host()
+			menu.close()
+			if menu.chat:
+				menu.chat.add_message(Lang.t(error) if error != "" else
+					Lang.t("Local game hosted on port %d") % Net.PORT, CommandSource.MessageKind.INFO))
 	if game:
 		add_list_wide_button("Save and Quit to Title" if game.is_saved() else "Quit to Title",
 			func() -> void: game.quit_to_title())

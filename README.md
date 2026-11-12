@@ -90,6 +90,9 @@ register(BlockType.cube("sand", 18)
 register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "random_tick")))
 ```
 
+## Multiplayer
+Open a world to the network from the pause menu ("Open to LAN", port 25565); others join from "Multiplayer" on the title screen (the address, or a game found on the local network). The host runs the world; see `scripts/net/net.gd`. Tab shows the players and their signal.
+
 ## Native code
 Heavy loops are moved to C++ (GDExtension) step by step; the column light (`native/src/native_light.cpp`), chunk meshes (`native/src/native_mesher.cpp`) and world generation (`native/src/native_beta_generator.cpp`, block for block the same as `BetaGenerator`; `generate_blocks_script` keeps the GDScript one to compare) the light after block changes (`NativeLight.relight_edit`) and particles (`native/src/native_particles.cpp`). The built library is in `bin/` (macOS, universal), so the project runs as is. After changing `native/src/` rebuild it (clang and cmake; the first build compiles godot-cpp, a few minutes):
 ```

@@ -135,6 +135,7 @@ func _build_main() -> void:
 	buttons.add_theme_constant_override("separation", 4 * P)
 	_main.add_child(buttons)
 	buttons.add_child(_button("Singleplayer", UiTheme.WIDE_BUTTON, _open_singleplayer))
+	buttons.add_child(_button("Multiplayer", UiTheme.WIDE_BUTTON, func() -> void: _menu.push(MultiplayerScreen.new())))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4 * P)
 	row.add_child(_button("Options...", 98 * P, func() -> void: _menu.push(OptionsScreen.new())))

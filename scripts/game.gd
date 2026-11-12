@@ -52,7 +52,7 @@ func _process(delta: float) -> void:
 
 
 func is_saved() -> bool:
-	return world != null and world.save != null
+	return world != null and world.save != null and not world.save.remote
 
 
 ## Writes the changed columns and the world / player state.
@@ -70,6 +70,7 @@ func save_game() -> void:
 func quit_to_title() -> void:
 	Stats.add("leave_game")
 	save_game()
+	Net.leave() # stops hosting / leaves the host's game
 	get_tree().paused = false
 	GameInput.reset()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

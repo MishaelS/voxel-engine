@@ -88,6 +88,15 @@ var next_map_id := 0
 ## Where this world is saved (WorldSave.current when started from the
 ## title screen); null = not saved.
 var save: WorldSave
+## A network game's client (Net): the host runs the world; this one draws
+## it, asks the host for changed columns, sends its player's edits and runs
+## no world ticks of its own.
+var remote := false
+var _applying_network := false
+var _remote_waiting := {} # columns asked from the host
+var _remote_centers: Array[Vector2i] = []
+## Columns kept loaded around the other players (host).
+const REMOTE_RADIUS := 4
 
 var _chunks := {}          # Vector3i -> ChunkData
 var _columns := {}         # Vector2i -> Array[ChunkData]: generated columns, bottom to top
@@ -235,10 +244,13 @@ class GenerationJob:
 	var generation_ms := 0.0
 	var task_id := -1
 
+	## Blocks sent by the host (network client): used instead of generating.
+	var given := PackedInt32Array()
+
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
-		var blocks := PackedInt32Array()
-		if save and save.has_column(column):
+		var blocks := given
+		if blocks.is_empty() and save and save.has_column(column):
 			blocks = save.load_column(column) # generated or changed before: saved
 		if blocks.size() == WorldGenerator.LEGACY_VOLUME:
 			# Saved when the world was 128 high: moved up onto the new deep layer.
@@ -258,6 +270,7 @@ class GenerationJob:
 func _ready() -> void:
 	ChunkMesher.prepare_native()
 	save = WorldSave.current
+	remote = Net.is_client()
 	if save:
 		world_seed = save.world_seed
 		generator = save.generator as Generator
@@ -398,6 +411,8 @@ func generate() -> void:
 const SPAWN_SEARCH_RADIUS := 6
 
 func find_spawn() -> Vector3:
+	if remote:
+		return Net.world_info.get("spawn", Vector3(8.5, WorldGenerator.SEA_LEVEL + 1.0, 8.5))
 	if generator == Generator.RANDOM_BLOCKS:
 		_generate_now(Vector2i.ZERO)
 		return Vector3(24, 20, 24)
@@ -418,8 +433,8 @@ func find_spawn() -> Vector3:
 
 
 func _generate_now(column: Vector2i) -> void:
-	if _columns.has(column):
-		return
+	if _columns.has(column) or remote:
+		return # (a client waits for the host's answer: the column may be changed)
 	var job := GenerationJob.new()
 	job.column = column
 	job.generator = world_generator
@@ -487,8 +502,12 @@ func _player_column_now() -> Vector2i:
 ## first) and unload the ones that are too far.
 func _update_streaming() -> void:
 	var center := _player_column_now()
-	if center == _player_column:
+	var others: Array[Vector2i] = []
+	if Net.is_host():
+		others.assign(Net.remote_columns())
+	if center == _player_column and others == _remote_centers:
 		return
+	_remote_centers = others
 	_player_column = center
 	_mesh_scan_needed = true
 	_light_scan_needed = true
@@ -503,14 +522,29 @@ func _update_streaming() -> void:
 				var column := center + Vector2i(dx, dz)
 				if not _columns.has(column):
 					_wanted_columns.append(column)
+	# Host: the columns around the other players too (their edits and the
+	# world's ticks there need them).
+	for other in _remote_centers:
+		for dx in range(-REMOTE_RADIUS, REMOTE_RADIUS + 1):
+			for dz in range(-REMOTE_RADIUS, REMOTE_RADIUS + 1):
+				var column := other + Vector2i(dx, dz)
+				if not _columns.has(column) and not _wanted_columns.has(column):
+					_wanted_columns.append(column)
 
 	var unload_radius := render_distance + 4
 	for column: Vector2i in _columns.keys():
 		if absi(column.x - center.x) > unload_radius or absi(column.y - center.y) > unload_radius:
-			_unload_column(column)
+			var near_other := false
+			for other in _remote_centers:
+				near_other = near_other or (absi(column.x - other.x) <= REMOTE_RADIUS + 2 and absi(column.y - other.y) <= REMOTE_RADIUS + 2)
+			if not near_other:
+				_unload_column(column)
 
 
 func _start_generation_jobs() -> void:
+	if remote:
+		_start_remote_columns()
+		return
 	while _gen_jobs.size() < maxi(_max_jobs - 2, 1) and _busy_jobs() < _job_room() and not _wanted_columns.is_empty():
 		var column: Vector2i = _wanted_columns.pop_back()
 		if _columns.has(column) or _gen_jobs.has(column):
@@ -520,6 +554,38 @@ func _start_generation_jobs() -> void:
 		job.column = column
 		job.generator = world_generator
 		job.save = save
+		job.task_id = WorkerThreadPool.add_task(job.run, false, "Column generation")
+		_gen_jobs[column] = job
+
+
+## Client: each column is asked from the host first; it answers with the
+## blocks of a changed column or "generate it" (the same blocks from the
+## same seed). Asked columns wait without holding up the rest.
+func _start_remote_columns() -> void:
+	var asked := 0
+	while asked < 16 and not _wanted_columns.is_empty():
+		var column: Vector2i = _wanted_columns.pop_back()
+		if _columns.has(column) or _gen_jobs.has(column) or _remote_waiting.has(column):
+			continue
+		_remote_waiting[column] = true
+		Net.column_for(column)
+		asked += 1
+	for column: Vector2i in _remote_waiting.keys():
+		if _gen_jobs.size() >= maxi(_max_jobs - 2, 1) or _busy_jobs() >= _job_room():
+			break
+		if not _in_load_radius(column):
+			_remote_waiting.erase(column)
+			continue
+		var answer: Variant = Net.column_for(column)
+		if answer is String and answer == "wait":
+			continue
+		_remote_waiting.erase(column)
+		var job := GenerationJob.new()
+		job.column = column
+		job.generator = world_generator
+		job.save = null # nothing of a client's is saved
+		if answer is PackedInt32Array:
+			job.given = answer
 		job.task_id = WorkerThreadPool.add_task(job.run, false, "Column generation")
 		_gen_jobs[column] = job
 
@@ -551,6 +617,8 @@ func _add_column(job: GenerationJob) -> void:
 		_dirty[coord] = true
 	if loading_radius >= 0:
 		_mesh_scan_needed = true # (not lit yet: nothing to mesh while playing)
+	if remote:
+		apply_network_blocks(Net.take_waiting_changes(job.column)) # changed while it was on its way
 
 
 func _unload_column(column: Vector2i) -> void:
@@ -1179,6 +1247,12 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 	var old := data.get_block(local.x, local.y, local.z)
 	if old == id:
 		return
+	if remote and not _applying_network:
+		# The player's own edit: shown at once, made by the host.
+		Net.send_set_block(pos, id)
+		notify = false
+	elif Net.is_host():
+		Net.block_changed(pos, id)
 	data.set_block(local.x, local.y, local.z, id)
 	if _block_entities.has(pos) and _block_entities[pos].type != _entity_type(id):
 		if _block_entities[pos].type == "sign":
@@ -1256,6 +1330,8 @@ func _mark_dirty_chunk(neighbor: Vector3i) -> void:
 
 ## Sends a "block update" to the block at pos (its on_update handler).
 func _update_block(pos: Vector3i) -> void:
+	if remote:
+		return # the host's world reacts
 	var handler := Blocks.get_type(get_block(pos)).on_update
 	if handler.is_valid():
 		handler.call(self, pos)
@@ -1283,6 +1359,22 @@ const DISPENSER_SIZE := 9
 func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true, effects: bool = true) -> void:
 	var id := get_block(pos)
 	if id == Blocks.AIR:
+		return
+	if remote:
+		# Broken by this player: the bits and sound here, the drops straight
+		# into the inventory (dropped items are the host's for now), the
+		# breaking itself by the host.
+		if effects:
+			particles.break_block(pos, id)
+			Sounds.play_block("break", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
+		var local_player := player as Player
+		if drop and local_player and not local_player.is_creative():
+			for entry: Array in Blocks.drops_of(id, rng, can_harvest):
+				local_player.inventory.add(entry[0], entry[1])
+		Net.send_destroy(pos)
+		_applying_network = true
+		set_block(pos, Blocks.AIR, false)
+		_applying_network = false
 		return
 	if Blocks.family_of(id) == "dungeon_chest":
 		DungeonBehavior.open_chest(self, pos) # its loot spills out
@@ -1414,6 +1506,8 @@ func _tick_furnace(pos: Vector3i, entity: Dictionary) -> void:
 ## Requests a scheduled tick for the block at pos in `delay` game ticks.
 ## Several requests for the same position and tick are merged.
 func schedule_tick(pos: Vector3i, delay: int) -> void:
+	if remote:
+		return
 	var due := clock.game_time + maxi(delay, 1)
 	if not _scheduled.has(due):
 		_scheduled[due] = {}
@@ -1440,6 +1534,12 @@ var tick_times := {}
 
 
 func _tick(_tick_index: int) -> void:
+	if remote:
+		# The host runs the world (and sends the time and weather).
+		clock.tick()
+		_run_display_ticks()
+		_mood_tick()
+		return
 	var t0 := Time.get_ticks_usec()
 	clock.tick()
 	weather.tick()
@@ -2140,3 +2240,39 @@ func get_stats() -> Dictionary:
 		"generation_ms": _last_generation_ms,
 		"pending": _dirty.size(),
 	}
+
+
+# --- Network (Net) --------------------------------------------------------------------
+
+## Client: block changes from the host ([x, y, z, id] each); returns the
+## ones for chunks not here (yet).
+func apply_network_blocks(changes: PackedInt32Array) -> PackedInt32Array:
+	var later := PackedInt32Array()
+	_applying_network = true
+	for i in range(0, changes.size() - 3, 4):
+		var pos := Vector3i(changes[i], changes[i + 1], changes[i + 2])
+		if _chunks.has(chunk_coord_of(pos)):
+			set_block(pos, changes[i + 3], false)
+		else:
+			later.append_array(changes.slice(i, i + 4))
+	_applying_network = false
+	return later
+
+
+## Host: a column's blocks for a client, or empty when it is as generated
+## (the client makes it itself).
+func column_blocks_for_network(column: Vector2i) -> PackedInt32Array:
+	var saved := save != null and not save.remote
+	if saved:
+		_finish_save(column)
+	if _columns.has(column) and (_modified.has(column) or (saved and save.has_column(column))):
+		var blocks := PackedInt32Array()
+		for chunk: ChunkData in _columns[column]:
+			blocks.append_array(chunk.blocks)
+		return blocks
+	if saved and save.has_column(column):
+		var blocks := save.load_column(column)
+		if blocks.size() == WorldGenerator.LEGACY_VOLUME:
+			blocks = world_generator.convert_legacy(column.x, column.y, blocks)
+		return blocks if blocks.size() == WorldGenerator.COLUMN_VOLUME else PackedInt32Array()
+	return PackedInt32Array()

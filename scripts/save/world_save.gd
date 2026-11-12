@@ -22,6 +22,9 @@ const COLUMNS_DIR := "columns"
 static var current: WorldSave
 
 var folder := ""
+## A network game's world as a client has it (Net): kept in memory only,
+## never written.
+var remote := false
 var name := "New World"
 var world_seed := 0
 var generator := 0 # VoxelWorld.Generator
@@ -110,6 +113,8 @@ func load_level() -> bool:
 
 
 func write_level() -> void:
+	if remote:
+		return
 	var config := ConfigFile.new()
 	config.set_value("world", "name", name)
 	config.set_value("world", "seed", world_seed)
@@ -188,6 +193,8 @@ static func _copy_recursive(from: String, to: String) -> void:
 
 ## Deletes the world folder and everything in it.
 func delete() -> void:
+	if remote or folder.strip_edges() == "":
+		return # (an empty folder would be the whole saves folder)
 	_remove_recursive(path())
 
 
@@ -209,6 +216,8 @@ func _column_path(column: Vector2i) -> String:
 
 
 func has_column(column: Vector2i) -> bool:
+	if remote:
+		return false
 	return FileAccess.file_exists(_column_path(column))
 
 
@@ -230,6 +239,8 @@ func load_column(column: Vector2i) -> PackedInt32Array:
 
 
 func save_column(column: Vector2i, blocks: PackedInt32Array) -> void:
+	if remote:
+		return
 	var file := FileAccess.open_compressed(_column_path(column), FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
 	if file:
 		file.store_buffer(blocks.to_byte_array())

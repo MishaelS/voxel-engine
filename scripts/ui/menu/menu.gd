@@ -113,7 +113,8 @@ func open_pause_menu() -> void:
 func push(screen: MenuScreen) -> void:
 	if _stack.is_empty():
 		if in_game:
-			get_tree().paused = true
+			# A network game goes on behind the menu (others are playing).
+			get_tree().paused = not Net.is_online()
 			GameInput.lock()
 			_dim.visible = true
 			_blur.visible = true

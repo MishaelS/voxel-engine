@@ -69,6 +69,7 @@ var _hint: Label
 
 
 func _ready() -> void:
+	add_to_group("chat") # Net writes into it
 	source.world = world
 	source.origin = player
 	source.output = add_message
@@ -149,7 +150,10 @@ func _submit(text: String) -> void:
 	if message.begins_with("/"):
 		Commands.dispatcher.execute(message, source)
 	else:
-		add_message("<%s> %s" % [source.name, message], CommandSource.MessageKind.CHAT)
+		var speaker := Net.player_name if Net.is_online() else source.name
+		add_message("<%s> %s" % [speaker, message], CommandSource.MessageKind.CHAT)
+		if Net.is_online():
+			Net.say(message)
 
 
 func _process(_delta: float) -> void:
