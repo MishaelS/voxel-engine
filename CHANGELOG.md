@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-11-12
+
 ### Added
 - Native code (GDExtension, `native/`, godot-cpp 4.5): `native/build.sh` builds `bin/libvoxel_native.dylib` (macOS, Apple Silicon and Intel), loaded through `bin/voxel_native.gdextension`. First in it: a column's sky light and block light (`NativeLight.compute_column`), the same light cell for cell as `SkyLight` / `BlockLight` and about 55 times faster (9 ms a column instead of ~500 with many lights); the whole render distance 12 is ready in about 23 s instead of 28 (the loading screen goes after 16 s instead of 21.5). Without the library the GDScript light is used.
 - Chunk meshes are built in native code too (`NativeMesher.build_chunk`: padding, faces, smooth light and AO, liquids, plants, block models and cave-culling connectivity): the same arrays as `ChunkMesher.build` (checked on 144 chunks with every kind of block and every Smooth Lighting setting) about 34 times faster (0.14 ms a chunk instead of 4.6). With both, the loading screen goes after about 11 s instead of 21.5, the whole render distance 12 is ready in about 20 s instead of 28; generation is what is left.
@@ -363,6 +365,7 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/MishaelS/voxel-engine/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/MishaelS/voxel-engine/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/MishaelS/voxel-engine/releases/tag/v0.0.1
