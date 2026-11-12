@@ -107,6 +107,35 @@ static var _normals := PackedVector3Array(FACE_NORMALS)
 const LIQUID_DROP := 0.125
 
 
+## The native mesher (NativeMesher, native/src/native_mesher.cpp) is loaded
+## and has the block tables: chunk meshes are built by it (the same arrays
+## as build(), many times faster). Set up on the main thread by
+## prepare_native() before any mesh job.
+static var native := false
+
+
+## Gives the native mesher the block tables (once per world: texture packs
+## and blocks are settled by then). False without the native library.
+static func prepare_native() -> bool:
+	native = false
+	if not ClassDB.class_exists("NativeMesher"):
+		return false
+	var models := []
+	for model in BlockModel._models.size():
+		models.append(BlockModel.quads(model))
+	ClassDB.class_call_static("NativeMesher", "set_tables", {
+		"is_opaque": Blocks.is_opaque_table, "layer": Blocks.layer_table, "cull_self": Blocks.cull_self_table,
+		"face_tiles": Blocks.face_tiles, "face_overlays": Blocks.face_overlays, "tints": Blocks.tints_linear,
+		"collides": Blocks.collides_table, "liquid": Blocks.liquid_table, "biome_tint": Blocks.biome_tint_table,
+		"random_rotation": Blocks.random_rotation_table, "height": Blocks.height_table,
+		"uv_mode": Blocks.uv_mode_table, "cull_group": Blocks.cull_group_table,
+		"liquid_level": Blocks.liquid_level_table, "shape": Blocks.shape_table, "model": Blocks.model_table,
+		"models": models,
+	})
+	native = ClassDB.class_call_static("NativeMesher", "has_tables")
+	return native
+
+
 ## AO_BRIGHTNESS as the block shaders' `ao_levels` uniform.
 static func ao_levels() -> Vector4:
 	return Vector4(AO_BRIGHTNESS[0], AO_BRIGHTNESS[1], AO_BRIGHTNESS[2], AO_BRIGHTNESS[3])

@@ -177,10 +177,17 @@ class MeshJob:
 
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
-		var padded := ChunkMesher.pad_blocks(center, neighbors)
-		surfaces = ChunkMesher.build(padded, ChunkMesher.pad_light(center_light, neighbor_light, SkyLight.MAX),
-			colors[0], colors[1], coord * ChunkData.SIZE, ChunkMesher.pad_light(center_block_light, neighbor_block_light))
-		connectivity = ChunkMesher.connectivity(padded)
+		if ChunkMesher.native:
+			var built: Array = ClassDB.class_call_static("NativeMesher", "build_chunk", coord, center, neighbors,
+				center_light, neighbor_light, center_block_light, neighbor_block_light, colors[0], colors[1],
+				ChunkMesher.smooth_lighting, ChunkMesher.random_rotation)
+			surfaces = built[0]
+			connectivity = built[1]
+		else:
+			var padded := ChunkMesher.pad_blocks(center, neighbors)
+			surfaces = ChunkMesher.build(padded, ChunkMesher.pad_light(center_light, neighbor_light, SkyLight.MAX),
+				colors[0], colors[1], coord * ChunkData.SIZE, ChunkMesher.pad_light(center_block_light, neighbor_block_light))
+			connectivity = ChunkMesher.connectivity(padded)
 		if not surfaces.is_empty():
 			mesh = ChunkMesher.to_mesh(surfaces)
 			for arrays: Array in surfaces.values():
@@ -249,6 +256,7 @@ class GenerationJob:
 
 
 func _ready() -> void:
+	ChunkMesher.prepare_native()
 	save = WorldSave.current
 	if save:
 		world_seed = save.world_seed

@@ -4,6 +4,7 @@
 #include <godot_cpp/godot.hpp>
 
 #include "native_light.h"
+#include "native_mesher.h"
 
 using namespace godot;
 
@@ -12,6 +13,7 @@ static void initialize(ModuleInitializationLevel level) {
 		return;
 	}
 	GDREGISTER_CLASS(voxel::NativeLight);
+	GDREGISTER_CLASS(voxel::NativeMesher);
 }
 
 static void uninitialize(ModuleInitializationLevel level) {
