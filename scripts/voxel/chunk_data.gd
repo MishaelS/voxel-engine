@@ -15,6 +15,9 @@ var tickable_count := 0
 ## Number of air blocks: a chunk of only air has nothing to draw and is
 ## skipped by meshing (most of the sky in a 256 high world).
 var air_count := VOLUME
+## Number of glowing blocks (torches, lava...): block light only looks for
+## its sources in chunks that have some.
+var glow_count := 0
 ## Sky light per block (0..15), same layout as `blocks`. Filled by
 ## SkyLight when the column is lit, then kept up to date by VoxelWorld.
 var light := PackedByteArray()
@@ -47,6 +50,7 @@ func set_block(x: int, y: int, z: int, id: int) -> void:
 	var old := blocks[i]
 	tickable_count += Blocks.ticks_randomly[id] - Blocks.ticks_randomly[old]
 	air_count += int(id == Blocks.AIR) - int(old == Blocks.AIR)
+	glow_count += int(Blocks.light_emission_table[id] > 0) - int(Blocks.light_emission_table[old] > 0)
 	blocks[i] = id
 
 
@@ -55,11 +59,15 @@ func set_block(x: int, y: int, z: int, id: int) -> void:
 func count_tickable() -> void:
 	air_count = blocks.count(Blocks.AIR)
 	tickable_count = 0
+	glow_count = 0
 	if air_count == VOLUME:
 		return
 	var ticks := Blocks.ticks_randomly
+	var emission := Blocks.light_emission_table
 	for id in blocks:
 		tickable_count += ticks[id]
+		if emission[id] > 0:
+			glow_count += 1
 
 
 ## True if every block is air.

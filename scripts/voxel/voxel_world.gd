@@ -41,7 +41,7 @@ const COLUMN_NEIGHBORS: Array[Vector2i] = [
 const MAX_SCHEDULED_TICKS_PER_TICK := 65536
 ## Main-thread time scheduled ticks may take per tick (liquids flooding a
 ## cave relight and remesh a lot): the rest waits for the next tick.
-const SCHEDULED_TICK_BUDGET_US := 5000
+const SCHEDULED_TICK_BUDGET_US := 3000
 
 @export var generator: Generator = Generator.BETA
 @export var world_seed: int = 1337
@@ -136,6 +136,8 @@ var loading_radius := -1:
 	set(value):
 		loading_radius = value
 		_mesh_scan_needed = true
+		# Behind the loading screen nobody plays: every core but one works.
+		_max_jobs = maxi(OS.get_processor_count() - 1, 2) if value >= 0 else maxi(OS.get_processor_count() / 2, 2)
 var _player_column := Vector2i(2147483647, 0)
 var _wanted_columns: Array[Vector2i] = []
 var _total_faces := 0
@@ -191,7 +193,8 @@ class MeshJob:
 ## the 3x3 columns around it.
 class LightJob:
 	var column: Vector2i
-	var chunks := []   # 9 arrays of 8 block arrays
+	var chunks := []   # 9 arrays of the columns' chunk block arrays
+	var glowing := []  # 9 arrays of flags: that chunk has glowing blocks
 	var heights := []  # 9 heightmaps
 	var light: Array[PackedByteArray] = []
 	var block_light: Array[PackedByteArray] = []
@@ -200,7 +203,7 @@ class LightJob:
 	func run() -> void:
 		var area := SkyLight.area_of(chunks)
 		light = SkyLight.compute_column(area, heights)
-		block_light = BlockLight.compute_column(area)
+		block_light = BlockLight.compute_column(area, BlockLight.sources_of(chunks, glowing))
 
 
 ## A column generated on a worker thread.
@@ -287,6 +290,9 @@ var frame_times := {}
 
 func _process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
+	for column: Vector2i in _save_tasks.keys():
+		if WorkerThreadPool.is_task_completed(_save_tasks[column]):
+			_finish_save(column)
 	_update_streaming()
 	var t1 := Time.get_ticks_usec()
 	_finish_generation_jobs()
@@ -295,6 +301,7 @@ func _process(delta: float) -> void:
 	_finish_light_jobs()
 	_start_light_jobs()
 	var t3 := Time.get_ticks_usec()
+	_run_light_spread(LIGHT_SPREAD_FRAME_US)
 	_finish_mesh_jobs()
 	var t3b := Time.get_ticks_usec()
 	_start_mesh_jobs()
@@ -320,6 +327,13 @@ func generate() -> void:
 	_chunk_nodes.clear()
 	_chunk_faces.clear()
 	_dirty.clear()
+	_relight_columns.clear()
+	_sky_spread.clear()
+	_sky_spread_head = 0
+	_block_spread.clear()
+	_block_spread_head = 0
+	_deferred.clear()
+	_surface_min.clear()
 	_urgent_mesh.clear()
 	_total_faces = 0
 	_player_column = Vector2i(2147483647, 0)
@@ -415,6 +429,7 @@ func _top_block_y(x: int, z: int) -> int:
 func remesh_all() -> void:
 	for coord: Vector3i in _chunks:
 		_dirty[coord] = true
+	_deferred.clear()
 	_mesh_scan_needed = true
 
 
@@ -438,6 +453,8 @@ func _wait_for_jobs() -> void:
 	if _cull_task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_cull_task)
 		_cull_task = -1
+	for column: Vector2i in _save_tasks.keys():
+		_finish_save(column)
 
 
 # --- Streaming -----------------------------------------------------------------------
@@ -456,15 +473,17 @@ func _update_streaming() -> void:
 	_player_column = center
 	_mesh_scan_needed = true
 	_light_scan_needed = true
+	_wake_deferred()
 	var radius := render_distance + 1
 	_wanted_columns.clear()
-	for dx in range(-radius, radius + 1):
-		for dz in range(-radius, radius + 1):
-			var column := center + Vector2i(dx, dz)
-			if not _columns.has(column):
-				_wanted_columns.append(column)
-	_wanted_columns.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
-		return (a - center).length_squared() > (b - center).length_squared()) # nearest at the end
+	# Ring by ring from the outside in: the nearest end up last (taken
+	# first) without sorting hundreds of columns.
+	for ring in range(radius, -1, -1):
+		for dx in range(-ring, ring + 1):
+			for dz: int in ([-ring, ring] if absi(dx) != ring else range(-ring, ring + 1)):
+				var column := center + Vector2i(dx, dz)
+				if not _columns.has(column):
+					_wanted_columns.append(column)
 
 	var unload_radius := render_distance + 4
 	for column: Vector2i in _columns.keys():
@@ -473,10 +492,11 @@ func _update_streaming() -> void:
 
 
 func _start_generation_jobs() -> void:
-	while _gen_jobs.size() < _half_jobs() and _busy_jobs() < _max_jobs and not _wanted_columns.is_empty():
+	while _gen_jobs.size() < maxi(_max_jobs - 2, 1) and _busy_jobs() < _job_room() and not _wanted_columns.is_empty():
 		var column: Vector2i = _wanted_columns.pop_back()
 		if _columns.has(column) or _gen_jobs.has(column):
 			continue
+		_finish_save(column) # still being written from when it unloaded
 		var job := GenerationJob.new()
 		job.column = column
 		job.generator = world_generator
@@ -498,6 +518,10 @@ func _finish_generation_jobs() -> void:
 
 func _add_column(job: GenerationJob) -> void:
 	_columns[job.column] = job.chunks # the column's chunks, bottom to top
+	var lowest := WorldGenerator.HEIGHT
+	for height in job.heights:
+		lowest = mini(lowest, height)
+	_surface_min[job.column] = lowest
 	_heightmaps[job.column] = job.heights
 	_column_colors[job.column] = job.colors
 	_light_scan_needed = true
@@ -506,13 +530,17 @@ func _add_column(job: GenerationJob) -> void:
 		var coord := Vector3i(job.column.x, k, job.column.y)
 		_chunks[coord] = job.chunks[k]
 		_dirty[coord] = true
-	_mesh_scan_needed = true
+	if loading_radius >= 0:
+		_mesh_scan_needed = true # (not lit yet: nothing to mesh while playing)
 
 
 func _unload_column(column: Vector2i) -> void:
 	if _modified.has(column):
-		_save_column(column)
+		_save_column(column, true)
 	_columns.erase(column)
+	_relight_columns.erase(column)
+	_deferred.erase(column)
+	_surface_min.erase(column)
 	_heightmaps.erase(column)
 	_column_colors.erase(column)
 	_lit.erase(column)
@@ -545,11 +573,11 @@ func _can_mesh(coord: Vector3i) -> bool:
 # --- Lighting ------------------------------------------------------------------------
 
 func _start_light_jobs() -> void:
-	if not _light_scan_needed or _light_jobs.size() >= _half_jobs() or _busy_jobs() >= _max_jobs:
+	if not _light_scan_needed or _light_jobs.size() >= _half_jobs() or _busy_jobs() >= _job_room():
 		return
 	var candidates: Array[Vector2i] = []
 	for column: Vector2i in _columns:
-		if _lit.has(column) or _light_jobs.has(column):
+		if _light_jobs.has(column) or (_lit.has(column) and not _relight_columns.has(column)):
 			continue
 		if absi(column.x - _player_column.x) > render_distance + 1 or absi(column.y - _player_column.y) > render_distance + 1:
 			continue
@@ -564,26 +592,39 @@ func _start_light_jobs() -> void:
 	if candidates.is_empty():
 		_light_scan_needed = false
 		return
+	# Columns never lit come first (nearest first), then the ones to light
+	# again: new land must not wait for a lava flow somewhere.
 	candidates.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var again_a := _lit.has(a)
+		var again_b := _lit.has(b)
+		if again_a != again_b:
+			return again_b
 		return (a - _player_column).length_squared() < (b - _player_column).length_squared())
 	for column in candidates:
-		if _light_jobs.size() >= _half_jobs() or _busy_jobs() >= _max_jobs:
+		if _light_jobs.size() >= _half_jobs() or _busy_jobs() >= _job_room():
 			break
 		var job := LightJob.new()
 		job.column = column
+		_relight_columns.erase(column) # (a change from now on asks again)
 		for dx in range(-1, 2):
 			for dz in range(-1, 2):
 				var neighbor := column + Vector2i(dx, dz)
 				var blocks := []
+				var glow := PackedByteArray()
+				glow.resize(WorldGenerator.HEIGHT_CHUNKS)
 				if _columns.has(neighbor):
-					for k in WorldGenerator.HEIGHT_CHUNKS:
-						blocks.append((_chunks[Vector3i(neighbor.x, k, neighbor.y)] as ChunkData).blocks)
+					var k := 0
+					for chunk: ChunkData in _columns[neighbor]:
+						blocks.append(chunk.blocks)
+						glow[k] = 1 if chunk.glow_count > 0 else 0
+						k += 1
 					job.heights.append(_heightmaps[neighbor])
 				else: # beyond the loaded area: solid, lets no light through
 					for k in WorldGenerator.HEIGHT_CHUNKS:
 						blocks.append(_solid_chunk())
 					job.heights.append(_solid_heights())
 				job.chunks.append(blocks)
+				job.glowing.append(glow)
 		job.task_id = WorkerThreadPool.add_task(job.run, false, "Column light")
 		_light_jobs[column] = job
 
@@ -603,8 +644,22 @@ func _finish_light_jobs() -> void:
 			if data:
 				data.light = job.light[k]
 				data.block_light = job.block_light[k]
+		if _lit.has(column):
+			# Lit again after far changes: its chunks show the new light.
+			for k in WorldGenerator.HEIGHT_CHUNKS:
+				var coord := Vector3i(column.x, k, column.y)
+				var waiting: Variant = _deferred.get(column)
+				if _chunks.has(coord) and not (waiting != null and (waiting as Dictionary).has(k)):
+					_dirty[coord] = true
 		_lit[column] = true
-		_mesh_scan_needed = true
+		if loading_radius >= 0:
+			_mesh_scan_needed = true # loading: strict order, nearest first
+		else:
+			# Only what this column made ready joins the queue (sorting every
+			# waiting chunk again for each lit column cost several ms a time).
+			_enqueue_column(column)
+			for offset in COLUMN_NEIGHBORS:
+				_enqueue_column(column + offset)
 
 
 func _in_load_radius(column: Vector2i) -> bool:
@@ -695,11 +750,56 @@ func _relight(pos: Vector3i) -> void:
 		if best > 0:
 			_set_light(pos, best)
 			spread.append(pos)
+	_sky_spread.append_array(spread)
+	_run_light_spread(LIGHT_SPREAD_NOW_US)
 
-	head = 0
-	while head < spread.size():
-		var cell := spread[head]
-		head += 1
+
+# Light spreading on to darker cells only ever raises levels, so it can
+# stop and go on later: the cells to spread from wait in these queues and
+# are worked off a little at a time (at once after a change, then every
+# frame). A lava flow lighting up a cave took tens of ms in one go.
+const LIGHT_SPREAD_NOW_US := 300
+const LIGHT_SPREAD_FRAME_US := 1000
+var _sky_spread: Array[Vector3i] = []
+var _sky_spread_head := 0
+var _block_spread: Array[Vector3i] = []
+var _block_spread_head := 0
+
+
+## Works the light spreading queues off for at most `budget_us`.
+func _run_light_spread(budget_us: int) -> void:
+	if _sky_spread.is_empty() and _block_spread.is_empty():
+		return
+	var started := Time.get_ticks_usec()
+	var steps := 0
+	while _block_spread_head < _block_spread.size():
+		var cell := _block_spread[_block_spread_head]
+		_block_spread_head += 1
+		var level := get_block_light(cell)
+		if level > 1:
+			for offset in NEIGHBORS:
+				var neighbor := cell + offset
+				if neighbor.y < 0 or neighbor.y >= WorldGenerator.HEIGHT or not is_inside(neighbor):
+					continue
+				var neighbor_opacity: int = _opacity[get_block(neighbor)]
+				if neighbor_opacity >= SkyLight.MAX:
+					continue
+				var candidate := level - maxi(neighbor_opacity, 1)
+				if candidate > get_block_light(neighbor):
+					_set_block_light(neighbor, candidate)
+					_block_spread.append(neighbor)
+		steps += 1
+		if steps & 31 == 0 and Time.get_ticks_usec() - started > budget_us:
+			break
+	if _block_spread_head >= _block_spread.size():
+		_block_spread.clear()
+		_block_spread_head = 0
+	while _sky_spread_head < _sky_spread.size():
+		if steps & 31 == 0 and Time.get_ticks_usec() - started > budget_us:
+			break
+		steps += 1
+		var cell := _sky_spread[_sky_spread_head]
+		_sky_spread_head += 1
 		var level := get_light(cell)
 		if level <= 1:
 			continue
@@ -714,7 +814,10 @@ func _relight(pos: Vector3i) -> void:
 				else level - maxi(neighbor_opacity, 1)
 			if candidate > get_light(neighbor):
 				_set_light(neighbor, candidate)
-				spread.append(neighbor)
+				_sky_spread.append(neighbor)
+	if _sky_spread_head >= _sky_spread.size():
+		_sky_spread.clear()
+		_sky_spread_head = 0
 
 
 ## Block light (glowing blocks) at a world position; 0 where nothing is loaded.
@@ -765,8 +868,27 @@ func _set_block_light(pos: Vector3i, level: int) -> void:
 ## cells found at the edge), then spreads again from those cells and from
 ## the block itself if it glows.
 func _relight_block_light(pos: Vector3i) -> void:
-	var removal: Array = [[pos, get_block_light(pos)]]
+	var here := get_block_light(pos)
+	var glow: int = Blocks.light_emission_table[get_block(pos)]
 	var spread: Array[Vector3i] = []
+	if glow == 0 and here == 0:
+		# No block light here: nothing to do unless a neighbor has some to
+		# give (a block opened up next to a lit cell).
+		var lit_near := false
+		for offset in NEIGHBORS:
+			if get_block_light(pos + offset) > 1:
+				lit_near = true
+				break
+		if not lit_near:
+			return
+	if glow >= here and glow > 0:
+		# A source at least as bright as the light that was here: nothing
+		# gets darker, the light only spreads from it.
+		_set_block_light(pos, glow)
+		spread.append(pos)
+		_spread_block_light(spread)
+		return
+	var removal: Array = [[pos, here]]
 	_set_block_light(pos, 0)
 	var head := 0
 	while head < removal.size():
@@ -794,24 +916,14 @@ func _relight_block_light(pos: Vector3i) -> void:
 	if best > 0:
 		_set_block_light(pos, best)
 		spread.append(pos)
-	head = 0
-	while head < spread.size():
-		var cell := spread[head]
-		head += 1
-		var level := get_block_light(cell)
-		if level <= 1:
-			continue
-		for offset in NEIGHBORS:
-			var neighbor := cell + offset
-			if neighbor.y < 0 or neighbor.y >= WorldGenerator.HEIGHT or not is_inside(neighbor):
-				continue
-			var neighbor_opacity: int = _opacity[get_block(neighbor)]
-			if neighbor_opacity >= SkyLight.MAX:
-				continue
-			var candidate := level - maxi(neighbor_opacity, 1)
-			if candidate > get_block_light(neighbor):
-				_set_block_light(neighbor, candidate)
-				spread.append(neighbor)
+	_spread_block_light(spread)
+
+
+## Block light flowing on from the cells in `spread` to darker cells
+## (queued: _run_light_spread).
+func _spread_block_light(spread: Array[Vector3i]) -> void:
+	_block_spread.append_array(spread)
+	_run_light_spread(LIGHT_SPREAD_NOW_US)
 
 
 ## Keeps the heightmap in step with block changes (used when lighting
@@ -829,6 +941,7 @@ func _update_heightmap(pos: Vector3i, id: int) -> void:
 		while y >= 0 and _opacity[get_block(Vector3i(pos.x, y, pos.z))] == 0:
 			y -= 1
 		heights[i] = y
+		_surface_min[column] = mini(_surface_min.get(column, y), y) # dug deeper
 	_heightmaps[column] = heights
 
 
@@ -945,7 +1058,8 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 	if data == null:
 		return
 	var local := pos - coord * ChunkData.SIZE
-	if data.get_block(local.x, local.y, local.z) == id:
+	var old := data.get_block(local.x, local.y, local.z)
+	if old == id:
 		return
 	data.set_block(local.x, local.y, local.z, id)
 	if _block_entities.has(pos) and _block_entities[pos].type != _entity_type(id):
@@ -956,12 +1070,42 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 	_mark_dirty_around(coord, local)
 	_update_heightmap(pos, id)
 	if _lit.has(Vector2i(coord.x, coord.z)):
-		_relight(pos)
-		_relight_block_light(pos)
+		# Light only depends on how much light a block lets through and gives
+		# off: flowing water changing its level, lava spreading next to lava
+		# and most block swaps leave it as it is.
+		var emission := Blocks.light_emission_table
+		if _opacity[old] != _opacity[id] or emission[old] != emission[id]:
+			var column := Vector2i(coord.x, coord.z)
+			if absi(column.x - _player_column.x) > NEAR_LIGHT_RADIUS or absi(column.y - _player_column.y) > NEAR_LIGHT_RADIUS:
+				# Far from the player: the columns around are lit again as a whole
+				# on a worker thread (lava spreading over a plain kept the main
+				# thread relighting cell by cell for minutes).
+				for dx in range(-1, 2):
+					for dz in range(-1, 2):
+						_relight_columns[column + Vector2i(dx, dz)] = true
+				_light_scan_needed = true
+			elif _opacity[old] != _opacity[id]:
+				_relight(pos)
+				_relight_block_light(pos)
+			else:
+				_relight_block_light(pos)
 	if notify:
 		_update_block(pos)
 		for offset in NEIGHBORS:
 			_update_block(pos + offset)
+
+
+## Light changes within this many columns of the player are worked out at
+## once, cell by cell; farther ones by lighting the column again in the
+## background (_relight_columns).
+const NEAR_LIGHT_RADIUS := 3
+var _relight_columns := {} # Vector2i -> true: lit columns whose light is out of date
+
+
+## Changes this many columns around the player are meshed before anything
+## else (the player's own edits must show at once); farther ones wait their
+## turn, or a far lava flow would keep every worker busy.
+const URGENT_MESH_RADIUS := 3
 
 
 func _mark_dirty_around(coord: Vector3i, local: Vector3i) -> void:
@@ -974,9 +1118,17 @@ func _mark_dirty_around(coord: Vector3i, local: Vector3i) -> void:
 		for dy in range(ranges[1][0], ranges[1][1] + 1):
 			for dz in range(ranges[2][0], ranges[2][1] + 1):
 				var neighbor := coord + Vector3i(dx, dy, dz)
-				if _chunks.has(neighbor):
-					_dirty[neighbor] = true
-					_urgent_mesh[neighbor] = true # a changed block: before the rest
+				if not _chunks.has(neighbor):
+					continue
+				var column := Vector2i(neighbor.x, neighbor.z)
+				var waiting: Variant = _deferred.get(column)
+				if waiting != null and (waiting as Dictionary).has(neighbor.y):
+					continue # a far deep chunk without a mesh: built when the player comes
+				if absi(column.x - _player_column.x) <= URGENT_MESH_RADIUS and absi(column.y - _player_column.y) <= URGENT_MESH_RADIUS:
+					_urgent_mesh[neighbor] = true # changed near the player: before the rest
+				elif not _dirty.has(neighbor):
+					_mesh_backlog.append(neighbor) # far away (lava flowing in a cave): in its turn
+				_dirty[neighbor] = true
 
 
 ## Sends a "block update" to the block at pos (its on_update handler).
@@ -1266,7 +1418,7 @@ func _run_scheduled_ticks() -> void:
 const RANDOM_TICK_RADIUS := 8
 ## Main-thread time random ticks may take per tick; what's left over goes on
 ## next tick from where it stopped, so a tick never stalls a frame.
-const RANDOM_TICK_BUDGET_US := 4000
+const RANDOM_TICK_BUDGET_US := 2000
 
 var _random_tick_queue: Array[Vector3i] = []
 
@@ -1308,10 +1460,17 @@ func _run_random_ticks() -> void:
 
 # --- Meshing -----------------------------------------------------------------------------
 
-## Generation and light each take at most half the worker slots, so meshes
-## always get some.
+## Slots generation and light may fill: all but one while meshes wait and
+## none is running (a mesh job is short, a column takes much longer: without
+## the spare slot what is ready would wait to be seen), all otherwise.
+func _job_room() -> int:
+	var meshes_wait := not _mesh_queue.is_empty() or not _mesh_backlog.is_empty() or not _urgent_mesh.is_empty()
+	return _max_jobs - (1 if meshes_wait and _mesh_jobs.is_empty() else 0)
+
+
+## Light takes all but two of the worker slots at most.
 func _half_jobs() -> int:
-	return maxi(_max_jobs / 2, 1)
+	return maxi(_max_jobs - 2, 1)
 
 
 ## Worker jobs of every kind running now: generation, light and meshes
@@ -1329,8 +1488,38 @@ var _queue_sorted_at := -100000
 const MESH_QUEUE_INTERVAL_MS := 250
 
 
+## The dirty chunks of a column that just became meshable go to the
+## backlog (taken after the sorted queue); air and far deep chunks are
+## dealt with at once.
+func _enqueue_column(column: Vector2i) -> void:
+	if not _columns.has(column) or not _can_mesh(Vector3i(column.x, 0, column.y)):
+		return
+	var near := open_edges or _near_player(column)
+	for k in WorldGenerator.HEIGHT_CHUNKS:
+		var coord := Vector3i(column.x, k, column.y)
+		if not _dirty.has(coord) or _mesh_jobs.has(coord):
+			continue
+		var chunk: ChunkData = _chunks[coord]
+		if chunk.air_count == ChunkData.VOLUME:
+			_clear_chunk_mesh(coord)
+		elif not near and _is_deep(coord):
+			_dirty.erase(coord)
+			if not _deferred.has(column):
+				_deferred[column] = {}
+			(_deferred[column] as Dictionary)[k] = true
+		else:
+			_mesh_backlog.append(coord)
+
+
+var _mesh_backlog: Array[Vector3i] = []
+
+
 func _start_mesh_jobs() -> void:
 	var free_slots := _max_jobs - _busy_jobs()
+	if _light_scan_needed or not _wanted_columns.is_empty():
+		# A slot stays free for columns waiting to be generated or lit:
+		# endless re-meshing (lava flowing, its light changing) starved them.
+		free_slots = mini(free_slots, _max_jobs - 1 - _mesh_jobs.size())
 	if free_slots <= 0:
 		return
 	var now := Time.get_ticks_msec()
@@ -1354,6 +1543,10 @@ func _start_mesh_jobs() -> void:
 		picked.append(coord)
 	while picked.size() < free_slots and not _mesh_queue.is_empty():
 		var coord: Vector3i = _mesh_queue.pop_back()
+		if _dirty.has(coord) and not _mesh_jobs.has(coord) and _chunks.has(coord) and not picked.has(coord):
+			picked.append(coord)
+	while picked.size() < free_slots and not _mesh_backlog.is_empty():
+		var coord: Vector3i = _mesh_backlog.pop_back()
 		if _dirty.has(coord) and not _mesh_jobs.has(coord) and _chunks.has(coord) and not picked.has(coord):
 			picked.append(coord)
 	for coord in picked:
@@ -1390,12 +1583,14 @@ var _queue_us := 0
 func _rebuild_mesh_queue() -> void:
 	var queue_start := Time.get_ticks_usec()
 	_mesh_queue.clear()
+	_mesh_backlog.clear() # everything waiting is sorted again here
 	var center := Vector3(_player_column.x, (player.global_position.y if player else float(WorldGenerator.SEA_LEVEL)) / ChunkData.SIZE, _player_column.y)
 	var meshable_columns := {} # Vector2i -> bool, checked once per column
 	var view: Vector3 = player.look_direction() if player and player.has_method("look_direction") else Vector3.ZERO
 	var keys := PackedInt64Array()
 	var coords: Array[Vector3i] = []
 	var empty: Array[Vector3i] = []
+	var deep: Array[Vector3i] = []
 	for coord: Vector3i in _dirty:
 		if _mesh_jobs.has(coord):
 			continue
@@ -1404,6 +1599,9 @@ func _rebuild_mesh_queue() -> void:
 			empty.append(coord) # nothing to draw: no job at all
 			continue
 		var column := Vector2i(coord.x, coord.z)
+		if not open_edges and not _near_player(column) and _is_deep(coord):
+			deep.append(coord) # far underground: built when the player comes near
+			continue
 		var meshable: Variant = meshable_columns.get(column)
 		if meshable == null:
 			meshable = _can_mesh(coord)
@@ -1430,7 +1628,56 @@ func _rebuild_mesh_queue() -> void:
 		_mesh_queue.append(coords[key & 0xFFFFF])
 	for coord in empty:
 		_clear_chunk_mesh(coord)
+	for coord in deep:
+		_dirty.erase(coord)
+		var column := Vector2i(coord.x, coord.z)
+		if not _deferred.has(column):
+			_deferred[column] = {}
+		(_deferred[column] as Dictionary)[coord.y] = true
 	_queue_us = Time.get_ticks_usec() - queue_start
+
+
+## Chunks deep under the ground far from the player have no mesh until the
+## player comes within DEEP_MESH_RADIUS columns: nobody sees them (caves are
+## dark and hidden), and they were most of the meshing work.
+const DEEP_MESH_RADIUS := 4
+## A chunk is deep when its top is this far below the lowest surface of its
+## column and the 8 around it (so cliffs, pits and overhangs still show).
+const DEEP_MARGIN := 8
+var _deferred := {}       # Vector2i (column) -> {chunk y: true}: deep chunks waiting for the player
+var _surface_min := {}    # Vector2i -> lowest heightmap value of the column
+
+
+func _near_player(column: Vector2i) -> bool:
+	return absi(column.x - _player_column.x) <= DEEP_MESH_RADIUS and absi(column.y - _player_column.y) <= DEEP_MESH_RADIUS
+
+
+func _is_deep(coord: Vector3i) -> bool:
+	var top := coord.y * ChunkData.SIZE + ChunkData.SIZE
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			var lowest: int = _surface_min.get(Vector2i(coord.x + dx, coord.z + dz), -1)
+			if top > lowest - DEEP_MARGIN:
+				return false
+	return true
+
+
+## The player came near: the deep chunks around get their meshes.
+func _wake_deferred() -> void:
+	for dx in range(-DEEP_MESH_RADIUS, DEEP_MESH_RADIUS + 1):
+		for dz in range(-DEEP_MESH_RADIUS, DEEP_MESH_RADIUS + 1):
+			_wake_column(_player_column + Vector2i(dx, dz))
+
+
+func _wake_column(column: Vector2i) -> void:
+	var waiting: Variant = _deferred.get(column)
+	if waiting == null:
+		return
+	_deferred.erase(column)
+	for y: int in waiting:
+		var coord := Vector3i(column.x, y, column.y)
+		if _chunks.has(coord):
+			_dirty[coord] = true
 
 
 ## A chunk of only air: no mesh, open to cave culling on every side.
@@ -1512,6 +1759,10 @@ func _edge_columns() -> Array[Vector2i]:
 ## Re-meshes the edge columns with (or without) solid side walls.
 func set_open_edges(open: bool) -> void:
 	open_edges = open
+	if open:
+		# The isometric view shows the ground cut open: every chunk is needed.
+		for column: Vector2i in _deferred.keys():
+			_wake_column(column)
 	for column in _edge_columns():
 		for k in WorldGenerator.HEIGHT_CHUNKS:
 			var coord := Vector3i(column.x, k, column.y)
@@ -1629,20 +1880,39 @@ func save_columns() -> void:
 	if save == null:
 		return
 	PistonBehavior.finish_all(self) # no half-moved blocks in the save
+	for column: Vector2i in _save_tasks.keys():
+		_finish_save(column)
 	for column: Vector2i in _modified.keys():
 		if _columns.has(column):
 			_save_column(column)
 	_modified.clear()
 
 
-func _save_column(column: Vector2i) -> void:
+## `in_background`: compressed and written on a worker thread (columns
+## unloading behind the player: a dozen at a time stalled the frame).
+func _save_column(column: Vector2i, in_background: bool = false) -> void:
 	_modified.erase(column)
 	if save == null:
 		return
 	var blocks := PackedInt32Array()
 	for k in WorldGenerator.HEIGHT_CHUNKS:
 		blocks.append_array((_chunks[Vector3i(column.x, k, column.y)] as ChunkData).blocks)
-	save.save_column(column, blocks)
+	_finish_save(column) # an older save of it still running: first
+	if in_background:
+		var target := save
+		_save_tasks[column] = WorkerThreadPool.add_task(func() -> void: target.save_column(column, blocks), false, "Column save")
+	else:
+		save.save_column(column, blocks)
+
+
+var _save_tasks := {} # Vector2i -> worker task writing that column
+
+
+## Waits for a column's background save (before it is read or written again).
+func _finish_save(column: Vector2i) -> void:
+	if _save_tasks.has(column):
+		WorkerThreadPool.wait_for_task_completion(_save_tasks[column])
+		_save_tasks.erase(column)
 
 
 ## World state for the save: time and game rules.

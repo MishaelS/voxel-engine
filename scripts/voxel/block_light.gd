@@ -19,19 +19,37 @@ const WW := W * W
 
 
 ## Returns the 8 block light arrays of the center column, bottom to top.
-static func compute_column(area: PackedInt32Array) -> Array[PackedByteArray]:
+## The area cells of every glowing block, found only in the chunks that
+## have some (`glowing`: 9 arrays of flags like `chunks`): searching the
+## whole area for every glowing kind was half of a column's light time.
+static func sources_of(chunks: Array, glowing: Array) -> PackedInt32Array:
+	var sources := PackedInt32Array()
+	for c in 9:
+		var flags: PackedByteArray = glowing[c]
+		var x0 := (c / 3) * 16
+		var z0 := (c % 3) * 16
+		for k in flags.size():
+			if flags[k] == 0:
+				continue
+			var blocks: PackedInt32Array = chunks[c][k]
+			for id in Blocks.glowing_ids:
+				var i := blocks.find(id)
+				while i >= 0:
+					sources.append(x0 + (i & 15) + W * (z0 + ((i >> 4) & 15)) + WW * (k * 16 + (i >> 8)))
+					i = blocks.find(id, i + 1)
+	return sources
+
+
+## `sources`: the glowing cells (sources_of()).
+static func compute_column(area: PackedInt32Array, sources: PackedInt32Array) -> Array[PackedByteArray]:
 	var opacity_of := Blocks.light_opacity_table
 	var emission_of := Blocks.light_emission_table
 	var stored := PackedByteArray()
 	stored.resize(WW * H)
 	var queue := PackedInt32Array()
-	# Sources: every glowing block in the area (native search per kind).
-	for id in Blocks.glowing_ids:
-		var cell := area.find(id)
-		while cell >= 0:
-			stored[cell] = emission_of[id]
-			queue.append(cell)
-			cell = area.find(id, cell + 1)
+	for cell in sources:
+		stored[cell] = emission_of[area[cell]]
+		queue.append(cell)
 	var head := 0
 	while head < queue.size():
 		var cell := queue[head]

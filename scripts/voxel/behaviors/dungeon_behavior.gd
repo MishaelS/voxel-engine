@@ -135,21 +135,32 @@ static func place(blocks: PackedInt32Array, rng: RandomNumberGenerator, height: 
 		var rz := rng.randi_range(2, 3)
 		if cx - rx - 1 < 0 or cx + rx + 1 > 15 or cz - rz - 1 < 0 or cz + rz + 1 > 15:
 			continue
+		# The openings first (only the room's edge at floor level): most spots
+		# have none, and scanning the whole room for each was a third of a
+		# column's generation time.
 		var openings := 0
+		for x in range(cx - rx - 1, cx + rx + 2):
+			var x_edge := x == cx - rx - 1 or x == cx + rx + 1
+			for z in range(cz - rz - 1, cz + rz + 2):
+				if (x_edge or z == cz - rz - 1 or z == cz + rz + 1) \
+						and blocks[_index(x, cy, z)] == Blocks.AIR and blocks[_index(x, cy + 1, z)] == Blocks.AIR:
+					openings += 1
+		if openings < 1 or openings > 5:
+			continue
 		var fits := true
 		for x in range(cx - rx - 1, cx + rx + 2):
 			for z in range(cz - rz - 1, cz + rz + 2):
 				for y in range(cy - 1, cy + 5):
 					var id := blocks[_index(x, y, z)]
 					var solid := id != Blocks.AIR and Blocks.collides_table[id] == 1
-					if (y == cy - 1 or y == cy + 4) and not solid:
+					if ((y == cy - 1 or y == cy + 4) and not solid) or Blocks.liquid_table[id] == 1:
 						fits = false
-					if Blocks.liquid_table[id] == 1:
-						fits = false
-					var edge := x == cx - rx - 1 or x == cx + rx + 1 or z == cz - rz - 1 or z == cz + rz + 1
-					if edge and y == cy and id == Blocks.AIR and blocks[_index(x, y + 1, z)] == Blocks.AIR:
-						openings += 1
-		if not fits or openings < 1 or openings > 5:
+						break
+				if not fits:
+					break
+			if not fits:
+				break
+		if not fits:
 			continue
 		for x in range(cx - rx - 1, cx + rx + 2):
 			for z in range(cz - rz - 1, cz + rz + 2):
