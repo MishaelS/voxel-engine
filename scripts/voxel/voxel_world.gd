@@ -1675,40 +1675,6 @@ func _restore_state() -> void:
 			GameRules.rules[rule_name].set.call(self, rules[rule_name])
 
 
-## Loading state of each column within `radius` of the player, row by row
-## (dz outer, dx inner): [state, surface height] with state 0 = not
-## generated, 1 = generated, 2 = lit, 3 = meshed; height = the surface in
-## the column's middle (-1 if not generated). Used by the loading screen.
-func column_states(radius: int) -> Array:
-	var center := _player_column_now()
-	var result := []
-	for dz in range(-radius, radius + 1):
-		for dx in range(-radius, radius + 1):
-			var column := center + Vector2i(dx, dz)
-			var state := 0
-			var height := -1
-			if maxi(absi(dx), absi(dz)) > render_distance:
-				# Never meshed (beyond the render distance): counts as done.
-				var heights: Variant = _heightmaps.get(column)
-				result.append([3, (heights as PackedInt32Array)[8 + 16 * 8] if heights else WorldGenerator.SEA_LEVEL])
-				continue
-			if _columns.has(column):
-				state = 1
-				height = (_heightmaps[column] as PackedInt32Array)[8 + 16 * 8]
-				if _lit.has(column):
-					state = 2
-					var done := true
-					for k in WorldGenerator.HEIGHT_CHUNKS:
-						var coord := Vector3i(column.x, k, column.y)
-						if _dirty.has(coord) or _mesh_jobs.has(coord):
-							done = false
-							break
-					if done:
-						state = 3
-			result.append([state, height])
-	return result
-
-
 ## How far the area around the player is: columns generated, lit and fully
 ## meshed within `radius` columns (for the loading screen).
 func loading_progress(radius: int) -> Dictionary:

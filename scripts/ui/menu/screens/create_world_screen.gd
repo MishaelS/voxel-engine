@@ -1,14 +1,12 @@
 class_name CreateWorldScreen
 extends MenuScreen
 ## "Create New World", laid out like Beta 1.7.3's screen: one column in the
-## middle of the dirt background - the world name with "Will be saved in:"
-## under it, the seed with "Leave blank for a random seed" under it, then
-## (our additions, like later versions) the game mode with its description
-## and the world type, and "Create New World" / "Cancel" one under the
-## other. An empty seed is random, text is hashed.
+## middle of the dirt background - the world name, the seed (its hint
+## inside the empty field), then (our additions) the game mode and the
+## world type, and "Create New World" / "Cancel" one under the other. An
+## empty seed is random, text is hashed.
 
 const MODES := ["Survival", "Creative"]
-const MODE_HINTS := ["Search for resources, craft, build", "Unlimited blocks, flying, instant breaking"]
 const TYPES := ["Default", "Random Blocks"]
 const P := UiTheme.PIXEL
 const GRAY := Color("a0a0a0")
@@ -17,12 +15,10 @@ var on_play := Callable()
 
 var _name: LineEdit
 var _seed: LineEdit
-var _folder: Label
 var _mode := 1
 var _type := 0
 var _mode_button: Button
 var _type_button: Button
-var _hint: Label
 
 
 func _init(play: Callable) -> void:
@@ -49,26 +45,17 @@ func _ready() -> void:
 	column.add_child(_label("World Name", GRAY))
 	_gap(column, 2)
 	_name = _field("New World")
-	_name.text_changed.connect(func(_text: String) -> void: _update_folder())
 	column.add_child(_name)
-	_gap(column, 3)
-	_folder = _label("", GRAY)
-	column.add_child(_folder)
 	_gap(column, 10)
 	column.add_child(_label("Seed for the World Generator", GRAY))
 	_gap(column, 2)
 	_seed = _field("")
+	_seed.placeholder_text = Lang.t("Blank for a random seed")
 	column.add_child(_seed)
-	_gap(column, 3)
-	column.add_child(_label("Leave blank for a random seed", GRAY))
 	_gap(column, 12)
 	_mode_button = _button(column, func() -> void:
 		_mode = (_mode + 1) % MODES.size()
 		_update_labels())
-	_gap(column, 2)
-	_hint = _label("", GRAY)
-	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	column.add_child(_hint)
 	_gap(column, 4)
 	_type_button = _button(column, func() -> void:
 		_type = (_type + 1) % TYPES.size()
@@ -81,7 +68,6 @@ func _ready() -> void:
 	cancel.text = Lang.t("Cancel")
 
 	_update_labels()
-	_update_folder()
 	_name.grab_focus.call_deferred()
 	_name.select_all.call_deferred()
 
@@ -116,13 +102,8 @@ func _button(column: VBoxContainer, on_pressed: Callable) -> Button:
 	return button
 
 
-func _update_folder() -> void:
-	_folder.text = Lang.t("Will be saved in:") + " " + WorldSave._unique_folder(_name.text.strip_edges() if not _name.text.strip_edges().is_empty() else "New World")
-
-
 func _update_labels() -> void:
 	_mode_button.text = Lang.t("Game Mode: %s") % Lang.t(MODES[_mode])
-	_hint.text = Lang.t(MODE_HINTS[_mode])
 	_type_button.text = Lang.t("World Type: %s") % Lang.t(TYPES[_type])
 
 
