@@ -74,7 +74,14 @@ Sections:
 - `ROADMAP.md`: the plan of everything Minecraft Beta 1.7.3 has that the engine doesn't yet, in stages ordered by dependencies (engine groundwork, light and fire, sound, building blocks, nature, farming, mobs, combat, items, weather, redstone, transport, the Nether, player and interface, multiplayer), as a checklist.
 - Chest model and large chests like the modern game (`ChestModel`, `ChestBehavior`): chests are drawn as the game's chest model (a base, a lid and a latch, 14/16 high) with textures from `assets/textures/chest-atlas.png` (the game's chest texture layout, unfolded boxes); its faces become extra layers of the block tile array. A chest placed next to a single chest facing the same way joins it into a large chest (two halves with one long lid and the latch at the seam); opening it shows both halves' 27 slots as one 54-slot window (container4.png, "Large Chest"). Breaking one half leaves a single chest; each half keeps its own items.
 
+- The undead (`Mob.is_undead()`: zombies and skeletons) burn in daylight under the open sky; anything burning is wrapped in the fire block's flames, as big as the creature.
+- Held items on models like the game's: skeletons hold a bow, and in third person the player holds what is in their hand (tools pointing forward from the fist, the bow by its grip, other items and blocks small in the hand) (`MobModels.held_item()`).
+- Creature and player animations in the style of Beta 1.7.3's models (`MobAnimation`): idle arm sway and a little head nod, idle glances around (and looking at the player only for a while, like the game's); the arm raised a little when holding something; walking with the game's leg and arm swing (zombies and skeletons keep their arms ahead and sway them); Beta's sneaking pose for the player (body bent forward, arms along, legs stepped back, head down a pixel); jumping (a leg ahead, front legs ahead on four-legged animals) and falling (arms spread, legs apart); slimes stretch when they jump and squash when they land like the game's; a short flinch when hurt; the player in third person also falls over when dead, like the mobs; a puff of smoke when a dead creature is gone; the player lies in the bed asleep (seen in third person).
+- Double doors: a door placed next to another one gets its hinges on the other side (like Beta: it is an open door turned a quarter), so the two meet in the middle; otherwise the hinges go to the side with more solid blocks.
+
 ### Changed
+- The creative inventory uses `container5.png`: an 8 x 9 catalog of every block and item with a scrollbar (drag it or click the track; the wheel scrolls too) and the hotbar below.
+- Aiming goes through the empty part of blocks that aren't full (snow layers, slabs, torches, plants, doors...) to the block behind, like the game's: the ray checks the block's own boxes.
 - The block outline is sharper: lines about 2 pixels wide at any distance (`shaders/outline.gdshader`), around each box of the block (both steps of stairs); plants and torches are picked by narrower boxes like the game's.
 - Achievements and statistics belong to each world (kept in its save) instead of to all worlds; 11 achievements of our own were added (Playing with Fire, Kaboom!, Engineer, Musician, DJ, Fisherman, Art Lover, Good Night, Sailor, Best Friend, Treasure Hunter), shown in blue on the map.
 - The isometric camera's settings moved from the options into the isometric view itself (F6): a panel on the right changes the angle, facing, zoom, clouds, fog, screenshot size and background as you click, with a screenshot button; the mouse is free while it is open.
@@ -84,6 +91,10 @@ Sections:
 - Player collision lives in `EntityPhysics`, shared with entities.
 
 ### Fixed
+- Water (flowing or a source) under a solid block is drawn again: its surface lies lower than the block above, so it can be seen.
+- Ice next to water shows all its side faces (they were cut down to a strip above the surface).
+- The skeleton's spine and other thin parts are seen from both sides (the mob shader draws back faces).
+- Block icons in the inventory could stay empty (rendered once before the viewport was ready): they render for a few frames now.
 - Stutters while moving and turning (frames of 50-100 ms at render distance 12): random block ticks only reach 8 columns around the player like the game's (they ran over the whole loaded world) and spread over ticks when a tick runs long; display ticks pick their blocks straight from the 27 chunks around; the cave culling search runs on a worker thread and only changes the chunks that change; chunk meshes are built on the worker threads too, and at most ~4 ms of them are put in place a frame; faster block and light lookups. The debug screen shows where each frame's and tick's time goes.
 - Eating: the food comes up in front of the mouth, turned toward the face, and bobs like the game's (it stood on edge at the side); the crumbs are smaller and below the middle of the view; no swing after eating (only Beta's instant eating swings).
 - Squid swim under the water in pushes, mostly level, and lean into the way they go (they stood upright and bobbed above the surface).

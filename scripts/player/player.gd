@@ -285,6 +285,11 @@ func spawn_position() -> Vector3:
 ## Lies down in the bed at `bed` (its head half) like the classic game:
 ## only at night; the bed becomes the spawn point; after SLEEP_TICKS the
 ## night is skipped to the morning.
+## The bed slept in (its head half).
+func bed_position() -> Vector3i:
+	return _bed
+
+
 func sleep_in(bed: Vector3i) -> void:
 	if world == null or sleeping or dead:
 		return
@@ -437,7 +442,7 @@ func _update_camera(alpha: float, delta: float) -> void:
 		var f := clampf((hurt_ticks - alpha) / HURT_TICKS, 0.0, 1.0)
 		var roll := sin(f * f * f * f * PI) * deg_to_rad(14.0)
 		transform_3d = Transform3D(Basis(Vector3.BACK, -roll), Vector3.ZERO) * transform_3d
-	if third_person and not sleeping:
+	if third_person:
 		# The classic third-person view: 4 blocks behind the eyes, closer
 		# when a block is in the way.
 		var back := Basis(Vector3.RIGHT, _pitch) * Vector3(0, 0, THIRD_PERSON_DISTANCE)
@@ -448,7 +453,7 @@ func _update_camera(alpha: float, delta: float) -> void:
 			if hit.get("hit", false):
 				distance = maxf(float(hit.distance) - 0.3, 0.3)
 		transform_3d.origin += back.normalized() * distance
-	body.visible = third_person and not sleeping
+	body.visible = third_person # asleep too: lying in the bed
 	held_item.covered = body.visible or (map_view != null and map_view.visible)
 	camera.transform = transform_3d
 	var base_fov: float = Settings.get_value("fov")

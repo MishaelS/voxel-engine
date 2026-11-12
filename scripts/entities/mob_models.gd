@@ -62,6 +62,64 @@ static func build(mob: String) -> Dictionary:
 	return {"root": root, "parts": parts, "meshes": meshes, "instances": instances, "spec": spec}
 
 
+## Items held like the game's (tools, sticks, bones, rods): pointing
+## forward from the fist rather than held up as a picture.
+const HELD_LIKE_TOOLS := ["_sword", "_pickaxe", "_axe", "_shovel", "_hoe", "stick", "bone", "fishing_rod", "reed"]
+
+
+## An item in a creature's (or the player's) right hand, to be added to the
+## model's right arm part (pixel units, the arm hanging down): a bow held
+## by its grip with the string toward the body, tools pointing forward
+## from the fist, other items and blocks small in the hand. Returns null
+## for nothing.
+static func held_item(mob: String, item_id: int) -> MeshInstance3D:
+	if item_id == Blocks.AIR or item_id < 0:
+		return null
+	var arm: Dictionary = {}
+	for part: Dictionary in model(mob).parts:
+		if part.name == "right_arm":
+			arm = part
+	if arm.is_empty():
+		return null
+	var from := _v(arm.from)
+	var size := _v(arm.size)
+	var hand := Vector3(from.x + size.x * 0.5, from.y, from.z + size.z * 0.5) - _v(arm.pivot) + Vector3(0, 1.5, 0)
+	var mesh := MeshInstance3D.new()
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var basis: Basis
+	var grip: Vector3 # the held point of the mesh (its own units)
+	var scale := 10.0
+	if not ItemMeshes.is_flat(item_id):
+		mesh.mesh = FallingBlocks.block_mesh(item_id)
+		scale = 6.0
+		basis = Basis(Vector3.UP, PI / 4.0) * Basis(Vector3.RIGHT, deg_to_rad(20.0))
+		grip = Vector3(0.5, 0.5, 0.5)
+	else:
+		mesh.mesh = ItemMeshes.extruded(item_id, ItemEntities._flat_material(item_id))
+		var name := Items.name_of(item_id)
+		# The picture stands upright along the arm's forward direction.
+		var upright := Basis(Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0))
+		if name == "bow":
+			# The limb (the picture's diagonal) along the forward direction, the
+			# arc outward and the string toward the body: held up like this
+			# when the arm points ahead (skeletons aiming).
+			var r := sqrt(0.5)
+			basis = Basis(Vector3(0, r, r), Vector3(0, -r, r), Vector3(1, 0, 0))
+			grip = Vector3(0.45, 0.45, 1.0 / 32.0)
+		elif HELD_LIKE_TOOLS.any(func(suffix: String) -> bool: return name.ends_with(suffix)):
+			basis = Basis(Vector3.RIGHT, deg_to_rad(25.0)) * upright
+			grip = Vector3(0.22, 0.22, 1.0 / 32.0)
+			hand.z += 1.0
+		else:
+			scale = 6.0
+			basis = upright
+			grip = Vector3(0.5, 0.5, 1.0 / 32.0)
+			hand.z += 2.0
+	basis = basis.scaled(Vector3.ONE * scale)
+	mesh.transform = Transform3D(basis, hand - basis * grip)
+	return mesh
+
+
 static func _v(a: Array) -> Vector3:
 	return Vector3(a[0], a[1], a[2])
 

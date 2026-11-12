@@ -572,20 +572,16 @@ static func _build_layer(padded: PackedInt32Array, light: PackedByteArray, cells
 		for face in 6:
 			var front := i + face_deltas[face]
 			var neighbor := padded[front]
-			if opaque[neighbor] == 1 and (face != 0 or top >= 1.0):
-				continue # hidden by an opaque block: never sent to the GPU
+			if opaque[neighbor] == 1 and (face != 0 or (top >= 1.0 and not sloped)):
+				continue # hidden by an opaque block (a liquid's surface lies lower: still seen)
 			if self_culls and cull_groups[neighbor] == group:
 				continue # glass next to glass, water next to water, bed halves
 			if liquid[id] == 1 and neighbor != Blocks.AIR and layer_of[neighbor] == Blocks.Layer.TRANSLUCENT:
 				continue # water under ice: only the ice face is drawn
-			# Ice next to water: only the strip above the water's surface is
-			# drawn; the part under it would show through the water as a ghost
-			# wall. With more water above, the water reaches the top: nothing.
+			# Ice next to water draws its whole side: translucent surfaces get a
+			# depth pass first (block_translucent_depth), so only the nearest
+			# one shows - no ghost walls through the water.
 			var raise := 0.0
-			if face >= 2 and liquid[neighbor] == 1 and layer_of[id] == Blocks.Layer.TRANSLUCENT:
-				if liquid[padded[front + P2]] == 1:
-					continue
-				raise = 1.0 - LIQUID_DROP
 
 			var index := id * 6 + face
 			var tile := float(face_tiles[index])

@@ -28,8 +28,8 @@ const TYPES := {
 	"chicken": {"health": 4, "speed": 0.09, "drops": [["feather", 0, 2]], "sound": "chicken"},
 	"wolf": {"health": 8, "speed": 0.12, "drops": [], "sound": "wolf"},
 	"squid": {"health": 10, "speed": 0.04, "drops": [["ink_sac", 1, 3]], "sound": "", "water": true},
-	"zombie": {"health": 20, "speed": 0.1, "hostile": true, "damage": 4, "drops": [["feather", 0, 2]], "sound": "zombie", "burns": true},
-	"skeleton": {"health": 20, "speed": 0.1, "hostile": true, "damage": 4, "drops": [["bone", 0, 2], ["arrow", 0, 2]], "sound": "skeleton", "burns": true},
+	"zombie": {"health": 20, "speed": 0.1, "hostile": true, "damage": 4, "drops": [["feather", 0, 2]], "sound": "zombie", "undead": true},
+	"skeleton": {"health": 20, "speed": 0.1, "hostile": true, "damage": 4, "drops": [["bone", 0, 2], ["arrow", 0, 2]], "sound": "skeleton", "undead": true},
 	"creeper": {"health": 20, "speed": 0.1, "hostile": true, "damage": 0, "drops": [["gunpowder", 0, 2]], "sound": "creeper"},
 	"spider": {"health": 16, "speed": 0.13, "hostile": true, "damage": 2, "drops": [["string", 0, 2]], "sound": "spider"},
 	"slime": {"health": 4, "speed": 0.1, "hostile": true, "damage": 1, "drops": [["slimeball", 0, 2]], "sound": "slime"},
@@ -72,6 +72,16 @@ var _panic := 0
 var _attack_cooldown := 0
 var _fuse := 0
 var _look_at := Vector3.INF
+var _look_ticks := 0
+## Idle look-around: where the head turns (yaw, pitch) and when next.
+var _idle_look := Vector2.ZERO
+var _next_look := 0
+var _jump := 0.0
+var _fall := 0.0
+var _squish := 0.0
+var _was_on_ground := true
+var _base_scale := 1.0 / 16.0
+var _frame_delta := 0.0
 var _limb_swing := 0.0
 var _limb_amount := 0.0
 var _prev_limb := 0.0
@@ -106,8 +116,17 @@ func type_name() -> String:
 	return mob_type
 
 
+## The undead (zombies, skeletons) fear the sun: they catch fire in
+## daylight under the open sky, like the game's.
+func is_undead() -> bool:
+	return spec.get("undead", false)
+
+
 func is_hostile() -> bool:
 	return spec.get("hostile", false) and not (mob_type == "wolf")
+
+
+var _held: MeshInstance3D
 
 
 func _ready() -> void:
@@ -115,6 +134,10 @@ func _ready() -> void:
 	step_height = 0.5
 	_model = MobModels.build(mob_type)
 	add_child(_model.root)
+	if mob_type == "skeleton":
+		# Skeletons hold their bow, like the game's.
+		_held = MobModels.held_item(mob_type, Items.id_of("bow"))
+		(_model.parts.right_arm as Node3D).add_child(_held)
 	_apply_size()
 	health = max_health
 	_egg_timer = randi_range(6000, 12000)
@@ -138,12 +161,16 @@ func _apply_size() -> void:
 		height *= size
 		max_health = size * size
 		scale *= size
+	_base_scale = scale
 	if not _model.is_empty():
 		_model.root.scale = Vector3.ONE * scale
 
 
 func _ai_tick() -> void:
 	_attack_cooldown = maxi(_attack_cooldown - 1, 0)
+	_look_ticks -= 1
+	if _look_ticks <= 0:
+		_look_at = Vector3.INF
 	_panic = maxi(_panic - 1, 0)
 	var player := _player()
 	if is_hostile() and _despawn(player):
@@ -155,7 +182,7 @@ func _ai_tick() -> void:
 	if _say_timer <= 0:
 		_say_timer = randi_range(80, 400)
 		_sound("say", 1.0)
-	if spec.get("burns", false):
+	if is_undead():
 		_burn_in_daylight()
 	if spec.get("water", false):
 		_squid_tick()
@@ -217,6 +244,7 @@ func _animal_tick(player: Player) -> void:
 		return
 	if player and randi_range(0, 49) == 0 and player.global_position.distance_to(feet()) < 6.0:
 		_look_at = player.eye_position()
+		_look_ticks = randi_range(20, 60) # like the game: looks for a while
 	if _wander == Vector3.INF and randi_range(0, 119) == 0:
 		_wander = feet() + Vector3(randf_range(-10, 10), 0, randf_range(-10, 10))
 	if _wander != Vector3.INF:
@@ -251,6 +279,7 @@ func _monster_tick(player: Player) -> void:
 		return
 	var goal := (target as Player).global_position
 	_look_at = (target as Player).eye_position()
+	_look_ticks = 5
 	var flat := Vector2(goal.x - _x, goal.z - _z).length()
 	if mob_type == "creeper" and _fuse > 0:
 		return # stands still while it swells
@@ -295,6 +324,7 @@ func _skeleton_tick(player: Player) -> void:
 		_animal_tick(null)
 		return
 	_look_at = player.eye_position()
+	_look_ticks = 5
 	var distance := player.global_position.distance_to(feet())
 	if distance > 10.0:
 		_walk_toward(player.global_position, spec.speed)
@@ -575,21 +605,31 @@ func _process(delta: float) -> void:
 	_limb_amount = lerpf(_limb_amount, minf(moved * 4.0, 1.0), minf(delta * 10.0, 1.0))
 	_limb_swing += moved * 4.0 * delta * 20.0
 	var swing := cos(_limb_swing * 0.6662) * 1.4 * _limb_amount
+	_frame_delta = delta
+	var t := age + alpha
+	var smooth := minf(delta * 12.0, 1.0)
+	_jump = lerpf(_jump, MobAnimation.jump_amount(velocity.y, on_ground, in_water), smooth)
+	_fall = lerpf(_fall, MobAnimation.fall_amount(velocity.y, on_ground, in_water), smooth)
+	if age >= _next_look:
+		# Now and then glances somewhere else, or back ahead.
+		_next_look = age + randi_range(MobAnimation.LOOK_AROUND.x, MobAnimation.LOOK_AROUND.y)
+		_idle_look = Vector2(randf_range(-0.7, 0.7), randf_range(-0.3, 0.2)) if randf() < 0.6 else Vector2.ZERO
 	var parts: Dictionary = _model.parts
+	var biped := parts.has("right_arm") and parts.has("right_leg")
+	if biped:
+		MobAnimation.pose_biped(parts, t, _limb_swing, _limb_amount, _held != null,
+			mob_type == "zombie" or mob_type == "skeleton", _jump, _fall)
 	for part: Dictionary in _model.spec.parts:
 		var node: Node3D = parts.get(part.name)
 		if node == null:
 			continue # moves with its parent part
 		match str(part.role):
-			"leg_a":
-				node.rotation.x = swing
-			"leg_b":
-				node.rotation.x = -swing
+			"leg_a", "leg_b":
+				if not biped:
+					var front := str(part.name).begins_with("leg_f") or mob_type == "chicken"
+					MobAnimation.pose_quadruped_leg(node, front, part.role == "leg_a", _limb_swing, _limb_amount, _jump, _fall)
 			"arm_right", "arm_left":
-				if mob_type == "zombie" or mob_type == "skeleton":
-					node.rotation.x = -PI / 2.0 + (swing * 0.1 if part.role == "arm_right" else -swing * 0.1)
-				else:
-					node.rotation.x = -swing if part.role == "arm_right" else swing
+				pass # posed with the legs (pose_biped)
 			"wing_right", "wing_left":
 				var flap := 0.0 if on_ground else sin(Time.get_ticks_msec() / 40.0) * 0.8 + 0.8
 				node.rotation.z = flap if part.role == "wing_left" else -flap
@@ -613,6 +653,18 @@ func _process(delta: float) -> void:
 					node.rotation.y = side * ((index - 1.5) * 0.4) + side * swing * 0.4 * (1 if index % 2 == 0 else -1)
 	if mob_type == "wolf" and sitting:
 		_model.root.position.y = -0.15
+	if mob_type == "slime":
+		# The game's squish: stretched up when it jumps, squashed on landing.
+		if on_ground and not _was_on_ground:
+			_squish = -0.5
+		elif not on_ground and _was_on_ground and velocity.y > 0.0:
+			_squish = 1.0
+		_was_on_ground = on_ground
+		_squish *= pow(0.6, delta * 20.0)
+		_model.root.scale = MobAnimation.slime_scale(_squish, size) * _base_scale
+	if mob_type != "squid" and not is_dead():
+		# A short flinch back when hurt (red too, below).
+		_model.root.rotation.x = -0.18 * MobAnimation.flinch(hurt_ticks, alpha, Entity.INVULNERABLE_TICKS)
 	if mob_type == "squid":
 		# Leans into the way it swims (level when still), around its middle.
 		var moving := Vector2(velocity.x, velocity.z).length()
@@ -629,19 +681,31 @@ func _process(delta: float) -> void:
 	if mob_type == "creeper" and _fuse > 0:
 		flash = 1.0 if int(_fuse / 2.0) % 2 == 0 else 0.0
 		_model.root.scale = Vector3.ONE * float(MobModels.model(mob_type).get("scale", 1.0)) / 16.0 * (1.0 + _fuse / float(CREEPER_FUSE) * 0.2)
+	if _held:
+		_held.set_instance_shader_parameter("brightness", brightness)
 	for mesh: MeshInstance3D in _model.meshes:
 		mesh.set_instance_shader_parameter("brightness", brightness)
 		mesh.set_instance_shader_parameter("hurt", 1.0 if hurt_ticks > 0 or is_dead() else 0.0)
 		mesh.set_instance_shader_parameter("flash", flash)
 	if is_dead():
 		# Falls over sideways, like the classic game.
-		var t := minf((death_ticks + alpha) / DEATH_TICKS * 1.6, 1.0)
-		_model.root.rotation.z = sqrt(t) * PI / 2.0
+		var fall_t := minf((death_ticks + alpha) / DEATH_TICKS * 1.6, 1.0)
+		_model.root.rotation.z = sqrt(fall_t) * PI / 2.0
+
+
+func _death_puff() -> void:
+	if world:
+		world.particles.smoke(center(), 20)
 
 
 func _turn_head(node: Node3D) -> void:
 	if _look_at == Vector3.INF:
-		node.rotation = node.rotation.lerp(Vector3.ZERO, 0.1)
+		# Idle: turns slowly toward where it glances, with a little nod.
+		var ease := minf(_frame_delta * 3.0, 1.0)
+		var idle := _idle_look if _limb_amount < 0.3 else Vector2.ZERO
+		node.rotation.y = lerpf(node.rotation.y, idle.x, ease)
+		node.rotation.x = lerpf(node.rotation.x, idle.y + MobAnimation.head_bob(age + TickLoop.alpha), ease)
+		node.rotation.z = 0.0
 		return
 	var local := global_transform.affine_inverse() * _look_at
 	var head := node.global_position

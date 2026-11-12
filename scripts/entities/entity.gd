@@ -108,6 +108,7 @@ func tick() -> void:
 		death_ticks += 1
 		if death_ticks >= DEATH_TICKS:
 			removed = true
+			_death_puff()
 		return
 	in_water = EntityPhysics.touches_liquid(world, _x, _y, _z, half_width, height, "water")
 	in_lava = EntityPhysics.touches_liquid(world, _x, _y, _z, half_width, height, "lava")
@@ -241,6 +242,12 @@ func die() -> void:
 	_on_death()
 
 
+## When the body is gone (after falling over): a puff of smoke for
+## creatures, like the game's (subclasses).
+func _death_puff() -> void:
+	pass
+
+
 ## Drops and effects when it dies (subclasses).
 func _on_death() -> void:
 	pass
@@ -248,8 +255,31 @@ func _on_death() -> void:
 
 # --- Drawing --------------------------------------------------------------------------
 
+var _flames: MeshInstance3D
+
+
 func _process(_delta: float) -> void:
 	global_position = _prev.lerp(Vector3(_x, _y, _z), TickLoop.alpha)
+	_show_flames()
+
+
+## Burning creatures are wrapped in flames like the game's: the animated
+## fire block's crossed pictures, as big as the creature.
+func _show_flames() -> void:
+	var burning := fire_ticks > 0 and not is_dead()
+	if not burning:
+		if _flames:
+			_flames.visible = false
+		return
+	if _flames == null:
+		_flames = MeshInstance3D.new()
+		_flames.mesh = FallingBlocks.block_mesh(Blocks.variant("fire"))
+		_flames.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_flames)
+	var width := half_width * 2.0 * 1.4
+	_flames.visible = true
+	_flames.scale = Vector3(width, height * 1.15, width)
+	_flames.position = Vector3(-width * 0.5, 0.0, -width * 0.5)
 
 
 # --- Saving ---------------------------------------------------------------------------

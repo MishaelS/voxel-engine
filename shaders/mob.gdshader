@@ -1,7 +1,7 @@
 // Mobs (Mob, MobModels): their skin, shaded by side like blocks, lit by the
 // light where the mob stands (per instance) and flashing red when hurt.
 shader_type spatial;
-render_mode unshaded, cull_back, shadows_disabled;
+render_mode unshaded, cull_disabled, shadows_disabled; // both sides: through see-through pixels the inside shows (the skeleton's spine)
 
 uniform sampler2D skin : source_color, filter_nearest, repeat_disable;
 instance uniform float brightness = 1.0;

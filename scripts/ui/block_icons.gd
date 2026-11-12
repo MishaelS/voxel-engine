@@ -85,7 +85,10 @@ static func _render(id: int, pixels: int) -> Texture2D:
 	viewport.own_world_3d = true
 	viewport.msaa_3d = Viewport.MSAA_DISABLED
 	viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
-	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	# Rendered for a few frames, then kept: a single render could come
+	# before the viewport was ready and leave the icon empty.
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_freeze_later(viewport)
 
 	var camera := Camera3D.new()
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -104,6 +107,14 @@ static func _render(id: int, pixels: int) -> Texture2D:
 	viewport.add_child(mesh_instance)
 	_holder.add_child(viewport)
 	return viewport.get_texture()
+
+
+static func _freeze_later(viewport: SubViewport) -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	for frame in 4:
+		await tree.process_frame
+	if is_instance_valid(viewport):
+		viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 
 static func _block_mesh(id: int) -> ArrayMesh:

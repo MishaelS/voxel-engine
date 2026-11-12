@@ -30,9 +30,36 @@ static func place(world: VoxelWorld, pos: Vector3i, kind: String, facing: int) -
 			return false
 	if Blocks.is_opaque_table[world.get_block(pos + Vector3i.DOWN)] == 0:
 		return false
-	world.set_block(pos + Vector3i.UP, door_id(kind, "upper", false, facing), false)
-	world.set_block(pos, door_id(kind, "lower", false, facing))
+	var open := false
+	if hinge_flipped(world, pos, facing):
+		# Like the game's: the door hinged on the other side is an open door
+		# turned a quarter (its panel lies on the same edge).
+		facing = (facing + 3) % 4
+		open = true
+	world.set_block(pos + Vector3i.UP, door_id(kind, "upper", open, facing), false)
+	world.set_block(pos, door_id(kind, "lower", open, facing))
 	return true
+
+
+## The side (a unit step) the hinges of a closed door facing `facing` are on.
+static func hinge_side(facing: int) -> Vector3i:
+	var turned := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing])) * Vector3(-1, 0, 0)
+	return Vector3i(roundi(turned.x), 0, roundi(turned.z))
+
+
+## Whether a door placed at `pos` gets its hinges on the other side, like
+## the game's: a door already on its hinge side makes a double door (the two
+## meet in the middle); otherwise it is hinged on the side with more solid
+## blocks.
+static func hinge_flipped(world: VoxelWorld, pos: Vector3i, facing: int) -> bool:
+	var side := hinge_side(facing)
+	var door_at_hinge := is_door(world.get_block(pos + side)) or is_door(world.get_block(pos + side + Vector3i.UP))
+	var door_across := is_door(world.get_block(pos - side)) or is_door(world.get_block(pos - side + Vector3i.UP))
+	if door_at_hinge and not door_across:
+		return true
+	var solid_hinge := Blocks.is_opaque_table[world.get_block(pos + side)] + Blocks.is_opaque_table[world.get_block(pos + side + Vector3i.UP)]
+	var solid_across := Blocks.is_opaque_table[world.get_block(pos - side)] + Blocks.is_opaque_table[world.get_block(pos - side + Vector3i.UP)]
+	return solid_across > solid_hinge
 
 
 ## Opens or closes the door that `pos` is part of. Returns true if it did.

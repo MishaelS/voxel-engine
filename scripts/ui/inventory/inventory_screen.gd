@@ -2,8 +2,9 @@ class_name InventoryScreen
 extends Control
 ## Inventory windows like the classic game:
 ## - Inventory (E): survival (container0.png) with armor slots and a 2x2
-##   crafting grid, creative (container4.png) with a scrollable catalog of
-##   every block and item;
+##   crafting grid, creative (container5.png): a catalog of every block
+##   and item, 8 x 9, scrolled by the wheel or its scrollbar, and the
+##   hotbar;
 ## - Crafting table (container1.png): a 3x3 crafting grid;
 ## - Chest (container3.png): its 27 slots; large chest (container4.png): the
 ##   two halves' 27 slots each, the left half on top;
@@ -21,7 +22,8 @@ extends Control
 ##   one item out (Ctrl+Q the stack);
 ## - clicking outside the window throws the held stack (RMB one item);
 ## - catalog: LMB takes a full stack, RMB one more; clicking it while
-##   holding something deletes what is held; the mouse wheel scrolls it.
+##   holding something deletes what is held; the mouse wheel scrolls it,
+##   or dragging (clicking) its scrollbar.
 ## Closing returns what is held and what is in the crafting grid to the
 ## inventory (what does not fit is thrown out).
 
@@ -29,8 +31,13 @@ enum Mode { INVENTORY, CRAFTING_TABLE, CHEST, FURNACE, LARGE_CHEST, DISPENSER }
 enum Kind { INVENTORY, CRAFT, RESULT, CATALOG, ARMOR, CONTAINER, OUTPUT }
 
 const P := UiTheme.PIXEL
-const CATALOG_COLUMNS := 9
-const CATALOG_ROWS := 6
+const CATALOG_COLUMNS := 8
+const CATALOG_ROWS := 9
+## The creative window's scrollbar (container5.png): its track and the
+## thumb's picture (in the texture's top right corner), in texture pixels.
+const SCROLL_TRACK := Rect2i(156, 18, 12, 160)
+const SCROLL_THUMB := Rect2i(176, 0, 12, 15)
+const CREATIVE_WINDOW := Rect2i(0, 0, 176, 222)
 const TITLE_COLOR := Color("404040")
 const TOOLTIP_BACKGROUND := Color(0.063, 0.0, 0.063, 0.94)
 const TOOLTIP_BORDER := Color(0.31, 0.0, 1.0, 0.31)
@@ -54,6 +61,8 @@ var _craft_width := 2
 var _craft := Inventory.new(9)
 var _catalog := PackedInt32Array()
 var _scroll := 0
+var _thumb: TextureRect
+var _dragging_scroll := false
 ## The chest's or furnace's block entity (VoxelWorld.block_entity).
 var _entity := {}
 var _container: Inventory
@@ -201,6 +210,8 @@ func _build() -> void:
 	_slots.clear()
 	_hover = -1
 	_flame = null
+	_thumb = null
+	_dragging_scroll = false
 	_arrow = null
 
 	add_child(UiTheme.blur_rect()) # the world behind is slightly blurred
@@ -212,7 +223,7 @@ func _build() -> void:
 
 	var texture := "container/container0.png"
 	if _creative:
-		texture = "container/container4.png"
+		texture = "container/container5.png"
 	elif _mode == Mode.CRAFTING_TABLE:
 		texture = "container/container1.png"
 	elif _mode == Mode.FURNACE:
@@ -225,6 +236,17 @@ func _build() -> void:
 		texture = "container/container4.png"
 	_window = TextureRect.new()
 	_window.texture = UiTheme.gui_texture(texture)
+	var thumb_texture: AtlasTexture
+	if _creative:
+		# The window is the left part; the scrollbar's thumb is drawn beside it.
+		var whole := _window.texture
+		var window_part := AtlasTexture.new()
+		window_part.atlas = whole
+		window_part.region = Rect2(Rect2i(CREATIVE_WINDOW.position * P, CREATIVE_WINDOW.size * P))
+		_window.texture = window_part
+		thumb_texture = AtlasTexture.new()
+		thumb_texture.atlas = whole
+		thumb_texture.region = Rect2(Rect2i(SCROLL_THUMB.position * P, SCROLL_THUMB.size * P))
 	_window.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_window.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_window.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -241,12 +263,16 @@ func _build() -> void:
 	match _mode:
 		Mode.INVENTORY:
 			if _creative:
-				main_y = 140
+				main_y = -1 # only the hotbar
 				hotbar_y = 198
 				_title("Creative", Vector2(8, 6))
-				_title("Inventory", Vector2(8, 128))
 				for i in CATALOG_COLUMNS * CATALOG_ROWS:
-					_add_slot(Kind.CATALOG, i, Vector2i(8 + (i % 9) * 18, 18 + (i / 9) * 18))
+					_add_slot(Kind.CATALOG, i, Vector2i(8 + (i % CATALOG_COLUMNS) * 18, 18 + (i / CATALOG_COLUMNS) * 18))
+				_thumb = TextureRect.new()
+				_thumb.texture = thumb_texture
+				_thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				_window.add_child(_thumb)
+				_scroll = clampi(_scroll, 0, _max_scroll())
 			else:
 				_title("Crafting", Vector2(97, 7))
 				for i in 4:
@@ -290,7 +316,7 @@ func _build() -> void:
 			_add_slot(Kind.OUTPUT, 2, Vector2i(116, 35))
 			_flame = _progress_clip("container/fuelProgress.png", Vector2i(56, 36))
 			_arrow = _progress_clip("container/smeltingProgress.png", Vector2i(79, 34))
-	for i in 27:
+	for i in (27 if main_y >= 0 else 0):
 		_add_slot(Kind.INVENTORY, Inventory.HOTBAR_SIZE + i, Vector2i(8 + (i % 9) * 18, main_y + (i / 9) * 18))
 	for i in Inventory.HOTBAR_SIZE:
 		_add_slot(Kind.INVENTORY, i, Vector2i(8 + i * 18, hotbar_y))
@@ -429,6 +455,10 @@ func _refresh() -> void:
 		(slot.view as ItemSlotView).set_item(content[0], content[1], slot.kind != Kind.CATALOG, content[2])
 	_held.set_item(_held_id, _held_count, true, _held_damage)
 	_held.visible = _held_count > 0
+	if _creative and _thumb:
+		var room := SCROLL_TRACK.size.y - SCROLL_THUMB.size.y
+		var t := _scroll / float(_max_scroll()) if _max_scroll() > 0 else 0.0
+		_thumb.position = Vector2(SCROLL_TRACK.position.x, SCROLL_TRACK.position.y + roundi(t * room)) * P
 	_update_hover(get_local_mouse_position())
 
 
@@ -438,17 +468,25 @@ func _gui_input(event: InputEvent) -> void:
 	if not _open:
 		return
 	if event is InputEventMouseMotion:
+		if _dragging_scroll:
+			_scroll_to(event.position)
 		_update_hover(event.position)
+	elif event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_dragging_scroll = false
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
 				if _creative:
-					var rows := ceili(_catalog.size() / float(CATALOG_COLUMNS))
 					var step := -1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1
-					_scroll = clampi(_scroll + step, 0, maxi(rows - CATALOG_ROWS, 0))
+					_scroll = clampi(_scroll + step, 0, _max_scroll())
 					_refresh()
 			MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT:
 				var right: bool = event.button_index == MOUSE_BUTTON_RIGHT
+				if _creative and not right and _on_scrollbar(event.position):
+					_dragging_scroll = true
+					_scroll_to(event.position)
+					accept_event()
+					return
 				var index := _slot_at(event.position)
 				if index >= 0:
 					_click(_slots[index], right, event.shift_pressed)
@@ -463,6 +501,26 @@ func _gui_input(event: InputEvent) -> void:
 						_held_damage = 0
 					_refresh()
 		accept_event()
+
+
+## How far the catalog scrolls (rows past the first page).
+func _max_scroll() -> int:
+	return maxi(ceili(_catalog.size() / float(CATALOG_COLUMNS)) - CATALOG_ROWS, 0)
+
+
+func _on_scrollbar(point: Vector2) -> bool:
+	var local := (point - _window.position) / P
+	return Rect2(SCROLL_TRACK).grow(1).has_point(local)
+
+
+## Drags the scrollbar: the thumb's middle follows the mouse.
+func _scroll_to(point: Vector2) -> void:
+	var local_y := (point.y - _window.position.y) / P - SCROLL_TRACK.position.y - SCROLL_THUMB.size.y * 0.5
+	var room := float(SCROLL_TRACK.size.y - SCROLL_THUMB.size.y)
+	var scroll := roundi(clampf(local_y / room, 0.0, 1.0) * _max_scroll())
+	if scroll != _scroll:
+		_scroll = scroll
+		_refresh()
 
 
 func _slot_at(point: Vector2) -> int:

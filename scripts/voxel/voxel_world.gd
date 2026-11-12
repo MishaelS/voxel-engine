@@ -858,7 +858,9 @@ func raycast(origin: Vector3, direction: Vector3, max_distance: float, hit_water
 	while distance <= max_distance:
 		var id := get_block(pos)
 		if id != Blocks.AIR and (Blocks.liquid_table[id] == 0 or (hit_water_sources and Blocks.liquid_level_table[id] == 0)):
-			return {"hit": true, "pos": pos, "normal": normal, "block": id, "distance": distance}
+			var shape := _ray_shape_hit(origin, dir, pos, id, normal, distance)
+			if not shape.is_empty():
+				return {"hit": true, "pos": pos, "normal": shape[1], "block": id, "distance": shape[0]}
 		var axis := 0
 		if t_max.y < t_max[axis]:
 			axis = 1
@@ -870,6 +872,46 @@ func raycast(origin: Vector3, direction: Vector3, max_distance: float, hit_water
 		normal = Vector3i.ZERO
 		normal[axis] = -step[axis]
 	return {"hit": false}
+
+
+## Where the ray hits the block's own shape: [distance, normal], or []
+## when it passes by (a snow layer, a slab, a torch: the ray goes on to the
+## block behind, like the game's). Full blocks are hit where entered.
+func _ray_shape_hit(origin: Vector3, dir: Vector3, pos: Vector3i, id: int, normal: Vector3i, distance: float) -> Array:
+	var boxes: Array = Blocks.collision_table[id] if Blocks.collision_table[id].size() > 1 else [Blocks.selection_table[id]]
+	if boxes.size() == 1 and (boxes[0] as AABB).is_equal_approx(AABB(Vector3.ZERO, Vector3.ONE)):
+		return [distance, normal]
+	var best: Array = []
+	for box: AABB in boxes:
+		var low := box.position + Vector3(pos)
+		var high := box.end + Vector3(pos)
+		var enter := -INF
+		var leave := INF
+		var face := normal
+		var missed := false
+		for axis in 3:
+			if absf(dir[axis]) < 1e-9:
+				if origin[axis] < low[axis] or origin[axis] > high[axis]:
+					missed = true
+					break
+				continue
+			var t1 := (low[axis] - origin[axis]) / dir[axis]
+			var t2 := (high[axis] - origin[axis]) / dir[axis]
+			if t1 > t2:
+				var swap := t1
+				t1 = t2
+				t2 = swap
+			if t1 > enter:
+				enter = t1
+				face = Vector3i.ZERO
+				face[axis] = -1 if dir[axis] > 0.0 else 1
+			leave = minf(leave, t2)
+		if missed or enter > leave or leave < 0.0:
+			continue
+		var at := maxf(enter, 0.0)
+		if best.is_empty() or at < best[0]:
+			best = [at, face if enter >= 0.0 else normal]
+	return best
 
 
 ## Changes a block, sends block updates to it and its neighbors and marks
