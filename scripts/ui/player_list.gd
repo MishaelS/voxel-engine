@@ -19,7 +19,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_icons = TexturePacks.load_texture(ICONS)
-	_skin = TexturePacks.load_texture(MobModels.SKINS + "player.png")
+	_skin = MobModels.default_skin("player")
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	Net.players_changed.connect(queue_redraw)
 
@@ -64,9 +64,12 @@ func _draw() -> void:
 		draw_rect(Rect2(top, Vector2(width, (ROW - 1) * P)), Color(1, 1, 1, 0.13))
 		# The face and the hat layer of the skin.
 		var face := Rect2(top, Vector2(8, 8) * P)
-		draw_texture_rect_region(_skin, face, Rect2(8, 8, 8, 8))
-		draw_texture_rect_region(_skin, face, Rect2(40, 8, 8, 8))
-		var color := Color.WHITE if id != multiplayer.get_unique_id() else Color("ffff80")
+		var skin: Texture2D = Net.skin_of(id)
+		if skin == null:
+			skin = _skin
+		draw_texture_rect_region(skin, face, Rect2(8, 8, 8, 8))
+		draw_texture_rect_region(skin, face, Rect2(40, 8, 8, 8))
+		var color := PlayerProfile.color_of(Net.color_of(id))
 		draw_string(font, top + Vector2(9.0 * P, 7.0 * P), str(info.name), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
 		var bars := bars_of(int(info.get("ping", -1)))
 		draw_texture_rect_region(_icons, Rect2(top + Vector2(width - 10.0 * P, 0), Vector2(10, 8) * P),

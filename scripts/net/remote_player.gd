@@ -26,6 +26,7 @@ var _swing := -1.0 # 0..1 while swinging
 var _limb_swing := 0.0
 var _limb_amount := 0.0
 var _last := Vector3.INF
+var _name_color := 0
 
 
 func _ready() -> void:
@@ -46,6 +47,16 @@ func _ready() -> void:
 	_label.modulate = Color.WHITE
 	_label.position = Vector3(0, 2.1, 0)
 	add_child(_label)
+
+
+## Their name color and skin (Net.looks; null skin: the default one).
+func set_look(name_color: int, skin: Texture2D) -> void:
+	_name_color = name_color
+	if _model.is_empty():
+		await ready
+	var material := MobModels.material_with_skin("player", skin)
+	for mesh: MeshInstance3D in _model.meshes:
+		mesh.material_override = material
 
 
 func set_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int) -> void:
@@ -90,7 +101,7 @@ func _process(delta: float) -> void:
 	if _held:
 		FallingBlocks.light(_held, brightness)
 	_label.visible = not (_flags & 1) # hidden while sneaking, like the game's
-	_label.modulate = Color(1, 1, 1, 0.9)
+	_label.modulate = PlayerProfile.color_of(_name_color)
 
 
 func _pose() -> void:

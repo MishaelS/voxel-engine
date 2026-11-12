@@ -215,7 +215,7 @@ func _arm_instance() -> MeshInstance3D:
 		var mesh := MobModels.part_mesh("player", part).duplicate() as ArrayMesh
 		var material := ShaderMaterial.new()
 		material.shader = preload("res://shaders/hand.gdshader")
-		material.set_shader_parameter("skin", TexturePacks.load_texture(MobModels.SKINS + "player.png"))
+		material.set_shader_parameter("skin", MobModels.skin_texture("player"))
 		material.render_priority = 100
 		mesh.surface_set_material(0, material)
 		_arm.mesh = mesh
@@ -236,6 +236,8 @@ func _arm_pose() -> void:
 		* Transform3D(Basis(Vector3.UP, deg_to_rad(arc_sqrt * 70.0)), Vector3.ZERO) \
 		* Transform3D(Basis(Vector3.BACK, deg_to_rad(-sin(swing * swing * PI) * 20.0)), Vector3.ZERO)
 	_arm.transform = placed * ARM_IN_VIEW
+	# The player's skin (it can change in Player Settings).
+	((_arm.mesh as ArrayMesh).surface_get_material(0) as ShaderMaterial).set_shader_parameter("skin", MobModels.skin_texture("player"))
 	_arm.set_instance_shader_parameter("brightness", _brightness())
 
 

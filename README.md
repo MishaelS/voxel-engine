@@ -91,7 +91,9 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 ```
 
 ## Multiplayer
-Open a world to the network from the pause menu ("Open to LAN", port 25565); others join from "Multiplayer" on the title screen (the address, or a game found on the local network). The host runs the world; see `scripts/net/net.gd`. Tab shows the players and their signal.
+Open a world to the network from the pause menu ("Open to LAN", port 25565); others join from "Multiplayer" on the title screen (the address, or a game found on the local network). The host runs the world; see `scripts/net/net.gd`. Tab shows the players and their signal. The host's commands: `/players` (with each player's tag), `/kick <player>`, `/ban <player>` (bans that computer from this server), `/pardon <tag or name>`.
+
+Options → Player Settings: the name, its color and the skin (a 64 x 64 or 64 x 32 PNG).
 
 ## Native code
 Heavy loops are moved to C++ (GDExtension) step by step; the column light (`native/src/native_light.cpp`), chunk meshes (`native/src/native_mesher.cpp`) and world generation (`native/src/native_beta_generator.cpp`, block for block the same as `BetaGenerator`; `generate_blocks_script` keeps the GDScript one to compare) the light after block changes (`NativeLight.relight_edit`) and particles (`native/src/native_particles.cpp`). The built library is in `bin/` (macOS, universal), so the project runs as is. After changing `native/src/` rebuild it (clang and cmake; the first build compiles godot-cpp, a few minutes):

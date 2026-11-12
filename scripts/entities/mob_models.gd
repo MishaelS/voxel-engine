@@ -136,9 +136,42 @@ static func _material(texture: String, translucent: bool = false) -> ShaderMater
 	if not _materials.has(key):
 		var material := ShaderMaterial.new()
 		material.shader = preload("res://shaders/mob_translucent.gdshader") if translucent else preload("res://shaders/mob.gdshader")
-		material.set_shader_parameter("skin", TexturePacks.load_texture(SKINS + texture + ".png"))
+		material.set_shader_parameter("skin", skin_texture(texture))
 		_materials[key] = material
 	return _materials[key]
+
+
+## Skins replaced at run time (the player's own skin, PlayerProfile).
+static var _skin_overrides := {}
+
+
+## A model's skin: the replacement if there is one, else its file.
+static func skin_texture(texture: String) -> Texture2D:
+	if _skin_overrides.has(texture):
+		return _skin_overrides[texture]
+	return default_skin(texture)
+
+
+static func default_skin(texture: String) -> Texture2D:
+	return TexturePacks.load_texture(SKINS + texture + ".png")
+
+
+## Replaces a model's skin everywhere it is drawn (null: back to its file).
+static func set_skin(texture: String, skin: Texture2D) -> void:
+	if skin:
+		_skin_overrides[texture] = skin
+	else:
+		_skin_overrides.erase(texture)
+	for key: String in _materials:
+		if key == texture or key.begins_with(texture + "#"):
+			(_materials[key] as ShaderMaterial).set_shader_parameter("skin", skin_texture(texture))
+
+
+## A material of a model with another skin (another player's).
+static func material_with_skin(texture: String, skin: Texture2D) -> ShaderMaterial:
+	var material := _material(texture).duplicate() as ShaderMaterial
+	material.set_shader_parameter("skin", skin if skin else default_skin(texture))
+	return material
 
 
 ## A part's box around its pivot, with the skin's unfolded faces.

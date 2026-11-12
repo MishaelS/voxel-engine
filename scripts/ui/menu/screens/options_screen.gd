@@ -27,7 +27,9 @@ func build() -> void:
 	add_list_button("Controls...", func() -> void: menu.push(ControlsScreen.new()))
 	add_list_button("Language...", func() -> void: menu.push(LanguageScreen.new()))
 	add_list_button("Texture Packs...", func() -> void: menu.push(TexturePacksScreen.new()))
+	add_list_button("Player Settings...", func() -> void: menu.push(PlayerSettingsScreen.new()))
 	if menu.world:
 		add_list_button("World Settings...", func() -> void: menu.push(WorldSettingsScreen.new()))
 		add_list_button("Shaders...", func() -> void: menu.push(ShadersScreen.new()))
+	add_list_item(Control.new()) # (keeps the pairs even)
 	add_done_button()

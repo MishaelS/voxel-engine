@@ -24,4 +24,5 @@ static func _create() -> CommandDispatcher:
 	GameModeCommand.register(d)
 	SeedCommand.register(d)
 	SayCommand.register(d)
+	NetCommands.register(d)
 	return d

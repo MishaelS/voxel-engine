@@ -70,6 +70,7 @@ var _hint: Label
 
 func _ready() -> void:
 	add_to_group("chat") # Net writes into it
+	source.name = Net.player_name # the name from Player Settings
 	source.world = world
 	source.origin = player
 	source.output = add_message
@@ -130,6 +131,15 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # --- Messages --------------------------------------------------------------
 
+## A player's line: "<name> text", the name in their color (PlayerProfile).
+func add_chat(speaker: String, text: String, name_color: int) -> void:
+	_messages.append({"text": text, "kind": CommandSource.MessageKind.CHAT, "time": _now(),
+		"speaker": speaker, "name_color": name_color})
+	while _messages.size() > MAX_MESSAGES:
+		_messages.pop_front()
+	_refresh_log()
+
+
 func add_message(text: String, kind: int = CommandSource.MessageKind.CHAT) -> void:
 	for line in text.split("\n"):
 		_messages.append({"text": line, "kind": kind, "time": _now()})
@@ -150,8 +160,7 @@ func _submit(text: String) -> void:
 	if message.begins_with("/"):
 		Commands.dispatcher.execute(message, source)
 	else:
-		var speaker := Net.player_name if Net.is_online() else source.name
-		add_message("<%s> %s" % [speaker, message], CommandSource.MessageKind.CHAT)
+		add_chat(Net.player_name, message, PlayerProfile.name_color)
 		if Net.is_online():
 			Net.say(message)
 
@@ -188,7 +197,12 @@ func _refresh_log() -> void:
 func _format(message: Dictionary, alpha: float) -> String:
 	var color: Color = KIND_COLORS.get(message.kind, Color.WHITE)
 	color.a = alpha
-	return "[color=#%s]%s[/color]" % [color.to_html(true), (message.text as String).replace("[", "[lb]")]
+	var text := "[color=#%s]%s[/color]" % [color.to_html(true), (message.text as String).replace("[", "[lb]")]
+	if message.has("speaker"):
+		var bracket := "[color=#%s]" % color.to_html(true)
+		return "%s<[/color]%s%s> [/color]%s" % [bracket, PlayerProfile.bbcode_name(message.speaker, message.name_color, alpha),
+			bracket, text]
+	return text
 
 
 static func _now() -> float:

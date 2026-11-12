@@ -13,6 +13,10 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Player Settings (Options): the name, its color (the game's chat colors or a rainbow) and the skin: the player's own from a PNG file (64 x 64, or the classic 64 x 32 widened like the game does) or the default one, with a preview of the front and the back (`PlayerProfile`, `PlayerSettingsScreen`; kept in user://player.cfg and user://skins/custom.png). The skin is worn by the player's model and hand; the name color shows in the chat (a rainbow letter by letter), above the head and in the Tab list. In network games everyone's skin and name color are sent to the others (`Net.looks`).
+- Telling players apart and keeping bots out of network games: a joining player answers the host's challenge with its tag, a hash of its computer's hashed id (`OS.get_unique_id`, never sent) and the server's own salt: the same on one server (bans stick), different on every other one (servers can't follow a player), nothing about the computer in it (`PlayerProfile.tag_for_server`). The host bans by tag (user://bans.cfg), allows 3 connections and 5 tries in 30 s from one address, drops connections that don't introduce themselves within 5 s and kicks players flooding the chat, edits or column requests. Host commands: `/players` (names, tags, addresses), `/kick`, `/ban`, `/pardon`. A changed client could fake its tag: this stops casual bots and spam, not a determined attacker or a network-level flood.
+
 ## [0.0.4] - 2026-11-12
 
 ### Added
