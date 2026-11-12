@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-11-12
+
 ### Added
 - Zombies and skeletons get into a free boat or minecart they bump into (when either is moving), like the game's minecarts: one rider each, carried along sitting with the legs ahead, still looking about and attacking (skeletons shoot from it); out again when the boat or cart breaks. An occupied boat or cart can't be taken by the player (`Entity.vehicle`, `Entity.rider`, `Entity.take_creature`, `Entity.seat_free`).
 - Multiplayer, first step (stage 15; `Net` autoload, `scripts/net/`): the classic game's way, a player opens the world from the pause menu ("Open to LAN", port 25565) and is the host; others join from "Multiplayer" on the title screen, by address or from the games found on the local network (UDP broadcast on port 4445). Godot's multiplayer over ENet.
@@ -413,7 +415,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.4...HEAD
+[0.0.4]: https://github.com/MishaelS/voxel-engine/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/MishaelS/voxel-engine/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/MishaelS/voxel-engine/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/MishaelS/voxel-engine/releases/tag/v0.0.1
