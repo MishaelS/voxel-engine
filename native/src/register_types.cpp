@@ -5,6 +5,7 @@
 
 #include "native_light.h"
 #include "native_mesher.h"
+#include "native_beta_generator.h"
 
 using namespace godot;
 
@@ -14,6 +15,7 @@ static void initialize(ModuleInitializationLevel level) {
 	}
 	GDREGISTER_CLASS(voxel::NativeLight);
 	GDREGISTER_CLASS(voxel::NativeMesher);
+	GDREGISTER_CLASS(voxel::NativeBetaGenerator);
 }
 
 static void uninitialize(ModuleInitializationLevel level) {

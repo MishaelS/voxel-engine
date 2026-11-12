@@ -140,6 +140,11 @@ const UPPER_ORES := ["dirt", "gravel", "coal_ore", "iron_ore"]
 var tall := true
 var _h := TALL_UPPER_HEIGHT
 var _cells := TALL_UPPER_HEIGHT / GRID_Y
+## The same generator in native code (NativeBetaGenerator,
+## native/src/native_beta_generator.cpp): block for block the same columns,
+## many times faster. Null without the native library (then the GDScript
+## below generates).
+var _native: Object
 
 
 func _init(seed_value: int) -> void:
@@ -171,6 +176,29 @@ func _init(seed_value: int) -> void:
 	_water = _id["water"]
 	_lava = _id["lava"]
 	_bedrock = _id["bedrock"]
+	_setup_native()
+
+
+## Hands the noises, block ids and tables to the native generator.
+func _setup_native() -> void:
+	if not ClassDB.class_exists("NativeBetaGenerator"):
+		return
+	var grass_named := PackedByteArray()
+	var leaves := PackedByteArray()
+	for block in Blocks.types:
+		grass_named.append(1 if block.name.begins_with("grass_") else 0)
+		leaves.append(1 if block.name.ends_with("_leaves") else 0)
+	var pumpkins := PackedInt32Array()
+	for id: int in Blocks.family_ids("pumpkin"):
+		pumpkins.append(id)
+	_native = ClassDB.instantiate("NativeBetaGenerator")
+	_native.call("setup", {
+		"seed": world_seed, "tall": tall, "ids": _id, "pumpkins": pumpkins,
+		"noises": [_min_noise, _max_noise, _main_noise, _depth_noise, _scale_noise, _temperature_noise,
+			_humidity_noise, _detail_noise, _sand_noise, _gravel_noise, _soil_noise, _tree_noise],
+		"collides": Blocks.collides_table, "liquid": Blocks.liquid_table, "opaque": Blocks.is_opaque_table,
+		"grass_named": grass_named, "leaves": leaves,
+	})
 
 
 ## Worlds made before the world was 256 high (converted ones) keep the
@@ -179,6 +207,8 @@ func set_tall(value: bool) -> void:
 	tall = value
 	_h = TALL_UPPER_HEIGHT if tall else UPPER_HEIGHT
 	_cells = _h / GRID_Y
+	if _native:
+		_native.call("set_tall", tall)
 
 
 func _setup(noise: FastNoiseLite, salt: int, frequency: float, octaves: int) -> void:
@@ -281,6 +311,13 @@ func biome_name(x: int, z: int) -> String:
 # --- Generation --------------------------------------------------------------------
 
 func generate_blocks(cx: int, cz: int) -> PackedInt32Array:
+	if _native:
+		return _native.call("generate_blocks", cx, cz)
+	return generate_blocks_script(cx, cz)
+
+
+## The GDScript generator (without the native library; tests compare the two).
+func generate_blocks_script(cx: int, cz: int) -> PackedInt32Array:
 	var upper := PackedInt32Array()
 	upper.resize(16 * 16 * _h)
 	_generate_upper(upper, cx, cz)

@@ -11,7 +11,8 @@ add_subdirectory(godot-cpp)
 file(GLOB SOURCES CONFIGURE_DEPENDS src/*.cpp src/*.h)
 add_library(voxel_native SHARED ${SOURCES})
 target_link_libraries(voxel_native PRIVATE godot-cpp)
-target_compile_options(voxel_native PRIVATE -O3)
+# No fused multiply-add: results must round like GDScript's step by step math.
+target_compile_options(voxel_native PRIVATE -O3 -ffp-contract=off)
 set_target_properties(voxel_native PROPERTIES
 	CXX_STANDARD 17
 	CXX_VISIBILITY_PRESET hidden
