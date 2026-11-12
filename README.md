@@ -90,6 +90,18 @@ register(BlockType.cube("sand", 18)
 register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "random_tick")))
 ```
 
+## Building from the console
+No editor needed (Godot and its export templates must be installed; the scripts find Godot in /Applications or use `$GODOT`):
+```
+tools/build.sh              # release build: build/macos/Voxel Engine Bedrock Edition <version>.zip
+tools/build.sh --debug      # debug build (full F3 screen)
+tools/build.sh --app        # a .app instead of the zip
+tools/build.sh --native     # rebuild the C++ library first
+tools/run.sh                # run the game from the sources
+tools/run.sh --release      # ... with the release build's short F3 screen
+```
+`tools/build.sh` imports the project, exports the "macOS" preset, checks the signature and that the native library is inside; logs go to `build/import.log` and `build/export.log`.
+
 ## Multiplayer
 Open a world to the network from the pause menu ("Open to LAN", port 25565); others join from "Multiplayer" on the title screen (the address, or a game found on the local network). The host runs the world; see `scripts/net/net.gd`. Tab shows the players and their signal. The host's commands: `/players` (with each player's tag), `/kick <player>`, `/ban <player>` (bans that computer from this server), `/pardon <tag or name>`.
 
@@ -101,7 +113,7 @@ Heavy loops are moved to C++ (GDExtension) step by step; the column light (`nati
 git submodule update --init
 native/build.sh
 ```
-Without the library (`bin/libvoxel_native.dylib`) the game uses the GDScript versions.
+Without the library (`bin/libvoxel_native.framework`) the game uses the GDScript versions.
 
 ## Structure
 * `scenes/title.tscn` - title screen (panorama, logo, world selection and creation)

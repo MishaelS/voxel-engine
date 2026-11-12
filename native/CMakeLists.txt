@@ -1,5 +1,6 @@
 # The game's native code (GDExtension): heavy loops moved out of GDScript.
-# Built by build.sh into ../bin/ (loaded through bin/voxel_native.gdextension).
+# Built by build.sh into ../bin/libvoxel_native.framework (loaded through
+# bin/voxel_native.gdextension).
 cmake_minimum_required(VERSION 3.17)
 # Universal (Apple Silicon and Intel): must be set before project().
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
@@ -19,5 +20,6 @@ set_target_properties(voxel_native PROPERTIES
 	POSITION_INDEPENDENT_CODE ON
 	PREFIX "lib"
 	SUFFIX ".dylib"
-	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../bin"
+	# Packed into ../bin/libvoxel_native.framework by build.sh.
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )

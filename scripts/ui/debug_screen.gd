@@ -31,7 +31,8 @@ var _next_refresh_ms := 0
 ## costs about 1 ms of CPU).
 const REFRESH_MS := 50
 ## Everything (debug builds) or the short release screen.
-static var full := OS.is_debug_build()
+## (tools/run.sh --release passes --short-f3 to see the release one.)
+static var full := OS.is_debug_build() and not OS.get_cmdline_user_args().has("--short-f3")
 ## The world's size on disk is measured this often (it walks the folder).
 const DISK_REFRESH_MS := 5000
 var _disk_bytes := -1

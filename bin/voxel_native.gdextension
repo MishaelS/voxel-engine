@@ -5,4 +5,4 @@ compatibility_minimum = "4.5"
 
 [libraries]
 
-macos = "res://bin/libvoxel_native.dylib"
+macos = "res://bin/libvoxel_native.framework"

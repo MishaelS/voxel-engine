@@ -216,7 +216,7 @@ class LightJob:
 	var block_light: Array[PackedByteArray] = []
 	var task_id := -1
 
-	## The native code (bin/libvoxel_native.dylib, native/) is loaded: the
+	## The native code (bin/libvoxel_native.framework, native/) is loaded: the
 	## same light about 50x faster (9 ms a column instead of ~500). Without it,
 	## the GDScript below.
 	static var native := ClassDB.class_exists("NativeLight")

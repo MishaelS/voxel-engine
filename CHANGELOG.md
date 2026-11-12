@@ -14,6 +14,12 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Building and running from the console, without the editor: `tools/build.sh` (release or `--debug`, a zip or `--app`, `--native` to rebuild the C++ library first; imports, exports the "macOS" preset, checks the signature and the native library) and `tools/run.sh` (`--release` shows the release build's short F3 screen: `DebugScreen` reads `--short-f3`).
+
+### Fixed
+- Exported games never loaded the native library (they ran on the slow GDScript code): a bare `.dylib` in `bin/` was not found in the app's `Contents/Frameworks` ("relative path not allowed in hardened program"). `native/build.sh` now packs it as `bin/libvoxel_native.framework`, like godot-cpp's template, which exported games load; it is kept out of the resource pack.
+
+### Added
 - Player Settings (Options): the name, its color (the game's chat colors or a rainbow) and the skin: the player's own from a PNG file (64 x 64, or the classic 64 x 32 widened like the game does) or the default one, with a preview of the front and the back (`PlayerProfile`, `PlayerSettingsScreen`; kept in user://player.cfg and user://skins/custom.png). The skin is worn by the player's model and hand; the name color shows in the chat (a rainbow letter by letter), above the head and in the Tab list. In network games everyone's skin and name color are sent to the others (`Net.looks`).
 - Telling players apart and keeping bots out of network games: a joining player answers the host's challenge with its tag, a hash of its computer's hashed id (`OS.get_unique_id`, never sent) and the server's own salt: the same on one server (bans stick), different on every other one (servers can't follow a player), nothing about the computer in it (`PlayerProfile.tag_for_server`). The host bans by tag (user://bans.cfg), allows 3 connections and 5 tries in 30 s from one address, drops connections that don't introduce themselves within 5 s and kicks players flooding the chat, edits or column requests. Host commands: `/players` (names, tags, addresses), `/kick`, `/ban`, `/pardon`. A changed client could fake its tag: this stops casual bots and spam, not a determined attacker or a network-level flood.
 
