@@ -19,7 +19,8 @@ const NOTES := 25
 
 
 ## Right-click on a jukebox with `held` in hand. Returns true if used.
-static func use_jukebox(world: VoxelWorld, pos: Vector3i, player: Player, held: int) -> bool:
+## `player`: the Player, or a client's NetPlayerProxy (network game).
+static func use_jukebox(world: VoxelWorld, pos: Vector3i, player, held: int) -> bool:
 	var entity := world.block_entity(pos)
 	var record: int = entity.get("record", 0)
 	if record != 0:
@@ -29,7 +30,8 @@ static func use_jukebox(world: VoxelWorld, pos: Vector3i, player: Player, held: 
 	if not name.begins_with("music_disc_"):
 		return false
 	entity.record = held
-	Stats.grant("dj")
+	if player is Player:
+		Stats.grant("dj")
 	if not player.is_creative():
 		player.inventory.take(player.selected_slot)
 	play_record(world, pos, name.trim_prefix("music_disc_"))
@@ -62,6 +64,8 @@ static func play_record(world: VoxelWorld, pos: Vector3i, track: String) -> void
 	speaker.play()
 	speaker.finished.connect(func() -> void: stop_record(world, pos))
 	world.record_players[pos] = speaker
+	if Net.is_host():
+		Net.record_changed(pos, track) # the clients hear it too
 
 
 static func stop_record(world: VoxelWorld, pos: Vector3i) -> void:
@@ -69,6 +73,8 @@ static func stop_record(world: VoxelWorld, pos: Vector3i) -> void:
 	if speaker:
 		speaker.queue_free()
 		world.record_players.erase(pos)
+		if Net.is_host():
+			Net.record_changed(pos, "")
 
 
 ## Right-click on a note block: one semitone up, then plays it.

@@ -13,6 +13,9 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Multiplayer, fourth step: jukeboxes, cakes, beds and chest minecarts for clients. A client's disc goes into the host's jukebox (or comes out) through the host, and everyone hears the record (`Net.send_jukebox`, `record_changed`). Clients eat cake themselves (the bite goes to the host). Clients sleep in beds; the night passes only when every player is asleep, like the game's servers (`Net.all_asleep`; a client wakes up when the host's morning comes). A client opens the host's chest minecart like a chest (`Net.open_cart_container`: containers are keyed by a block position or a cart's net id).
+
 ## [0.0.5] - 2026-11-12
 
 ### Added

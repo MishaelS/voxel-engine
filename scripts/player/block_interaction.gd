@@ -304,6 +304,9 @@ func _use() -> void:
 			if player.vehicle == null:
 				Net.send_mount(target_entity.net_id)
 				player.swing()
+		elif target_entity is Minecart and target_entity.type_name() == "chest_minecart":
+			Net.open_cart_container(target_entity.net_id)
+			player.swing()
 		elif target_entity is Mob or (target_entity is Minecart and target_entity.type_name() == "furnace_minecart"):
 			Net.send_interact(target_entity.net_id) # the host answers (Net._interacted)
 		else:
@@ -384,8 +387,10 @@ func _use() -> void:
 const SHARED_USE: Array[String] = ["lever", "stone_button", "repeater", "trapdoor", "trapdoor_open", "note_block"]
 ## Containers a network client opens through the host (Net.open_container).
 const CONTAINER_USE: Array[String] = ["chest", "chest_left", "chest_right", "furnace", "furnace_lit", "dispenser", "dungeon_chest"]
-## Not shared yet in a network game: their state is the host's.
-const HOST_ONLY_USE: Array[String] = ["jukebox", "cake", "bed_foot", "bed_head"]
+## The jukebox's record is the host's (Net.send_jukebox). Cakes and beds a
+## client uses itself (the cake's block goes to the host; the night passes
+## when everyone sleeps, Player._tick_sleep).
+const HOST_ONLY_USE: Array[String] = ["jukebox"]
 
 
 ## The host does what a client's player used (Net._client_use).
@@ -415,7 +420,7 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 			_open_remote_container(pos, id)
 			return true
 		if shared_family in HOST_ONLY_USE:
-			player.message.emit(Lang.t("Not in network games yet"))
+			Net.send_jukebox(pos)
 			return true
 	if RedstoneComponents.use(world, pos, id):
 		return true

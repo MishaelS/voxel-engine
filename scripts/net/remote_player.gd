@@ -73,6 +73,10 @@ func is_creative() -> bool:
 	return _flags & 16 != 0
 
 
+func is_sleeping() -> bool:
+	return _flags & 8 != 0
+
+
 func damage(amount: int, _always: bool = false) -> void:
 	if not dead and not is_creative():
 		Net.hurt_peer(peer_id, amount, Vector3.INF)

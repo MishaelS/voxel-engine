@@ -999,6 +999,15 @@ func _tick_sleep() -> void:
 	if not Blocks.family_of(world.get_block(_bed)).begins_with("bed_"):
 		wake_up()
 		return
+	if world.remote:
+		# A network game's client: the host passes the night (when everyone
+		# sleeps); the morning wakes it up.
+		if not DayNightCycle.is_night(world.clock.day_time):
+			wake_up()
+		return
+	if sleep_ticks >= SLEEP_TICKS and Net.is_host() and not Net.all_asleep():
+		sleep_ticks = SLEEP_TICKS # (waiting for the others)
+		return
 	if sleep_ticks >= SLEEP_TICKS:
 		var day_time := world.clock.day_time
 		world.clock.add_day_time(WorldClock.TICKS_PER_DAY - fposmod(day_time, WorldClock.TICKS_PER_DAY))
