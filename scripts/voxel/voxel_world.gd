@@ -200,7 +200,18 @@ class LightJob:
 	var block_light: Array[PackedByteArray] = []
 	var task_id := -1
 
+	## The native code (bin/libvoxel_native.dylib, native/) is loaded: the
+	## same light about 50x faster (9 ms a column instead of ~500). Without it,
+	## the GDScript below.
+	static var native := ClassDB.class_exists("NativeLight")
+
 	func run() -> void:
+		if native:
+			var both: Array = ClassDB.class_call_static("NativeLight", "compute_column", chunks, heights, glowing,
+				Blocks.light_opacity_table, Blocks.light_emission_table)
+			light.assign(both[0])
+			block_light.assign(both[1])
+			return
 		var area := SkyLight.area_of(chunks)
 		light = SkyLight.compute_column(area, heights)
 		block_light = BlockLight.compute_column(area, BlockLight.sources_of(chunks, glowing))

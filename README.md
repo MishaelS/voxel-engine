@@ -90,6 +90,14 @@ register(BlockType.cube("sand", 18)
 register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "random_tick")))
 ```
 
+## Native code
+Heavy loops are moved to C++ (GDExtension) step by step; for now the column light (`native/src/native_light.cpp`). The built library is in `bin/` (macOS, universal), so the project runs as is. After changing `native/src/` rebuild it (clang and cmake; the first build compiles godot-cpp, a few minutes):
+```
+git submodule update --init
+native/build.sh
+```
+Without the library (`bin/libvoxel_native.dylib`) the game uses the GDScript versions.
+
 ## Structure
 * `scenes/title.tscn` - title screen (panorama, logo, world selection and creation)
 * `scenes/main.tscn` - game scene (sky, sun, voxel world, player, HUD); `scripts/game.gd` saves and shows the loading screen

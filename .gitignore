@@ -38,3 +38,5 @@ desktop.ini
 *.log
 
 ROADMAP.md
+# --- Native code (native/build.sh) ---
+/native/build/
