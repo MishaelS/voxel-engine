@@ -249,9 +249,253 @@ Array NativeLight::compute_column(const Array &chunks, const Array &heights, con
 	return result;
 }
 
+namespace {
+
+// The 3x3 columns around an edit, read in place (chunk arrays are not
+// copied: a chunk's light is copied only when it changes).
+struct EditArea {
+	static constexpr int SLOTS = 9 * CHUNKS;
+	const int32_t *blocks[SLOTS] = {};
+	const uint8_t *light[SLOTS] = {};
+	std::vector<uint8_t> changed[SLOTS];
+	int32_t dirty[SLOTS] = {};
+	const uint8_t *opacity;
+	int64_t opacity_size;
+	bool sky;
+
+	static int slot(int x, int y, int z) {
+		return ((x >> 4) * 3 + (z >> 4)) * CHUNKS + (y >> 4);
+	}
+	static int local(int x, int y, int z) {
+		return (x & 15) + ((z & 15) << 4) + ((y & 15) << 8);
+	}
+	static bool in_area(int x, int z) {
+		return x >= 0 && z >= 0 && x < W && z < W;
+	}
+	// VoxelWorld.is_inside(): a loaded chunk.
+	bool inside(int x, int y, int z) const {
+		return y >= 0 && y < H && in_area(x, z) && light[slot(x, y, z)] != nullptr;
+	}
+	int block(int x, int y, int z) const {
+		if (!inside(x, y, z))
+			return 0;
+		const int32_t *b = blocks[slot(x, y, z)];
+		return b ? b[local(x, y, z)] : 0;
+	}
+	int op(int x, int y, int z) const {
+		const int id = block(x, y, z);
+		return (id >= 0 && id < opacity_size) ? opacity[id] : MAX;
+	}
+	// get_light() / get_block_light(): 15 (sky) or 0 above the world, 0
+	// below it and where nothing is loaded.
+	int get(int x, int y, int z) const {
+		if (y >= H)
+			return sky ? MAX : 0;
+		if (!inside(x, y, z))
+			return 0;
+		const int s = slot(x, y, z);
+		return changed[s].empty() ? light[s][local(x, y, z)] : changed[s][local(x, y, z)];
+	}
+	// _set_light() / _set_block_light() with _mark_dirty_around().
+	void set(int x, int y, int z, int level) {
+		if (!inside(x, y, z))
+			return;
+		const int s = slot(x, y, z);
+		const int i = local(x, y, z);
+		if (get(x, y, z) == level)
+			return;
+		if (changed[s].empty())
+			changed[s].assign(light[s], light[s] + VOLUME);
+		changed[s][i] = uint8_t(level);
+		const int lx = x & 15, ly = y & 15, lz = z & 15;
+		for (int dx = lx == 0 ? -1 : 0; dx <= (lx == 15 ? 1 : 0); dx++)
+			for (int dy = ly == 0 ? -1 : 0; dy <= (ly == 15 ? 1 : 0); dy++)
+				for (int dz = lz == 0 ? -1 : 0; dz <= (lz == 15 ? 1 : 0); dz++)
+					dirty[s] |= 1 << ((dx + 1) * 9 + (dy + 1) * 3 + (dz + 1));
+	}
+};
+
+// NEIGHBORS: up, down, +x, -x, +z, -z.
+const int OFFSETS[6][3] = { { 0, 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
+constexpr int UP = 0, DOWN = 1;
+
+struct Cell {
+	int x, y, z;
+};
+
+// _run_light_spread() for one kind, to the end.
+void spread(EditArea &a, std::vector<Cell> &queue) {
+	for (size_t head = 0; head < queue.size(); head++) {
+		const Cell c = queue[head];
+		const int level = a.get(c.x, c.y, c.z);
+		if (level <= 1)
+			continue;
+		for (int d = 0; d < 6; d++) {
+			const int nx = c.x + OFFSETS[d][0], ny = c.y + OFFSETS[d][1], nz = c.z + OFFSETS[d][2];
+			if (ny < 0 || ny >= H || !a.inside(nx, ny, nz))
+				continue;
+			const int nop = a.op(nx, ny, nz);
+			if (nop >= MAX)
+				continue;
+			const int candidate = (a.sky && d == DOWN && level == MAX) ? level - nop : level - std::max(nop, 1);
+			if (candidate > a.get(nx, ny, nz)) {
+				a.set(nx, ny, nz, candidate);
+				queue.push_back({ nx, ny, nz });
+			}
+		}
+	}
+}
+
+// VoxelWorld._relight().
+void relight_sky(EditArea &a, int px, int py, int pz) {
+	struct Entry {
+		Cell cell;
+		int level;
+	};
+	std::vector<Entry> removal = { { { px, py, pz }, a.get(px, py, pz) } };
+	std::vector<Cell> queue;
+	a.set(px, py, pz, 0);
+	for (size_t head = 0; head < removal.size(); head++) {
+		const Entry e = removal[head];
+		for (int d = 0; d < 6; d++) {
+			const int nx = e.cell.x + OFFSETS[d][0], ny = e.cell.y + OFFSETS[d][1], nz = e.cell.z + OFFSETS[d][2];
+			const int nl = a.get(nx, ny, nz);
+			if (nl == 0 || ny >= H)
+				continue;
+			if (nl < e.level || (d == DOWN && e.level == MAX && nl == MAX)) {
+				a.set(nx, ny, nz, 0);
+				removal.push_back({ { nx, ny, nz }, nl });
+			} else {
+				queue.push_back({ nx, ny, nz });
+			}
+		}
+	}
+	const int opacity = a.op(px, py, pz);
+	if (opacity < MAX) {
+		int best = 0;
+		for (int d = 0; d < 6; d++) {
+			const int nl = a.get(px + OFFSETS[d][0], py + OFFSETS[d][1], pz + OFFSETS[d][2]);
+			const int candidate = (d == UP && nl == MAX) ? nl - opacity : nl - std::max(opacity, 1);
+			best = std::max(best, candidate);
+		}
+		if (best > 0) {
+			a.set(px, py, pz, best);
+			queue.push_back({ px, py, pz });
+		}
+	}
+	spread(a, queue);
+}
+
+// VoxelWorld._relight_block_light().
+void relight_block(EditArea &a, const uint8_t *emission, int64_t emission_size, int px, int py, int pz) {
+	auto glow_of = [&](int x, int y, int z) -> int {
+		const int id = a.block(x, y, z);
+		return (id >= 0 && id < emission_size) ? emission[id] : 0;
+	};
+	const int here = a.get(px, py, pz);
+	const int glow = glow_of(px, py, pz);
+	std::vector<Cell> queue;
+	if (glow == 0 && here == 0) {
+		bool lit_near = false;
+		for (int d = 0; d < 6 && !lit_near; d++)
+			lit_near = a.get(px + OFFSETS[d][0], py + OFFSETS[d][1], pz + OFFSETS[d][2]) > 1;
+		if (!lit_near)
+			return;
+	}
+	if (glow >= here && glow > 0) {
+		a.set(px, py, pz, glow);
+		queue.push_back({ px, py, pz });
+		spread(a, queue);
+		return;
+	}
+	struct Entry {
+		Cell cell;
+		int level;
+	};
+	std::vector<Entry> removal = { { { px, py, pz }, here } };
+	a.set(px, py, pz, 0);
+	for (size_t head = 0; head < removal.size(); head++) {
+		const Entry e = removal[head];
+		for (int d = 0; d < 6; d++) {
+			const int nx = e.cell.x + OFFSETS[d][0], ny = e.cell.y + OFFSETS[d][1], nz = e.cell.z + OFFSETS[d][2];
+			const int nl = a.get(nx, ny, nz);
+			if (nl == 0)
+				continue;
+			if (nl < e.level && glow_of(nx, ny, nz) < nl) {
+				a.set(nx, ny, nz, 0);
+				removal.push_back({ { nx, ny, nz }, nl });
+			} else {
+				queue.push_back({ nx, ny, nz });
+			}
+		}
+	}
+	int best = glow_of(px, py, pz);
+	const int opacity = a.op(px, py, pz);
+	if (opacity < MAX)
+		for (int d = 0; d < 6; d++)
+			best = std::max(best, a.get(px + OFFSETS[d][0], py + OFFSETS[d][1], pz + OFFSETS[d][2]) - std::max(opacity, 1));
+	if (best > 0) {
+		a.set(px, py, pz, best);
+		queue.push_back({ px, py, pz });
+	}
+	spread(a, queue);
+}
+
+} // namespace
+
+Array NativeLight::relight_edit(bool sky, const Vector3i &pos, const Array &blocks, const Array &light,
+		const PackedByteArray &opacity, const PackedByteArray &emission) {
+	Array result;
+	ERR_FAIL_COND_V(blocks.size() < 9 || light.size() < 9, result);
+	EditArea area;
+	area.sky = sky;
+	area.opacity = opacity.ptr();
+	area.opacity_size = opacity.size();
+	// Keep the arrays referenced while their pointers are used.
+	std::vector<PackedInt32Array> block_refs;
+	std::vector<PackedByteArray> light_refs;
+	block_refs.reserve(EditArea::SLOTS);
+	light_refs.reserve(EditArea::SLOTS);
+	for (int c = 0; c < 9; c++) {
+		const Array column_blocks = blocks[c];
+		const Array column_light = light[c];
+		for (int k = 0; k < CHUNKS && k < column_light.size() && k < column_blocks.size(); k++) {
+			block_refs.push_back(column_blocks[k]);
+			light_refs.push_back(column_light[k]);
+			if (block_refs.back().size() >= VOLUME && light_refs.back().size() >= VOLUME) {
+				area.blocks[c * CHUNKS + k] = block_refs.back().ptr();
+				area.light[c * CHUNKS + k] = light_refs.back().ptr();
+			}
+		}
+	}
+	if (sky)
+		relight_sky(area, pos.x, pos.y, pos.z);
+	else
+		relight_block(area, emission.ptr(), emission.size(), pos.x, pos.y, pos.z);
+	PackedInt32Array chunks;
+	Array arrays;
+	PackedInt32Array masks;
+	for (int s = 0; s < EditArea::SLOTS; s++) {
+		if (area.changed[s].empty())
+			continue;
+		PackedByteArray out;
+		out.resize(VOLUME);
+		memcpy(out.ptrw(), area.changed[s].data(), VOLUME);
+		chunks.append(s);
+		arrays.append(out);
+		masks.append(area.dirty[s]);
+	}
+	result.append(chunks);
+	result.append(arrays);
+	result.append(masks);
+	return result;
+}
+
 void NativeLight::_bind_methods() {
 	ClassDB::bind_static_method("NativeLight", D_METHOD("compute_column", "chunks", "heights", "glowing", "opacity", "emission"),
 			&NativeLight::compute_column);
+	ClassDB::bind_static_method("NativeLight", D_METHOD("relight_edit", "sky", "pos", "blocks", "light", "opacity", "emission"),
+			&NativeLight::relight_edit);
 }
 
 } // namespace voxel

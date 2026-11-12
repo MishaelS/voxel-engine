@@ -42,6 +42,7 @@ var _eye := Vector3(72.0, 80.0, 72.0)
 
 func _ready() -> void:
 	ChunkMesher.random_rotation = Settings.get_value("random_rotation")
+	ChunkMesher.prepare_native()
 	_build_scene()
 	_generator = BetaGenerator.new(TITLE_SEED)
 	_chunk_blocks.resize(CHUNKS)
@@ -173,7 +174,17 @@ func _light_column(index: int) -> void:
 				column.append(_chunk_blocks[(nx + nz * SIZE) * WorldGenerator.HEIGHT_CHUNKS + k] if inside else air)
 			chunks.append(column)
 			heights.append(_heights[nx + nz * SIZE] if inside else no_height)
-	var light := SkyLight.compute_column(SkyLight.area_of(chunks), heights)
+	var light: Array
+	if VoxelWorld.LightJob.native:
+		var glowing := []
+		var none := PackedByteArray()
+		none.resize(WorldGenerator.HEIGHT_CHUNKS)
+		for c in 9:
+			glowing.append(none) # sky light only
+		light = ClassDB.class_call_static("NativeLight", "compute_column", chunks, heights, glowing,
+			Blocks.light_opacity_table, Blocks.light_emission_table)[0]
+	else:
+		light = SkyLight.compute_column(SkyLight.area_of(chunks), heights)
 	for k in WorldGenerator.HEIGHT_CHUNKS:
 		_chunk_light[index * WorldGenerator.HEIGHT_CHUNKS + k] = light[k]
 
@@ -198,6 +209,12 @@ func _mesh_chunk(index: int) -> void:
 				neighbors[Vector3i(dx, dy, dz)] = _chunk_blocks[other]
 				neighbor_light[Vector3i(dx, dy, dz)] = _chunk_light[other]
 	var colors: Array = _colors[column]
+	var origin := Vector3i(TITLE_COLUMN.x + x - RADIUS, k, TITLE_COLUMN.y + z - RADIUS)
+	if ChunkMesher.native:
+		_surfaces[index] = ClassDB.class_call_static("NativeMesher", "build_chunk", origin, _chunk_blocks[index],
+			neighbors, _chunk_light[index], neighbor_light, PackedByteArray(), {}, colors[0], colors[1],
+			ChunkMesher.smooth_lighting, ChunkMesher.random_rotation)[0]
+		return
 	_surfaces[index] = ChunkMesher.build(ChunkMesher.pad_blocks(_chunk_blocks[index], neighbors),
 		ChunkMesher.pad_light(_chunk_light[index], neighbor_light, SkyLight.MAX), colors[0], colors[1],
 		Vector3i(TITLE_COLUMN.x + x - RADIUS, k, TITLE_COLUMN.y + z - RADIUS) * ChunkData.SIZE)

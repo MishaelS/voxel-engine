@@ -3,6 +3,7 @@
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/vector3i.hpp>
 
 namespace voxel {
 
@@ -24,6 +25,18 @@ public:
 	// (PackedByteArray, 4096 each), bottom to top.
 	static godot::Array compute_column(const godot::Array &chunks, const godot::Array &heights,
 			const godot::Array &glowing, const godot::PackedByteArray &opacity,
+			const godot::PackedByteArray &emission);
+
+	// The light around one changed block (VoxelWorld._relight() for sky
+	// light, `sky`, or _relight_block_light()), removal and spreading to the
+	// end at once. The area is the 3x3 columns around the block's column:
+	// `blocks` / `light` are 9 arrays (index (dx + 1) * 3 + (dz + 1)) of 16
+	// chunk arrays each, empty where nothing is loaded; `pos` is the block in
+	// area coordinates (x, z 16..31). Returns [chunks (PackedInt32Array of
+	// c * 16 + k), their new light arrays, PackedInt32Array of bits (dx + 1) * 9
+	// + (dy + 1) * 3 + (dz + 1): the chunks whose meshes see the change].
+	static godot::Array relight_edit(bool sky, const godot::Vector3i &pos, const godot::Array &blocks,
+			const godot::Array &light, const godot::PackedByteArray &opacity,
 			const godot::PackedByteArray &emission);
 };
 

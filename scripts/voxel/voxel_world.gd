@@ -737,6 +737,9 @@ func _set_light(pos: Vector3i, level: int) -> void:
 ## cells and from the changed cell itself. Straight-down sky light (15)
 ## keeps its full value through clear blocks.
 func _relight(pos: Vector3i) -> void:
+	if LightJob.native:
+		_relight_native(pos, true)
+		return
 	var removal: Array = [[pos, get_light(pos)]]
 	var spread: Array[Vector3i] = []
 	_set_light(pos, 0)
@@ -887,6 +890,9 @@ func _set_block_light(pos: Vector3i, level: int) -> void:
 ## cells found at the edge), then spreads again from those cells and from
 ## the block itself if it glows.
 func _relight_block_light(pos: Vector3i) -> void:
+	if LightJob.native:
+		_relight_native(pos, false)
+		return
 	var here := get_block_light(pos)
 	var glow: int = Blocks.light_emission_table[get_block(pos)]
 	var spread: Array[Vector3i] = []
@@ -936,6 +942,65 @@ func _relight_block_light(pos: Vector3i) -> void:
 		_set_block_light(pos, best)
 		spread.append(pos)
 	_spread_block_light(spread)
+
+
+## _relight() (`sky`) or _relight_block_light() in native code
+## (NativeLight.relight_edit): the same light, removed and spread again to
+## the end at once (no queue left for the next frames), over the 3x3 columns
+## around the block (light never reaches farther).
+func _relight_native(pos: Vector3i, sky: bool) -> void:
+	if not sky and Blocks.light_emission_table[get_block(pos)] == 0 and get_block_light(pos) == 0:
+		# No block light here and none next to it: nothing changes.
+		var lit_near := false
+		for offset in NEIGHBORS:
+			if get_block_light(pos + offset) > 1:
+				lit_near = true
+				break
+		if not lit_near:
+			return
+	var column := Vector2i(pos.x >> 4, pos.z >> 4)
+	# Light changes at most 15 blocks up (and block light 15 down); sky light
+	# can go all the way down an opened shaft.
+	var low := 0 if sky else maxi((pos.y >> 4) - 1, 0)
+	var high := mini((pos.y >> 4) + 1, WorldGenerator.HEIGHT_CHUNKS - 1)
+	var no_blocks := PackedInt32Array()
+	var no_light := PackedByteArray()
+	var blocks := []
+	var lights := []
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			var column_blocks := []
+			var column_light := []
+			for k in WorldGenerator.HEIGHT_CHUNKS:
+				var data: ChunkData = _chunks.get(Vector3i(column.x + dx, k, column.y + dz)) if k >= low and k <= high else null
+				if data:
+					column_blocks.append(data.blocks)
+					column_light.append(data.light if sky else data.block_light)
+				else:
+					column_blocks.append(no_blocks)
+					column_light.append(no_light)
+			blocks.append(column_blocks)
+			lights.append(column_light)
+	var at := Vector3i(pos.x - (column.x - 1) * 16, pos.y, pos.z - (column.y - 1) * 16)
+	var result: Array = ClassDB.class_call_static("NativeLight", "relight_edit", sky, at, blocks, lights,
+		_opacity, Blocks.light_emission_table)
+	var chunks: PackedInt32Array = result[0]
+	var masks: PackedInt32Array = result[2]
+	for n in chunks.size():
+		var slot := chunks[n]
+		var c := slot / WorldGenerator.HEIGHT_CHUNKS
+		var coord := Vector3i(column.x + c / 3 - 1, slot % WorldGenerator.HEIGHT_CHUNKS, column.y + c % 3 - 1)
+		var data: ChunkData = _chunks.get(coord)
+		if data == null:
+			continue
+		if sky:
+			data.light = result[1][n]
+		else:
+			data.block_light = result[1][n]
+		var mask := masks[n]
+		for bit in 27:
+			if mask & (1 << bit):
+				_mark_dirty_chunk(coord + Vector3i(bit / 9 - 1, (bit / 3) % 3 - 1, bit % 3 - 1))
 
 
 ## Block light flowing on from the cells in `spread` to darker cells
@@ -1136,18 +1201,23 @@ func _mark_dirty_around(coord: Vector3i, local: Vector3i) -> void:
 	for dx in range(ranges[0][0], ranges[0][1] + 1):
 		for dy in range(ranges[1][0], ranges[1][1] + 1):
 			for dz in range(ranges[2][0], ranges[2][1] + 1):
-				var neighbor := coord + Vector3i(dx, dy, dz)
-				if not _chunks.has(neighbor):
-					continue
-				var column := Vector2i(neighbor.x, neighbor.z)
-				var waiting: Variant = _deferred.get(column)
-				if waiting != null and (waiting as Dictionary).has(neighbor.y):
-					continue # a far deep chunk without a mesh: built when the player comes
-				if absi(column.x - _player_column.x) <= URGENT_MESH_RADIUS and absi(column.y - _player_column.y) <= URGENT_MESH_RADIUS:
-					_urgent_mesh[neighbor] = true # changed near the player: before the rest
-				elif not _dirty.has(neighbor):
-					_mesh_backlog.append(neighbor) # far away (lava flowing in a cave): in its turn
-				_dirty[neighbor] = true
+				_mark_dirty_chunk(coord + Vector3i(dx, dy, dz))
+
+
+## Marks a chunk to be meshed again (if loaded and not waiting for the
+## player to come near).
+func _mark_dirty_chunk(neighbor: Vector3i) -> void:
+	if not _chunks.has(neighbor):
+		return
+	var column := Vector2i(neighbor.x, neighbor.z)
+	var waiting: Variant = _deferred.get(column)
+	if waiting != null and (waiting as Dictionary).has(neighbor.y):
+		return # a far deep chunk without a mesh: built when the player comes
+	if absi(column.x - _player_column.x) <= URGENT_MESH_RADIUS and absi(column.y - _player_column.y) <= URGENT_MESH_RADIUS:
+		_urgent_mesh[neighbor] = true # changed near the player: before the rest
+	elif not _dirty.has(neighbor):
+		_mesh_backlog.append(neighbor) # far away (lava flowing in a cave): in its turn
+	_dirty[neighbor] = true
 
 
 ## Sends a "block update" to the block at pos (its on_update handler).

@@ -91,7 +91,7 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 ```
 
 ## Native code
-Heavy loops are moved to C++ (GDExtension) step by step; the column light (`native/src/native_light.cpp`), chunk meshes (`native/src/native_mesher.cpp`) and world generation (`native/src/native_beta_generator.cpp`, block for block the same as `BetaGenerator`; `generate_blocks_script` keeps the GDScript one to compare). The built library is in `bin/` (macOS, universal), so the project runs as is. After changing `native/src/` rebuild it (clang and cmake; the first build compiles godot-cpp, a few minutes):
+Heavy loops are moved to C++ (GDExtension) step by step; the column light (`native/src/native_light.cpp`), chunk meshes (`native/src/native_mesher.cpp`) and world generation (`native/src/native_beta_generator.cpp`, block for block the same as `BetaGenerator`; `generate_blocks_script` keeps the GDScript one to compare) and the light after block changes (`NativeLight.relight_edit`). The built library is in `bin/` (macOS, universal), so the project runs as is. After changing `native/src/` rebuild it (clang and cmake; the first build compiles godot-cpp, a few minutes):
 ```
 git submodule update --init
 native/build.sh
