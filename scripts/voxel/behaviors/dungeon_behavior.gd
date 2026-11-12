@@ -73,7 +73,7 @@ static func chest_display_tick(world: VoxelWorld, pos: Vector3i, _rng: RandomNum
 
 ## Turns the dungeon chest marker at pos into a chest full of loot.
 static func open_chest(world: VoxelWorld, pos: Vector3i) -> void:
-	if Blocks.family_of(world.get_block(pos)) != "dungeon_chest":
+	if world.remote or Blocks.family_of(world.get_block(pos)) != "dungeon_chest":
 		return
 	world.set_block(pos, Blocks.variant("chest", 0))
 	var entity := world.block_entity(pos)

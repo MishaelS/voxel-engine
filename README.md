@@ -107,7 +107,7 @@ Open a world to the network from the pause menu ("Open to LAN", port 25565); oth
 
 Options → Player Settings: the name, its color and the skin (a 64 x 64 or 64 x 32 PNG).
 
-The host's creatures, boats, minecarts, arrows and dropped items are shared; clients hit, ride and pick up through the host, and the host keeps their players in its save. "Open to LAN" asks for the game mode of the other players and whether cheats are allowed (worlds have their own "Allow Cheats" from Create New World).
+The host's creatures, boats, minecarts, arrows and dropped items are shared; clients hit, ride and pick up through the host, and the host keeps their players in its save. Chests, furnaces and dispensers are the host's: clients open them through it and see changes as they happen; sign text, sheep, pigs, cows and wolves work for everyone, and creatures spawn around every player. "Open to LAN" asks for the game mode of the other players and whether cheats are allowed (worlds have their own "Allow Cheats" from Create New World).
 
 ## Native code
 Heavy loops are moved to C++ (GDExtension) step by step; the column light (`native/src/native_light.cpp`), chunk meshes (`native/src/native_mesher.cpp`) and world generation (`native/src/native_beta_generator.cpp`, block for block the same as `BetaGenerator`; `generate_blocks_script` keeps the GDScript one to compare) the light after block changes (`NativeLight.relight_edit`) and particles (`native/src/native_particles.cpp`). The built library is in `bin/` (macOS, universal), so the project runs as is. After changing `native/src/` rebuild it (clang and cmake; the first build compiles godot-cpp, a few minutes):

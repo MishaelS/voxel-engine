@@ -1,7 +1,7 @@
 class_name MobSpawner
 extends RefCounted
-## Natural mob spawning like the classic game, once a second around the
-## player (24..64 blocks away, never closer):
+## Natural mob spawning like the classic game, once a second around each
+## player, the network game's too (24..64 blocks away, never closer):
 ## - monsters (zombies, skeletons, creepers, spiders) in groups of 1..4
 ##   where it is dark (combined light 7 or less, the night sky counts as
 ##   dark), on solid ground with two free blocks above; slimes in slime
@@ -64,8 +64,8 @@ func tick() -> void:
 	_counter += 1
 	if not enabled or _counter % INTERVAL != 0:
 		return
-	var player := world.player as Player
-	if player == null or player.dead:
+	var around := _player_positions()
+	if around.is_empty():
 		return
 	var counts := {"monster": 0, "animal": 0, "water": 0}
 	for entity in world.entities.all():
@@ -75,11 +75,26 @@ func tick() -> void:
 	for category: String in CAPS:
 		if category == "monster" and peaceful:
 			continue
-		if counts[category] >= CAPS[category]:
+		# Like the game's caps that grow with the loaded area: one share per player.
+		if counts[category] >= CAPS[category] * around.size():
 			continue
-		for i in TRIES:
-			if _try_spawn(category, player.global_position):
-				break
+		for at in around:
+			for i in TRIES:
+				if _try_spawn(category, at):
+					break
+
+
+## Where the living players are: this one and, hosting, the clients' (Net).
+func _player_positions() -> Array[Vector3]:
+	var result: Array[Vector3] = []
+	var player := world.player as Player
+	if player and not player.dead:
+		result.append(player.global_position)
+	if Net.is_host():
+		for avatar: RemotePlayer in Net.avatars.values():
+			if is_instance_valid(avatar) and not avatar.dead:
+				result.append(avatar.target_position)
+	return result
 
 
 static func _category(mob_type: String) -> String:
@@ -179,9 +194,9 @@ func _suits(category: String, mob_type: String, pos: Vector3i) -> bool:
 		return false
 	if mob_type == "spider" and not (_free(world.get_block(pos + Vector3i(1, 0, 0))) and _free(world.get_block(pos + Vector3i(0, 0, 1)))):
 		return false
-	var player := world.player as Player
-	if player and player.global_position.distance_to(Vector3(pos)) < MIN_DISTANCE:
-		return false
+	for at in _player_positions():
+		if at.distance_to(Vector3(pos)) < MIN_DISTANCE:
+			return false
 	if category == "animal":
 		return Blocks.get_type(below).name.begins_with("grass") and world.get_combined_light(pos, sky_darkness(world)) >= 9
 	if mob_type == "slime":

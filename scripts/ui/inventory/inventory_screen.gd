@@ -27,6 +27,9 @@ extends Control
 ## Closing returns what is held and what is in the crafting grid to the
 ## inventory (what does not fit is thrown out).
 
+## The window closed (Net: a container's viewer is gone).
+signal closed
+
 enum Mode { INVENTORY, CRAFTING_TABLE, CHEST, FURNACE, LARGE_CHEST, DISPENSER }
 enum Kind { INVENTORY, CRAFT, RESULT, CATALOG, ARMOR, CONTAINER, OUTPUT }
 
@@ -162,6 +165,7 @@ func close() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	GameInput.unlock()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	closed.emit()
 
 
 ## Back into the inventory; what does not fit is thrown out.

@@ -262,6 +262,9 @@ func leave() -> void:
 	_answers.clear()
 	_waiting_changes.clear()
 	_pending_blocks.clear()
+	_viewers.clear()
+	_open_containers.clear()
+	_container_slots.clear()
 	world_info.clear()
 	_lan_out = null
 	players_changed.emit()
@@ -335,6 +338,7 @@ func _within(id: int, kind: String, limit: int, seconds: float) -> bool:
 
 func _on_peer_disconnected(id: int) -> void:
 	_waiting_hello.erase(id)
+	_close_for(id)
 	_known_entities.erase(id)
 	_known_items.erase(id)
 	if is_host():
@@ -534,6 +538,11 @@ func _process(delta: float) -> void:
 			_player_save_timer = PLAYER_SAVE_SECONDS
 			send_player_state()
 	if is_host():
+		if not _viewers.is_empty():
+			_container_timer -= delta
+			if _container_timer <= 0.0:
+				_container_timer = CONTAINER_SECONDS
+				_send_container_changes()
 		if not _pending_blocks.is_empty():
 			_blocks_changed.rpc(_pending_blocks)
 			_pending_blocks = PackedInt32Array()
@@ -583,11 +592,16 @@ func _request_column(cx: int, cz: int) -> void:
 		var blocks := world.column_blocks_for_network(Vector2i(cx, cz))
 		if not blocks.is_empty():
 			data = blocks.to_byte_array().compress(FileAccess.COMPRESSION_ZSTD)
-	_column_answer.rpc_id(multiplayer.get_remote_sender_id(), cx, cz, data)
+	var signs: Array = world.column_signs_for_network(Vector2i(cx, cz)) if world else []
+	_column_answer.rpc_id(multiplayer.get_remote_sender_id(), cx, cz, data, signs)
 
 
 @rpc("authority", "call_remote", "reliable")
-func _column_answer(cx: int, cz: int, data: PackedByteArray) -> void:
+func _column_answer(cx: int, cz: int, data: PackedByteArray, signs: Array) -> void:
+	var world := _world()
+	if world:
+		for sign: Array in signs:
+			world.apply_network_sign(Vector3i(sign[0], sign[1], sign[2]), _sign_lines(sign[3]))
 	var blocks := PackedInt32Array()
 	if not data.is_empty():
 		blocks = data.decompress(WorldGenerator.COLUMN_VOLUME * 4, FileAccess.COMPRESSION_ZSTD).to_int32_array()
@@ -607,6 +621,40 @@ func _blocks_changed(changes: PackedInt32Array) -> void:
 			var list: PackedInt32Array = _waiting_changes.get(column, PackedInt32Array())
 			list.append_array(later.slice(i, i + 4))
 			_waiting_changes[column] = list
+
+
+## Client -> host: the text its player wrote on a sign.
+func send_sign(pos: Vector3i, lines: Array) -> void:
+	_client_sign.rpc_id(1, pos, lines)
+
+
+## Host: a sign's text changed (here or from a client): to every client.
+func sign_changed(pos: Vector3i, lines: Array) -> void:
+	if players.size() > 1:
+		_sign_text.rpc(pos, lines)
+
+
+## At most four lines of a sign's length (from the network).
+static func _sign_lines(value: Variant) -> Array:
+	var lines := ["", "", "", ""]
+	if value is Array:
+		for i in mini((value as Array).size(), 4):
+			lines[i] = str(value[i]).left(SignBehavior.LINE_LENGTH)
+	return lines
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_sign(pos: Vector3i, lines: Array) -> void:
+	var world := _world()
+	if is_host() and world and _within(multiplayer.get_remote_sender_id(), "edit", EDIT_LIMIT, 1.0):
+		world.set_sign_text(pos, _sign_lines(lines))
+
+
+@rpc("authority", "call_remote", "reliable")
+func _sign_text(pos: Vector3i, lines: Array) -> void:
+	var world := _world()
+	if world:
+		world.apply_network_sign(pos, _sign_lines(lines))
 
 
 ## Client -> host: a block set by the player (placing, buckets...).
@@ -1035,6 +1083,63 @@ func _client_dismount(id: int) -> void:
 		entity.remote_rider = 0
 
 
+# --- Clients using the host's creatures (shears, dye, saddle, bucket, bone, coal) -----------------
+
+## Client -> host: RMB on the host's creature `id` with the item in hand.
+func send_interact(id: int) -> void:
+	var player := _game_player()
+	if player == null:
+		return
+	var slot := player.selected_slot
+	var held := PackedInt32Array([player.inventory.id_at(slot), player.inventory.count_at(slot), player.inventory.damage_at(slot)])
+	_client_interact.rpc_id(1, id, held, player.vehicle != null)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_interact(id: int, held: PackedInt32Array, riding: bool) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	var avatar := _avatar_of(peer)
+	if not is_host() or world == null or avatar == null or held.size() != 3 or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+		return
+	var entity := world.entities.by_net_id(id)
+	if entity == null or not entity.has_method("interact") or entity.center().distance_to(avatar.target_position) > 7.0:
+		return
+	if (held[0] != Blocks.AIR and not Items.exists(held[0])) or held[1] < 0 or held[1] > 64:
+		return
+	var proxy := NetPlayerProxy.new(held, avatar.is_creative(), riding, avatar.target_position)
+	if not entity.call("interact", proxy, proxy.inventory.id_at(0)):
+		return
+	var mounted := 0
+	if proxy.mounted and proxy.mounted.seat_free():
+		proxy.mounted.remote_rider = peer
+		mounted = proxy.mounted.net_id
+	var inventory := proxy.inventory
+	_interacted.rpc_id(peer, PackedInt32Array([held[0], held[1], held[2],
+		inventory.id_at(0), inventory.count_at(0), inventory.damage_at(0),
+		inventory.id_at(1), inventory.count_at(1), inventory.damage_at(1)]), mounted)
+
+
+## Client: what the creature did to the item in hand (before -> after, and
+## anything more it got), and the creature it got on.
+@rpc("authority", "call_remote", "reliable")
+func _interacted(slots: PackedInt32Array, mounted: int) -> void:
+	var player := _game_player()
+	if player == null or slots.size() != 9:
+		return
+	var inventory := player.inventory
+	var slot := player.selected_slot
+	if inventory.id_at(slot) == slots[0] and inventory.count_at(slot) == slots[1]:
+		inventory.set_slot(slot, slots[3], slots[4], slots[5])
+	if slots[6] != Blocks.AIR and slots[7] > 0:
+		var left := inventory.add(slots[6], slots[7], slots[8])
+		if left > 0:
+			player.throw_items(slots[6], left, slots[8])
+	player.swing()
+	if mounted != 0:
+		_mounted(mounted)
+
+
 # --- Players hurting players (and creatures hurting clients) -------------------------------------
 
 ## Hurts the player of `peer` (the host's creatures, another player's hit).
@@ -1177,3 +1282,243 @@ func _command_output(text: String, kind: int) -> void:
 	var chat := _chat()
 	if chat:
 		chat.add_message(text, kind)
+
+# --- Containers: chests, furnaces and dispensers are the host's -------------------------------------
+# A client asks the host to open one (both halves of a large chest); the host
+# sends what is inside, and the client opens its window on its own copy of
+# the block entities (VoxelWorld.block_entity). Then both sides send only
+# the slots that changed: the client what its player moved, the host
+# (10 times a second) what changed there (its player, the furnace, a
+# dispenser firing, another client) and the furnace's fire and arrow.
+
+const CONTAINER_SECONDS := 0.1
+const CONTAINER_REACH := 8.0
+## Host: position -> {peer: [slots sent (PackedInt32Array), furnace numbers]}.
+var _viewers := {}
+var _container_timer := 0.0
+## Client: the positions open and their slots as last agreed with the host.
+var _open_containers: Array[Vector3i] = []
+var _container_slots := {}
+var _applying_container := false
+
+
+## A container's slots as one array: ids, counts, damages.
+static func _slots_of(inventory: Inventory) -> PackedInt32Array:
+	var result := PackedInt32Array()
+	for slot in inventory.size():
+		result.append_array(PackedInt32Array([inventory.id_at(slot), inventory.count_at(slot), inventory.damage_at(slot)]))
+	return result
+
+
+## The slots of `now` that differ from `before`: [slot, id, count, damage]...
+static func _slot_changes(before: PackedInt32Array, now: PackedInt32Array) -> PackedInt32Array:
+	var result := PackedInt32Array()
+	for slot in now.size() / 3:
+		var i := slot * 3
+		if before.size() <= i + 2 or before[i] != now[i] or before[i + 1] != now[i + 1] or before[i + 2] != now[i + 2]:
+			result.append_array(PackedInt32Array([slot, now[i], now[i + 1], now[i + 2]]))
+	return result
+
+
+static func _furnace_numbers(entity: Dictionary) -> PackedInt32Array:
+	if entity.get("type", "") != "furnace":
+		return PackedInt32Array()
+	return PackedInt32Array([entity.burn, entity.burn_total, entity.cook])
+
+
+## The block entity with an inventory at pos (chest, furnace, dispenser), or {}.
+static func _container_at(world: VoxelWorld, pos: Vector3i) -> Dictionary:
+	var entity := world.block_entity(pos)
+	return entity if entity.has("inventory") else {}
+
+
+## Client: open the container(s) at `positions` (a large chest: left, right).
+func open_container(positions: Array[Vector3i]) -> void:
+	var packed := PackedInt32Array()
+	for pos in positions:
+		packed.append_array(PackedInt32Array([pos.x, pos.y, pos.z]))
+	_client_open.rpc_id(1, packed)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_open(packed: PackedInt32Array) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	var avatar := _avatar_of(peer)
+	if not is_host() or world == null or avatar == null or packed.size() not in [3, 6] \
+			or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+		return
+	_close_for(peer)
+	var states := []
+	for i in range(0, packed.size(), 3):
+		var pos := Vector3i(packed[i], packed[i + 1], packed[i + 2])
+		if Vector3(pos).distance_to(avatar.target_position) > CONTAINER_REACH:
+			return
+		if Blocks.family_of(world.get_block(pos)) == "dungeon_chest":
+			DungeonBehavior.open_chest(world, pos) # its loot appears now
+		var entity := _container_at(world, pos)
+		if entity.is_empty() or (packed.size() == 6 and entity.type != "chest"):
+			return
+		states.append([pos, _slots_of(entity.inventory), _furnace_numbers(entity)])
+	for state: Array in states:
+		var pos: Vector3i = state[0]
+		if not _viewers.has(pos):
+			_viewers[pos] = {}
+		_viewers[pos][peer] = [state[1], state[2]]
+	_container_opened.rpc_id(peer, states)
+
+
+## Client: the host's contents; the window opens on them.
+@rpc("authority", "call_remote", "reliable")
+func _container_opened(states: Array) -> void:
+	var world := _world()
+	var screen := _inventory_screen()
+	if world == null or screen == null or screen.is_open():
+		_client_close.rpc_id(1)
+		return
+	var entities: Array[Dictionary] = []
+	_open_containers.clear()
+	_container_slots.clear()
+	for state: Array in states:
+		var pos: Vector3i = state[0]
+		var entity := _container_at(world, pos)
+		if entity.is_empty():
+			_client_close.rpc_id(1)
+			return
+		_set_container(pos, entity, state[1], state[2])
+		entities.append(entity)
+		_open_containers.append(pos)
+		(entity.inventory as Inventory).changed.connect(_container_changed.bind(pos))
+	if entities.size() == 2:
+		screen.open_large_chest(entities[0], entities[1])
+	else:
+		screen.open_container(entities[0])
+	screen.closed.connect(_container_screen_closed, CONNECT_ONE_SHOT)
+
+
+func _inventory_screen() -> InventoryScreen:
+	var screens := get_tree().root.find_children("*", "InventoryScreen", true, false)
+	return screens[0] as InventoryScreen if not screens.is_empty() else null
+
+
+## Client: the host's slots (all, or changes) and furnace numbers.
+func _set_container(pos: Vector3i, entity: Dictionary, slots: PackedInt32Array, furnace: PackedInt32Array, changes := false) -> void:
+	var inventory: Inventory = entity.inventory
+	var known: PackedInt32Array = _container_slots.get(pos, _slots_of(inventory))
+	_applying_container = true
+	if changes:
+		for i in range(0, slots.size(), 4):
+			var slot := slots[i]
+			if slot >= 0 and slot < inventory.size():
+				inventory.set_slot(slot, slots[i + 1], slots[i + 2], slots[i + 3])
+	else:
+		for slot in mini(inventory.size(), slots.size() / 3):
+			inventory.set_slot(slot, slots[slot * 3], slots[slot * 3 + 1], slots[slot * 3 + 2])
+	_applying_container = false
+	known = _slots_of(inventory)
+	_container_slots[pos] = known
+	if furnace.size() == 3 and entity.type == "furnace":
+		entity.burn = furnace[0]
+		entity.burn_total = furnace[1]
+		entity.cook = furnace[2] # (the window draws them every frame)
+
+
+## Client: its player moved items in an open container: the slots go to the host.
+func _container_changed(pos: Vector3i) -> void:
+	if _applying_container or not _open_containers.has(pos):
+		return
+	var entity := _container_at(_world(), pos)
+	if entity.is_empty():
+		return
+	var now := _slots_of(entity.inventory)
+	var changes := _slot_changes(_container_slots.get(pos, PackedInt32Array()), now)
+	_container_slots[pos] = now
+	if not changes.is_empty():
+		_client_container_slots.rpc_id(1, pos, changes)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_container_slots(pos: Vector3i, changes: PackedInt32Array) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	if not is_host() or world == null or not _viewers.has(pos) or not (_viewers[pos] as Dictionary).has(peer):
+		return
+	var entity := _container_at(world, pos)
+	if entity.is_empty() or changes.size() % 4 != 0:
+		return
+	var inventory: Inventory = entity.inventory
+	for i in range(0, changes.size(), 4):
+		var slot := changes[i]
+		var id := changes[i + 1]
+		var count := changes[i + 2]
+		if slot < 0 or slot >= inventory.size() or (id != Blocks.AIR and not Items.exists(id)) or count < 0 or count > 64:
+			continue
+		inventory.set_slot(slot, id, count, maxi(changes[i + 3], 0))
+	# What this client has now; the others get it with the next round.
+	_viewers[pos][peer][0] = _slots_of(inventory)
+
+
+## Client: the window closed (its player, or the host's _container_closed).
+func _container_screen_closed() -> void:
+	var world := _world()
+	for pos in _open_containers:
+		var entity := _container_at(world, pos) if world else {}
+		if not entity.is_empty() and (entity.inventory as Inventory).changed.is_connected(_container_changed):
+			(entity.inventory as Inventory).changed.disconnect(_container_changed)
+	_open_containers.clear()
+	_container_slots.clear()
+	if is_client():
+		_client_close.rpc_id(1)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_close() -> void:
+	if is_host():
+		_close_for(multiplayer.get_remote_sender_id())
+
+
+func _close_for(peer: int) -> void:
+	for pos: Vector3i in _viewers.keys():
+		(_viewers[pos] as Dictionary).erase(peer)
+		if (_viewers[pos] as Dictionary).is_empty():
+			_viewers.erase(pos)
+
+
+## Host: what changed in the containers clients look into goes to them.
+func _send_container_changes() -> void:
+	var world := _world()
+	for pos: Vector3i in _viewers.keys():
+		var entity := _container_at(world, pos)
+		var viewers: Dictionary = _viewers[pos]
+		if entity.is_empty():
+			for peer: int in viewers:
+				_container_closed.rpc_id(peer) # broken
+			_viewers.erase(pos)
+			continue
+		var now := _slots_of(entity.inventory)
+		var furnace := _furnace_numbers(entity)
+		for peer: int in viewers:
+			var sent: Array = viewers[peer]
+			var changes := _slot_changes(sent[0], now)
+			var furnace_changed: bool = furnace != (sent[1] as PackedInt32Array)
+			if changes.is_empty() and not furnace_changed:
+				continue
+			_container_update.rpc_id(peer, pos, changes, furnace if furnace_changed else PackedInt32Array())
+			viewers[peer] = [now, furnace]
+
+
+@rpc("authority", "call_remote", "reliable")
+func _container_update(pos: Vector3i, changes: PackedInt32Array, furnace: PackedInt32Array) -> void:
+	var world := _world()
+	if world == null or not _open_containers.has(pos):
+		return
+	var entity := _container_at(world, pos)
+	if not entity.is_empty():
+		_set_container(pos, entity, changes, furnace, true)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _container_closed() -> void:
+	var screen := _inventory_screen()
+	if screen and screen.is_open() and not _open_containers.is_empty():
+		screen.close()

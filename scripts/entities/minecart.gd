@@ -244,7 +244,7 @@ func _push_player() -> void:
 
 
 ## Right-click: get in, open the chest, or feed coal to the furnace.
-func interact(player: Player, item_id: int) -> bool:
+func interact(player, item_id: int) -> bool:
 	match kind:
 		"chest_minecart":
 			player.open_container({"type": "chest", "inventory": inventory})
@@ -255,7 +255,8 @@ func interact(player: Player, item_id: int) -> bool:
 				if not player.is_creative():
 					player.inventory.take(player.selected_slot)
 				fuel += FUEL_PER_COAL
-				push = Vector2(_x - player.global_position.x, _z - player.global_position.z)
+				var at: Vector3 = player.global_position
+				push = Vector2(_x - at.x, _z - at.z)
 				return true
 			return false
 	if player.vehicle == null and seat_free():

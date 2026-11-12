@@ -1430,6 +1430,32 @@ func set_sign_text(pos: Vector3i, lines: Array) -> void:
 		return
 	entity.lines = lines
 	sign_texts.update(pos, lines)
+	if remote and not _applying_network:
+		Net.send_sign(pos, lines) # the host keeps it and tells the others
+	elif Net.is_host():
+		Net.sign_changed(pos, lines)
+
+
+## The signs in a column (Net, sent with it): [x, y, z, lines] each.
+func column_signs_for_network(column: Vector2i) -> Array:
+	var result := []
+	for pos: Vector3i in _block_entities:
+		var entity: Dictionary = _block_entities[pos]
+		if entity.type == "sign" and floori(pos.x / float(ChunkData.SIZE)) == column.x \
+				and floori(pos.z / float(ChunkData.SIZE)) == column.y:
+			result.append([pos.x, pos.y, pos.z, entity.lines])
+	return result
+
+
+## Client: a sign's text from the host (its column may still be on the way:
+## the label appears with it, SignTexts).
+func apply_network_sign(pos: Vector3i, lines: Array) -> void:
+	_applying_network = true
+	if is_inside(pos) and SignBehavior.is_sign(get_block(pos)):
+		set_sign_text(pos, lines)
+	else:
+		_block_entities[pos] = {"type": "sign", "lines": lines}
+	_applying_network = false
 
 
 ## The block entity at `pos` (made when missing), or {} if the block has none.

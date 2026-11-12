@@ -475,7 +475,9 @@ func _eat_grass() -> void:
 
 ## The player right-clicks the mob with an item. Returns true if it did
 ## something (shearing, dyeing, milking, taming, sitting).
-func interact(player: Player, item_id: int) -> bool:
+## RMB with item_id in hand: shears, dye, saddle, bucket, bone. `player`: the
+## Player, or a client's NetPlayerProxy (network game).
+func interact(player, item_id: int) -> bool:
 	if is_dead():
 		return false
 	var item_name := Items.name_of(item_id) if item_id != Blocks.AIR else ""
@@ -510,7 +512,7 @@ func interact(player: Player, item_id: int) -> bool:
 		"cow":
 			if item_name == "bucket":
 				if not player.is_creative():
-					var slot := player.selected_slot
+					var slot: int = player.selected_slot
 					if player.inventory.count_at(slot) == 1:
 						player.inventory.set_slot(slot, Items.id_of("milk_bucket"), 1)
 					else:
@@ -526,7 +528,8 @@ func interact(player: Player, item_id: int) -> bool:
 					angry = false
 					target = null
 					max_health = 20 # tame wolves have 20 health, like Beta
-					Stats.grant("tamer")
+					if player is Player:
+						Stats.grant("tamer")
 					health = max_health
 					_update_wool()
 					world.particles.hearts(center() + Vector3(0, height * 0.5, 0))
