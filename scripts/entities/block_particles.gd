@@ -4,7 +4,12 @@ extends Node3D
 ## - breaking a block bursts it into 4 x 4 x 4 bits of its texture;
 ## - hitting a block while breaking it chips small bits off the face;
 ## - eating sends crumbs of the food from the mouth;
-## - a lit furnace gives off smoke and flames.
+## - a lit furnace gives off smoke and flames;
+## - smoke, flames, lava sparks, hearts, notes, splashes, explosions and the
+##   fight (hurt hearts, critical hits, the sword's sweep) are pictures of
+##   the particle atlas (textures/particles-atlas.png, the game's), animated
+##   frame by frame like the game's (smoke shrinks as it rises, the sweep
+##   swings, explosion puffs fade).
 ## Bits fall with gravity (0.04 blocks per tick per tick, drag 0.98), stop
 ## on blocks and live 4..40 ticks; simulated in game ticks (TickLoop) and
 ## interpolated between them for drawing. Each bit takes the light where it
@@ -14,6 +19,28 @@ const MAX_PARTICLES := 4000
 const GRAVITY := 0.04
 
 enum Kind { TILE, ITEM, PLAIN }
+
+const ATLAS_PATH := "res://assets/textures/particles-atlas.png"
+const ATLAS_SIZE := Vector2(512, 256)
+## Picture size codes (particle.gdshader): 8 x 8, 16 x 16, 32 x 16 pixels.
+enum Picture { SMALL, BIG, WIDE }
+## Single pictures of the atlas: [x, y, size code].
+const FLAME := [272, 48, Picture.SMALL]
+const LAVA := [272, 216, Picture.SMALL]
+const HEART := [272, 200, Picture.SMALL]
+const NOTE := [272, 232, Picture.SMALL]
+const DAMAGE := [192, 208, Picture.SMALL]
+const CRIT := [184, 208, Picture.SMALL]
+## Animations: frames [x, y] of one size code, played over the particle's
+## life. ANIMS order: GENERIC (smoke, big to small), SWEEP, BIG_SMOKE (big to
+## small), SPLASH.
+enum Anim { GENERIC, SWEEP, BIG_SMOKE, SPLASH }
+const ANIMS := [
+	[Picture.SMALL, [[272, 184], [272, 176], [272, 168], [272, 160], [272, 152], [272, 144], [272, 136], [272, 128]]],
+	[Picture.WIDE, [[160, 168], [192, 168], [224, 168], [0, 200], [32, 200], [64, 200], [96, 200], [128, 200]]],
+	[Picture.BIG, [[0, 224], [16, 224], [32, 224], [48, 224], [64, 224], [80, 224], [96, 224], [112, 224]]],
+	[Picture.SMALL, [[288, 128], [288, 136], [288, 144], [288, 152]]],
+]
 
 var world: VoxelWorld
 
@@ -26,6 +53,7 @@ var _gravity := PackedFloat32Array()
 var _custom := PackedColorArray()   # layer, u, v, size
 var _colors := PackedColorArray()
 var _fade := PackedByteArray()      # 1 = fades out (smoke)
+var _anim := PackedInt32Array()     # index into ANIMS, -1 = a still picture
 var _multimesh: MultiMesh
 var _material: ShaderMaterial
 var _rng := RandomNumberGenerator.new()
@@ -36,6 +64,7 @@ func _ready() -> void:
 	_material.shader = preload("res://shaders/particle.gdshader")
 	_material.set_shader_parameter("tiles", BlockMaterials.tiles())
 	_material.set_shader_parameter("items", Items.icons_texture())
+	_material.set_shader_parameter("atlas", TexturePacks.load_texture(ATLAS_PATH))
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	quad.material = _material
@@ -103,24 +132,28 @@ func item_crumbs(item_id: int, origin: Vector3, direction: Vector3, amount: int 
 			_add(origin, velocity, Color(-1, u, v, _size(scale)), Color(light, light, light), _life(), 1.0, false)
 
 
-## A puff of smoke (lava hardening, items burning).
+## A puff of smoke (lava hardening, items burning, a creature gone): the
+## game's smoke, shrinking as it rises.
 func smoke(point: Vector3, amount: int = 8) -> void:
 	for i in amount:
 		var start := point + Vector3(_rng.randf_range(-0.4, 0.4), _rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.4, 0.4))
-		var gray := _rng.randf_range(0.25, 0.45)
-		_add(start, Vector3(0, _rng.randf_range(0.02, 0.05), 0), Color(-2, 0, 0, _rng.randf_range(0.12, 0.25)),
-			Color(gray, gray, gray, 0.8), _rng.randi_range(15, 30), -0.01, true)
+		var gray := _rng.randf_range(0.3, 0.6) * _brightness(start)
+		_add_anim(start, Vector3(0, _rng.randf_range(0.02, 0.05), 0), Anim.GENERIC, _rng.randf_range(0.15, 0.3),
+			Color(gray, gray, gray), _rng.randi_range(15, 30), -0.01)
 
 
 ## An explosion: big puffs of smoke all around and a flash.
 func explosion(center: Vector3, power: float) -> void:
 	for i in int(power * 16):
 		var offset := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * power * 0.8
-		var gray := _rng.randf_range(0.4, 0.75)
-		_add(center + offset, offset * 0.03 + Vector3(0, 0.02, 0), Color(-2, 0, 0, _rng.randf_range(0.2, 0.45)),
-			Color(gray, gray, gray, 0.9), _rng.randi_range(12, 30), -0.01, true)
-	for i in 6:
-		_add(center, Vector3.ZERO, Color(-2, 0, 0, power * 0.3), Color(1.0, 0.95, 0.8, 0.8), 3, 0.0, true)
+		var gray := _rng.randf_range(0.5, 0.85)
+		_add_anim(center + offset, offset * 0.03 + Vector3(0, 0.02, 0), Anim.BIG_SMOKE, _rng.randf_range(0.6, 1.2),
+			Color(gray, gray, gray), _rng.randi_range(12, 30), -0.01)
+	for i in int(power * 8):
+		var offset := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * power * 0.5
+		var gray := _rng.randf_range(0.3, 0.6)
+		_add_anim(center + offset, offset * 0.05, Anim.GENERIC, _rng.randf_range(0.2, 0.4), Color(gray, gray, gray),
+			_rng.randi_range(10, 25), -0.01)
 
 
 ## Redstone dust glowing (wire, torches, lit ore): a red speck, brighter
@@ -128,7 +161,7 @@ func explosion(center: Vector3, power: float) -> void:
 func redstone(point: Vector3, power: int) -> void:
 	var f := power / 15.0
 	var color := Color(f * 0.6 + 0.4, maxf(f * f * 0.7 - 0.5, 0.0), maxf(f * f * 0.6 - 0.7, 0.0), 1.0)
-	_add(point, Vector3(0, 0.005, 0), Color(-2, 0, 0, 0.05), color, _rng.randi_range(10, 20), 0.0, true)
+	_add_anim(point, Vector3(0, 0.005, 0), Anim.GENERIC, 0.1, color, _rng.randi_range(10, 20), 0.0)
 
 
 ## An air bubble rising (drowning).
@@ -147,7 +180,7 @@ func rain_splash(point: Vector3, on_water: bool) -> void:
 func splash(point: Vector3) -> void:
 	for i in 12:
 		var velocity := Vector3(_rng.randf_range(-0.08, 0.08), _rng.randf_range(0.08, 0.2), _rng.randf_range(-0.08, 0.08))
-		_add(point, velocity, Color(-2, 0, 0, 0.06), Color(0.55, 0.7, 1.0, 0.9), _rng.randi_range(8, 16), 0.04, false)
+		_add_anim(point, velocity, Anim.SPLASH, 0.15, Color.WHITE * _brightness(point), _rng.randi_range(8, 16), 0.04)
 
 
 ## A note floating up from a note block, colored by its pitch like the game.
@@ -155,27 +188,27 @@ func note(point: Vector3, pitch: int) -> void:
 	var f := pitch / 24.0
 	var color := Color(maxf(sin(f * TAU) * 0.65 + 0.35, 0.0), maxf(sin((f + 1.0 / 3.0) * TAU) * 0.65 + 0.35, 0.0),
 		maxf(sin((f + 2.0 / 3.0) * TAU) * 0.65 + 0.35, 0.0), 1.0)
-	_add(point, Vector3(0, 0.02, 0), Color(-2, 0, 0, 0.18), color, 20, 0.0, true)
+	_add_picture(point, Vector3(0, 0.02, 0), NOTE, 0.25, color, 20, 0.0)
 
 
 ## Hearts rising (a wolf tamed).
 func hearts(point: Vector3) -> void:
 	for i in 7:
 		var start := point + Vector3(_rng.randf_range(-0.5, 0.5), _rng.randf_range(0, 0.5), _rng.randf_range(-0.5, 0.5))
-		_add(start, Vector3(0, 0.02, 0), Color(-2, 0, 0, 0.15), Color(0.95, 0.2, 0.25, 1.0), 25, 0.0, true)
+		_add_picture(start, Vector3(0, 0.02, 0), HEART, 0.2, Color.WHITE, 25, 0.0)
 
 
 ## A torch's tip: a wisp of smoke and a small flame.
 func torch(tip: Vector3) -> void:
-	var gray := _rng.randf_range(0.2, 0.35)
-	_add(tip, Vector3(0, 0.01, 0), Color(-2, 0, 0, 0.08), Color(gray, gray, gray, 0.7), _rng.randi_range(8, 16), -0.02, true)
-	_add(tip, Vector3.ZERO, Color(-2, 0, 0, 0.06), Color(1.0, 0.65, 0.2, 1.0), _rng.randi_range(5, 10), 0.0, true)
+	var gray := _rng.randf_range(0.15, 0.3) * _brightness(tip)
+	_add_anim(tip, Vector3(0, 0.01, 0), Anim.GENERIC, 0.12, Color(gray, gray, gray), _rng.randi_range(8, 16), -0.02)
+	_add_picture(tip, Vector3.ZERO, FLAME, 0.1, Color.WHITE, _rng.randi_range(5, 10), 0.0)
 
 
 ## A lava pop: an orange spark jumps up and falls back.
 func lava_pop(point: Vector3) -> void:
 	var velocity := Vector3(_rng.randf_range(-0.04, 0.04), _rng.randf_range(0.15, 0.3), _rng.randf_range(-0.04, 0.04))
-	_add(point, velocity, Color(-2, 0, 0, 0.1), Color(1.0, 0.5, 0.1, 1.0), _rng.randi_range(16, 30), 0.75, true)
+	_add_picture(point, velocity, LAVA, _rng.randf_range(0.1, 0.2), Color.WHITE, _rng.randi_range(16, 30), 0.75)
 
 
 ## Smoke and sometimes a flame in front of a lit furnace.
@@ -184,12 +217,31 @@ func furnace(pos: Vector3i, facing: int) -> void:
 	var side := Vector3(-front.z, 0, front.x)
 	var start := Vector3(pos) + Vector3(0.5, 0.0, 0.5) + front * 0.52 \
 		+ side * _rng.randf_range(-0.3, 0.3) + Vector3(0, _rng.randf_range(0.1, 0.45), 0)
-	var gray := _rng.randf_range(0.2, 0.35)
-	_add(start, Vector3(0, 0.01, 0), Color(-2, 0, 0, 0.12), Color(gray, gray, gray, 0.8),
-		_rng.randi_range(10, 20), -0.02, true)
+	var gray := _rng.randf_range(0.15, 0.3) * _brightness(start)
+	_add_anim(start, Vector3(0, 0.01, 0), Anim.GENERIC, 0.15, Color(gray, gray, gray), _rng.randi_range(10, 20), -0.02)
 	if _rng.randf() < 0.5:
-		_add(start, Vector3.ZERO, Color(-2, 0, 0, 0.08), Color(1.0, 0.6, 0.15, 1.0),
-			_rng.randi_range(8, 14), 0.0, true)
+		_add_picture(start, Vector3.ZERO, FLAME, 0.12, Color.WHITE, _rng.randi_range(8, 14), 0.0)
+
+
+## Hurt hearts: dark hearts spilling out of a creature that was hit (one
+## per 2 points of damage), like the modern game.
+func damage(point: Vector3, amount: int) -> void:
+	for i in clampi(amount / 2, 1, 10):
+		var velocity := Vector3(_rng.randf_range(-0.1, 0.1), _rng.randf_range(0.1, 0.2), _rng.randf_range(-0.1, 0.1))
+		_add_picture(point, velocity, DAMAGE, 0.15, Color.WHITE, _rng.randi_range(14, 22), 0.6)
+
+
+## A critical hit: white stars bursting out of the creature.
+func crit(point: Vector3) -> void:
+	for i in 16:
+		var dir := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1))
+		var velocity := dir.normalized() * _rng.randf_range(0.15, 0.35) + Vector3(0, 0.1, 0)
+		_add_picture(point + dir * 0.3, velocity, CRIT, _rng.randf_range(0.08, 0.14), Color(0.9, 0.85, 0.75), _rng.randi_range(8, 16), 0.5)
+
+
+## A sword's sweep in front of the player: the swinging arc.
+func sweep(point: Vector3) -> void:
+	_add_anim(point, Vector3.ZERO, Anim.SWEEP, 0.55, Color.WHITE * maxf(_brightness(point), 0.4), 8, 0.0)
 
 
 # --- Simulation ----------------------------------------------------------------------
@@ -201,6 +253,14 @@ func _tick(_tick_index: int) -> void:
 		if _ages[i] >= _lives[i]:
 			_remove(i)
 			continue
+		if _anim[i] >= 0:
+			# The next frame of its animation.
+			var frames: Array = ANIMS[_anim[i]][1]
+			var frame: Array = frames[mini(_ages[i] * frames.size() / _lives[i], frames.size() - 1)]
+			var custom := _custom[i]
+			custom.g = frame[0] / ATLAS_SIZE.x
+			custom.b = frame[1] / ATLAS_SIZE.y
+			_custom[i] = custom
 		var position := _positions[i]
 		_previous[i] = position
 		var velocity := _velocities[i]
@@ -267,9 +327,25 @@ func _add_tile(start: Vector3, velocity: Vector3, tile: int, color: Color, scale
 	_add(start, velocity, Color(tile, u, v, _size(scale)), color, _life(), 1.0, false)
 
 
-func _add(start: Vector3, velocity: Vector3, custom: Color, color: Color, life: int, gravity: float, fade: bool) -> void:
+## A still picture of the particle atlas ([x, y, size code]).
+func _add_picture(start: Vector3, velocity: Vector3, picture: Array, size: float, color: Color, life: int, gravity: float) -> void:
+	_add(start, velocity, Color(-10 - picture[2], picture[0] / ATLAS_SIZE.x, picture[1] / ATLAS_SIZE.y, size),
+		color, life, gravity, false)
+
+
+## An animated picture (ANIMS), its frames played over its life.
+func _add_anim(start: Vector3, velocity: Vector3, anim: int, size: float, color: Color, life: int, gravity: float) -> void:
+	var first: Array = ANIMS[anim][1][0]
+	if _add(start, velocity, Color(-10 - ANIMS[anim][0], first[0] / ATLAS_SIZE.x, first[1] / ATLAS_SIZE.y, size),
+			color, life, gravity, false):
+		_anim[_anim.size() - 1] = anim
+
+
+## Adds a particle; false when there are too many already.
+func _add(start: Vector3, velocity: Vector3, custom: Color, color: Color, life: int, gravity: float, fade: bool) -> bool:
 	if _ages.size() >= MAX_PARTICLES:
-		return
+		return false
+	_anim.append(-1)
 	_positions.append(start)
 	_previous.append(start)
 	_velocities.append(velocity)
@@ -279,6 +355,7 @@ func _add(start: Vector3, velocity: Vector3, custom: Color, color: Color, life: 
 	_custom.append(custom)
 	_colors.append(color)
 	_fade.append(1 if fade else 0)
+	return true
 
 
 func _size(scale: float) -> float:
@@ -300,6 +377,8 @@ func _remove(index: int) -> void:
 	_custom[index] = _custom[last]
 	_colors[index] = _colors[last]
 	_fade[index] = _fade[last]
+	_anim[index] = _anim[last]
+	_anim.resize(last)
 	_positions.resize(last)
 	_previous.resize(last)
 	_velocities.resize(last)

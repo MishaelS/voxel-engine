@@ -226,12 +226,26 @@ func _stop_breaking() -> void:
 # --- Using -------------------------------------------------------------------------
 
 ## LMB on a creature: hits it with the item in hand, like the classic game.
+## A hit on a creature. Like the game since Beta 1.8: hitting while falling
+## is a critical hit (half again as hard, white stars); hurt hearts spill
+## out, and a sword on the ground sweeps (its arc in front).
 func _attack(entity: Entity) -> void:
 	player.swing()
 	var tool := player.held_block()
-	if not entity.damage(Items.attack_damage(tool), player.global_position):
+	var damage := Items.attack_damage(tool)
+	var critical := player.velocity.y < 0.0 and not player.on_ground and not player.flying and not player.in_water
+	if critical:
+		damage += damage / 2 + (1 if damage % 2 == 1 else 0)
+	if not entity.damage(damage, player.global_position):
 		return
-	Stats.add("damage_dealt", Items.attack_damage(tool))
+	var middle := entity.center()
+	world.particles.damage(middle + Vector3(0, entity.height * 0.25, 0), damage)
+	if critical:
+		world.particles.crit(middle)
+	elif Items.name_of(tool).ends_with("_sword") and player.on_ground:
+		var look := player.look_direction()
+		world.particles.sweep(player.eye_position() + Vector3(look.x, 0, look.z).normalized() * 1.2 - Vector3(0, 0.4, 0))
+	Stats.add("damage_dealt", damage)
 	if entity is Mob and entity.is_dead():
 		Stats.killed(entity)
 	if entity is Mob:

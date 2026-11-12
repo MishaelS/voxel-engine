@@ -14,6 +14,8 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Particles from the game's particle atlas (`textures/particles-atlas.png`), animated frame by frame like the game's (`BlockParticles`, `particle.gdshader`): smoke shrinks as it rises (torches, furnaces, fire going out, creatures gone), flames on torches and furnaces, lava sparks, red hearts (taming), colored notes, water splashes, reddust, explosions in big fading puffs with smoke.
+- Fight particles and critical hits like the game since Beta 1.8: hitting a creature spills dark hurt hearts (one per 2 damage); hitting while falling is a critical hit (half again as hard) with white stars; a sword hit on the ground shows the sweep's arc in front of the player.
 - Pistons move blocks smoothly like Beta: pushed and pulled blocks and the head slide over 2 ticks; their cells hold an invisible `moving_piston` block that becomes the block when it arrives, a retracting head slides back in, blocks still sliding arrive at once before the piston moves again or the world is saved (`PistonBehavior.start_moving`).
 - A carved pumpkin can be worn on the head (the helmet slot, Shift-click too): in first person the view is through its eyes (`textures/misc/pumpkinblur.png`, ours, texture packs can replace it), in third person the player wears it.
 - Bookshelves burn like the game's (catch 30, burn 20).
