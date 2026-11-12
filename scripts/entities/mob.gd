@@ -172,7 +172,7 @@ func _ai_tick() -> void:
 	if _look_ticks <= 0:
 		_look_at = Vector3.INF
 	_panic = maxi(_panic - 1, 0)
-	var player := _player()
+	var player = _player()
 	if is_hostile() and _despawn(player):
 		return
 	if is_hostile() and Settings.get_value("difficulty") == 0:
@@ -217,26 +217,50 @@ func _ai_tick() -> void:
 		velocity.y += 0.04 # keeps its head above water
 
 
-func _player() -> Player:
-	var player := world.player as Player
-	if player == null or player.dead or player.is_creative():
-		return null
-	return player
+## The player it goes after or looks at: the nearest one alive and not in
+## creative (in a network game the others too: RemotePlayer acts like one).
+func _player():
+	var best = null
+	var best_distance := INF
+	for who in _players():
+		if who == null or who.dead or who.is_creative():
+			continue
+		var distance: float = (who.global_position as Vector3).distance_squared_to(feet())
+		if distance < best_distance:
+			best_distance = distance
+			best = who
+	return best
+
+
+## Every player in the world (the local one, the network game's others).
+func _players() -> Array:
+	var result := [world.player]
+	if Net.is_host():
+		for avatar: RemotePlayer in Net.avatars.values():
+			if is_instance_valid(avatar):
+				result.append(avatar)
+	return result
+
+
+static func _is_player(who) -> bool:
+	return who is Player or who is RemotePlayer
 
 
 ## Monsters far from the player disappear (128+ at once, 32+ now and then).
-func _despawn(player: Node3D) -> bool:
-	var who := world.player as Node3D
-	if who == null:
+func _despawn(_player_near) -> bool:
+	var distance := INF
+	for who in _players():
+		if who != null:
+			distance = minf(distance, (who.global_position as Vector3).distance_to(feet()))
+	if distance == INF:
 		return false
-	var distance := who.global_position.distance_to(feet())
 	if distance > 128.0 or (distance > 32.0 and randi_range(0, 799) == 0):
 		removed = true
 		return true
 	return false
 
 
-func _animal_tick(player: Player) -> void:
+func _animal_tick(player) -> void:
 	if _panic > 0:
 		if _wander == Vector3.INF or randi_range(0, 9) == 0:
 			_wander = feet() + Vector3(randf_range(-8, 8), 0, randf_range(-8, 8))
@@ -254,11 +278,11 @@ func _animal_tick(player: Player) -> void:
 			_walk_toward(_wander, spec.speed)
 
 
-func _sees(player: Player) -> bool:
+func _sees(player) -> bool:
 	if player == null:
 		return false
 	var eye := center() + Vector3(0, height * 0.35, 0)
-	var to := player.eye_position()
+	var to: Vector3 = player.eye_position()
 	if eye.distance_to(to) > SIGHT:
 		return false
 	var hit := world.raycast(eye, to - eye, eye.distance_to(to))
@@ -267,18 +291,18 @@ func _sees(player: Player) -> bool:
 
 ## Zombies, spiders and creepers: walk at the player they can see, hit it
 ## when close (spiders leap).
-func _monster_tick(player: Player) -> void:
+func _monster_tick(player) -> void:
 	if mob_type == "spider" and not angry and world.get_combined_light(Vector3i(center().floor())) > 7:
 		target = null
 	elif _sees(player):
 		target = player
-	elif target and target is Player and (target as Player).dead:
+	elif target and _is_player(target) and target.dead:
 		target = null
 	if target == null:
 		_animal_tick(null)
 		return
-	var goal := (target as Player).global_position
-	_look_at = (target as Player).eye_position()
+	var goal: Vector3 = target.global_position
+	_look_at = target.eye_position()
 	_look_ticks = 5
 	var flat := Vector2(goal.x - _x, goal.z - _z).length()
 	if mob_type == "creeper" and _fuse > 0:
@@ -290,8 +314,8 @@ func _monster_tick(player: Player) -> void:
 	_walk_toward(goal, spec.speed)
 	if mob_type != "creeper" and flat < half_width + 0.9 and absf(goal.y - _y) < height and _attack_cooldown == 0:
 		_attack_cooldown = ATTACK_COOLDOWN
-		(target as Player).damage(_scaled_damage(spec.damage))
-		(target as Player).knockback(center())
+		target.damage(_scaled_damage(spec.damage))
+		target.knockback(center())
 
 
 ## Damage by difficulty like Beta: easy half + 1, hard x1.5.
@@ -304,8 +328,8 @@ static func _scaled_damage(amount: int) -> int:
 	return amount
 
 
-func _creeper_tick(player: Player) -> void:
-	var close := player != null and player.global_position.distance_to(feet()) < 3.0 and _sees(player)
+func _creeper_tick(player) -> void:
+	var close: bool = player != null and player.global_position.distance_to(feet()) < 3.0 and _sees(player)
 	if close or (_fuse > 0 and player != null and player.global_position.distance_to(feet()) < 7.0):
 		if _fuse == 0:
 			Sounds.play("mob/creeper/fuse", center(), 1.0, 0.5)
@@ -318,14 +342,14 @@ func _creeper_tick(player: Player) -> void:
 
 
 ## Skeletons keep their distance and shoot.
-func _skeleton_tick(player: Player) -> void:
+func _skeleton_tick(player) -> void:
 	target = player if _sees(player) else null
 	if target == null:
 		_animal_tick(null)
 		return
 	_look_at = player.eye_position()
 	_look_ticks = 5
-	var distance := player.global_position.distance_to(feet())
+	var distance: float = player.global_position.distance_to(feet())
 	if distance > 10.0:
 		_walk_toward(player.global_position, spec.speed)
 	else:
@@ -336,7 +360,7 @@ func _skeleton_tick(player: Player) -> void:
 
 
 ## Slimes hop toward the player (or about) and hurt it on touch (big ones).
-func _slime_tick(player: Player) -> void:
+func _slime_tick(player) -> void:
 	_jump_timer -= 1
 	if on_ground:
 		velocity.x = 0.0
@@ -357,7 +381,7 @@ func _slime_tick(player: Player) -> void:
 
 ## Wolves: wild ones wander (and turn on what hurts them); tame ones follow
 ## their player, sit when told and go after what hurts the player.
-func _wolf_tick(player: Player) -> void:
+func _wolf_tick(player) -> void:
 	if sitting:
 		return
 	if angry and target and target is Entity and not (target as Entity).is_dead():
@@ -367,7 +391,7 @@ func _wolf_tick(player: Player) -> void:
 			_attack_cooldown = ATTACK_COOLDOWN
 			(target as Entity).damage(4 if tamed else 2, center())
 		return
-	if angry and target is Player and player:
+	if angry and _is_player(target) and player:
 		_walk_toward(player.global_position, spec.speed * 1.2)
 		if player.global_position.distance_to(feet()) < 1.4 and _attack_cooldown == 0:
 			_attack_cooldown = ATTACK_COOLDOWN
@@ -715,6 +739,27 @@ func _turn_head(node: Node3D) -> void:
 
 
 # --- Saving ---------------------------------------------------------------------------
+
+func net_state() -> Dictionary:
+	var state := super()
+	state.merge({"fuse": _fuse, "angry": angry, "sheared": sheared, "sitting": sitting, "saddled": saddled, "tamed": tamed})
+	return state
+
+
+func apply_net_state(at: Vector3, yaw: float, state: Dictionary) -> void:
+	var was_hurt := hurt_ticks > 0
+	super(at, yaw, state)
+	if hurt_ticks > 0 and not was_hurt and death_ticks < 0:
+		_sound("hurt", 1.0) # (the host's creature was hit)
+	_fuse = int(state.get("fuse", 0))
+	angry = bool(state.get("angry", false))
+	sitting = bool(state.get("sitting", false))
+	saddled = bool(state.get("saddled", false))
+	tamed = bool(state.get("tamed", false))
+	if bool(state.get("sheared", false)) != sheared:
+		sheared = not sheared
+		_update_wool()
+
 
 func save_state() -> Dictionary:
 	var state := super()

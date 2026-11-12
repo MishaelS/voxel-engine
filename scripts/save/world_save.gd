@@ -29,6 +29,9 @@ var name := "New World"
 var world_seed := 0
 var generator := 0 # VoxelWorld.Generator
 var game_mode := 0 # Player.GameMode
+## Commands that change the world or the player (/gamemode, /time, /tp...)
+## are allowed, like the game's "Allow Cheats". Worlds from before: allowed.
+var allow_cheats := true
 ## The world's height (WorldGenerator.LEGACY_HEIGHT for worlds made before
 ## it was 256) and whether its terrain has the taller mountains (new worlds).
 var height := WorldGenerator.HEIGHT
@@ -55,8 +58,9 @@ static func list_all() -> Array[WorldSave]:
 
 
 ## Creates the folder of a new world (the name is made unique on disk).
-static func create(world_name: String, seed_value: int, world_generator: int, mode: int) -> WorldSave:
+static func create(world_name: String, seed_value: int, world_generator: int, mode: int, cheats: bool = true) -> WorldSave:
 	var save := WorldSave.new()
+	save.allow_cheats = cheats
 	save.name = world_name.strip_edges() if not world_name.strip_edges().is_empty() else "New World"
 	save.world_seed = seed_value
 	save.generator = world_generator
@@ -104,6 +108,7 @@ func load_level() -> bool:
 	world_seed = config.get_value("world", "seed", 0)
 	generator = config.get_value("world", "generator", 0)
 	game_mode = config.get_value("world", "game_mode", 0)
+	allow_cheats = config.get_value("world", "allow_cheats", true)
 	created = config.get_value("world", "created", 0)
 	last_played = config.get_value("world", "last_played", 0)
 	height = config.get_value("world", "height", WorldGenerator.LEGACY_HEIGHT)
@@ -120,6 +125,7 @@ func write_level() -> void:
 	config.set_value("world", "seed", world_seed)
 	config.set_value("world", "generator", generator)
 	config.set_value("world", "game_mode", game_mode)
+	config.set_value("world", "allow_cheats", allow_cheats)
 	config.set_value("world", "created", created)
 	config.set_value("world", "last_played", last_played)
 	config.set_value("world", "height", height)

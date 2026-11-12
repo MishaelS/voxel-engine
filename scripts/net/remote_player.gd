@@ -9,6 +9,10 @@ const SMOOTHING := 12.0 # share per second toward the latest state
 
 var world: VoxelWorld
 var player_name := ""
+## Its peer (Net): damage goes there.
+var peer_id := 0
+## As its player last said (the state flags).
+var dead := false
 ## The latest position sent (the host keeps the columns around it loaded).
 var target_position := Vector3.ZERO
 
@@ -59,8 +63,29 @@ func set_look(name_color: int, skin: Texture2D) -> void:
 		mesh.material_override = material
 
 
+# --- Like a Player to creatures and other players (Mob, Arrow, BlockInteraction) ---------
+
+func eye_position() -> Vector3:
+	return global_position + Vector3(0, 1.62, 0)
+
+
+func is_creative() -> bool:
+	return _flags & 16 != 0
+
+
+func damage(amount: int, _always: bool = false) -> void:
+	if not dead and not is_creative():
+		Net.hurt_peer(peer_id, amount, Vector3.INF)
+
+
+## Pushed away from `from` (sent with the damage that comes with it).
+func knockback(from: Vector3) -> void:
+	Net.hurt_peer(peer_id, 0, from)
+
+
 func set_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int) -> void:
 	target_position = at
+	dead = flags & 4 != 0
 	_target_yaw = yaw
 	_pitch = pitch
 	_flags = flags

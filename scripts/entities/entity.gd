@@ -93,6 +93,53 @@ func seat_height() -> float:
 	return height * 0.9
 
 
+# --- Network (Net): the host's entities seen by clients ----------------------------------
+
+## The host's number for this entity (0: not shared yet).
+var net_id := 0
+## A client's copy of a host entity: no thinking or physics of its own, it
+## follows the host's snapshots (Net).
+var puppet := false
+## A client's player riding this vehicle (its peer id; host).
+var remote_rider := 0
+var _net_target := Vector3.ZERO
+var _net_yaw := 0.0
+
+
+## What changes often and shows: sent 10 times a second (with the position
+## and the facing). Subclasses add their own (a creeper's fuse...).
+func net_state() -> Dictionary:
+	return {"hurt": hurt_ticks, "death": death_ticks, "fire": fire_ticks}
+
+
+## A client applies the host's snapshot.
+func apply_net_state(at: Vector3, yaw: float, state: Dictionary) -> void:
+	_net_target = at
+	_net_yaw = yaw
+	hurt_ticks = int(state.get("hurt", 0))
+	death_ticks = int(state.get("death", -1))
+	fire_ticks = int(state.get("fire", 0))
+
+
+## The facing the host sends (vehicles keep their own heading).
+func net_yaw() -> float:
+	return float(get("_yaw")) if "_yaw" in self else rotation.y
+
+
+## A client's tick of a host entity: one step toward the latest snapshot.
+func puppet_tick() -> void:
+	_prev = Vector3(_x, _y, _z)
+	age += 1
+	velocity = _net_target - _prev
+	_x = _net_target.x
+	_y = _net_target.y
+	_z = _net_target.z
+	if "_yaw" in self:
+		set("_yaw", _net_yaw)
+	else:
+		rotation.y = lerp_angle(rotation.y, _net_yaw, 0.6)
+
+
 # --- Riding (boats and minecarts carry one rider) ------------------------------------
 
 ## The boat or minecart this creature sits in.
@@ -109,6 +156,9 @@ const RIDER_HIPS := 0.625
 
 ## Nobody (no creature, not the player) sits in this vehicle.
 func seat_free() -> bool:
+	if remote_rider != 0 and Net.players.has(remote_rider):
+		return false
+	remote_rider = 0
 	if rider and is_instance_valid(rider) and not rider.removed and not rider.is_dead() and rider.vehicle == self:
 		return false
 	rider = null

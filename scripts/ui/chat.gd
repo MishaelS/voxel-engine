@@ -158,7 +158,13 @@ func _submit(text: String) -> void:
 		if _history.size() > HISTORY_SIZE:
 			_history.remove_at(0)
 	if message.begins_with("/"):
-		Commands.dispatcher.execute(message, source)
+		var root := message.substr(1).get_slice(" ", 0).to_lower()
+		if not root in Net.FREE_COMMANDS and not Net.cheats_allowed():
+			add_message(Lang.t("Cheats are not allowed here"), CommandSource.MessageKind.ERROR)
+		elif Net.is_client() and root in Net.HOST_COMMANDS:
+			Net.send_command(message) # the host's world
+		else:
+			Commands.dispatcher.execute(message, source)
 	else:
 		add_chat(Net.player_name, message, PlayerProfile.name_color)
 		if Net.is_online():

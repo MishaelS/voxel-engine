@@ -32,13 +32,33 @@ func all() -> Array[Entity]:
 	return _entities
 
 
-## Adds an entity at `position` (feet).
+## Adds an entity at `position` (feet). On a network client the host makes
+## the world's entities: one made here (an arrow shot, a boat put down) is
+## sent to the host (Net.send_spawn, with its state and speed set just
+## after) and goes; the host's copy comes back in its snapshots.
 func spawn(entity: Entity, position: Vector3) -> Entity:
 	entity.world = world
 	add_child(entity)
 	entity.teleport(position)
 	_entities.append(entity)
+	if world and world.remote and not entity.puppet and entity.type_name() != "fishing_bobber": # (each player's own)
+		_hand_to_host.call_deferred(entity)
 	return entity
+
+
+func _hand_to_host(entity: Entity) -> void:
+	if not is_instance_valid(entity) or entity.removed:
+		return
+	Net.send_spawn(entity)
+	entity.removed = true
+
+
+## A client: the entity with the host's number, or null.
+func by_net_id(id: int) -> Entity:
+	for entity in _entities:
+		if entity.net_id == id and not entity.removed:
+			return entity
+	return null
 
 
 ## A new entity of a registered type (mobs by their name), or null.
@@ -118,7 +138,9 @@ func _tick(_tick_index: int) -> void:
 	var i := 0
 	while i < _entities.size():
 		var entity := _entities[i]
-		if not entity.removed and world.is_inside(Vector3i(entity.feet().floor())):
+		if entity.puppet and not entity.removed:
+			entity.puppet_tick() # (a client: the host's snapshots move it)
+		elif not entity.removed and world.is_inside(Vector3i(entity.feet().floor())):
 			var before := Time.get_ticks_usec()
 			entity.tick()
 			var kind := entity.type_name()

@@ -19,6 +19,10 @@ var _mode := 1
 var _type := 0
 var _mode_button: Button
 var _type_button: Button
+var _cheats_button: Button
+## Allow Cheats: follows the game mode (on in creative) until set by hand.
+var _cheats := true
+var _cheats_set := false
 
 
 func _init(play: Callable) -> void:
@@ -55,6 +59,13 @@ func _ready() -> void:
 	_gap(column, 12)
 	_mode_button = _button(column, func() -> void:
 		_mode = (_mode + 1) % MODES.size()
+		if not _cheats_set:
+			_cheats = _mode == 1
+		_update_labels())
+	_gap(column, 4)
+	_cheats_button = _button(column, func() -> void:
+		_cheats = not _cheats
+		_cheats_set = true
 		_update_labels())
 	_gap(column, 4)
 	_type_button = _button(column, func() -> void:
@@ -105,8 +116,9 @@ func _button(column: VBoxContainer, on_pressed: Callable) -> Button:
 func _update_labels() -> void:
 	_mode_button.text = Lang.t("Game Mode: %s") % Lang.t(MODES[_mode])
 	_type_button.text = Lang.t("World Type: %s") % Lang.t(TYPES[_type])
+	_cheats_button.text = Lang.t("Allow Cheats: %s") % Lang.t("ON" if _cheats else "OFF")
 
 
 func _create() -> void:
-	var save := WorldSave.create(_name.text, WorldSave.seed_from_text(_seed.text), _type, _mode)
+	var save := WorldSave.create(_name.text, WorldSave.seed_from_text(_seed.text), _type, _mode, _cheats)
 	on_play.call(save)

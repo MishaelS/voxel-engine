@@ -16,9 +16,17 @@ extends Node
 ## - players see each other (RemotePlayer: the player model with the skin,
 ##   walking, sneaking, swinging, the item in hand, the name above);
 ## - chat, the time of day and the weather are shared.
-## Creatures, dropped items, chests and minecarts are the next step: in
-## this step they are the host's own (a client gets its drops straight
-## into the inventory).
+## - creatures, boats, minecarts, arrows, TNT and paintings are the host's:
+##   10 times a second each client gets the ones within 96 blocks (new ones
+##   with their whole state) and moves its copies ("puppets") along; what a
+##   client makes (an arrow shot, a boat put down) the host makes. A client
+##   hits them, rides the host's boats and minecarts (steering them) through
+##   the host. Creatures go after any player; players hurt each other;
+## - dropped items too: each client sees the ones within 48 blocks, drops
+##   and throws through the host and picks them up with its leave;
+## - the host keeps each client's player (where it was, inventory, armor,
+##   health) by its tag in the world's save, and gives it back on joining.
+## Chests, furnaces, dispensers and signs are the next step.
 ##
 ## Telling players apart and keeping bots out (the host): a joining player
 ## is asked to prove who it is with this server's salt and answers with its
@@ -58,6 +66,15 @@ const EDIT_LIMIT := 80     # edits and uses per second
 const COLUMN_LIMIT := 400  # column requests per second
 
 var mode := Mode.OFFLINE
+## A network game's "Allow Cheats" (the host chooses on opening; clients get
+## it on joining) and the game mode new players get.
+var cheats := false
+var lan_game_mode := 0
+## Commands that need cheats and change the world: a client's run on the
+## host (Commands not listed here run on the player's own side).
+const HOST_COMMANDS: Array[String] = ["time", "weather", "gamerule", "tick", "setblock", "fill"]
+## Commands always allowed (no cheats needed).
+const FREE_COMMANDS: Array[String] = ["help", "seed", "say", "players", "kick", "ban", "pardon"]
 var player_name := ""
 var last_address := "127.0.0.1"
 ## Peer id -> {"name": String, "ping": ms (-1 unknown)}, everyone in the
@@ -99,6 +116,21 @@ var _waiting_hello := {}
 var _tries := {}
 var _counters := {}
 var _server_salt := ""
+## Host: next entity / item number; per client what it has seen
+## (peer -> {number: true}).
+var _next_net_id := 1
+var _known_entities := {}
+var _known_items := {}
+var _snapshot_timer := 0.0
+## Host: each client's player as last sent, by tag (kept in the world save).
+var saved_players := {}
+## Client: the host's entities by number.
+var _puppets := {}
+const SNAPSHOT_SECONDS := 0.1
+const ENTITY_RANGE := 96.0
+const ITEM_RANGE := 48.0
+const PLAYER_SAVE_SECONDS := 10.0
+var _player_save_timer := 0.0
 
 
 func _ready() -> void:
@@ -174,6 +206,8 @@ func host(port: int = PORT) -> String:
 	multiplayer.multiplayer_peer = _peer
 	mode = Mode.HOST
 	players = {1: {"name": player_name}}
+	var world := _world()
+	saved_players = world.save.state.get("net_players", {}) if world and world.save else {}
 	looks = {1: _own_look()}
 	_lan_out = PacketPeerUDP.new()
 	_lan_out.set_broadcast_enabled(true)
@@ -207,13 +241,19 @@ func join(address: String) -> String:
 
 ## Leaves the game or stops hosting.
 func leave() -> void:
+	if is_client():
+		send_player_state() # (the host keeps this player)
 	if _peer:
 		_peer.close()
 	_peer = null
+	cheats = false
 	multiplayer.multiplayer_peer = null
 	mode = Mode.OFFLINE
 	players.clear()
 	looks.clear()
+	_puppets.clear()
+	_known_entities.clear()
+	_known_items.clear()
 	for avatar: Node in avatars.values():
 		if is_instance_valid(avatar):
 			avatar.queue_free()
@@ -295,6 +335,14 @@ func _within(id: int, kind: String, limit: int, seconds: float) -> bool:
 
 func _on_peer_disconnected(id: int) -> void:
 	_waiting_hello.erase(id)
+	_known_entities.erase(id)
+	_known_items.erase(id)
+	if is_host():
+		var world := _world()
+		if world:
+			for entity in world.entities.all():
+				if entity.remote_rider == id:
+					entity.remote_rider = 0 # its rider left
 	if not players.has(id):
 		_addresses.erase(id)
 		return
@@ -366,10 +414,10 @@ func _hello(joining_name: String, version: String, tag: String) -> void:
 	var save := world.save
 	_welcome.rpc_id(id, {
 		"name": save.name if save else "World", "seed": world.world_seed, "generator": world.generator,
-		"tall": save.tall_terrain if save else true, "game_mode": save.game_mode if save else 0,
+		"tall": save.tall_terrain if save else true, "game_mode": lan_game_mode, "cheats": cheats,
 		"spawn": world.find_spawn(), # the world spawn (not the host's bed)
 		"game_time": world.clock.game_time, "day_time": world.clock.day_time,
-		"your_name": unique_name,
+		"your_name": unique_name, "player": saved_players.get(tag, {}),
 	})
 	_send_players.rpc(players)
 	# How everyone already here looks.
@@ -395,6 +443,7 @@ func _refused(reason: String) -> void:
 func _welcome(info: Dictionary) -> void:
 	world_info = info
 	player_name = info.get("your_name", player_name)
+	cheats = bool(info.get("cheats", false))
 	var save := WorldSave.new()
 	save.remote = true
 	save.name = info.get("name", "World")
@@ -402,7 +451,8 @@ func _welcome(info: Dictionary) -> void:
 	save.generator = info.get("generator", 0)
 	save.tall_terrain = info.get("tall", true)
 	save.game_mode = info.get("game_mode", 0)
-	save.state = {"player": {"position": info.get("spawn", Vector3(8, 140, 8)), "spawn": info.get("spawn", Vector3(8, 140, 8))}}
+	var saved_player: Dictionary = info.get("player", {})
+	save.state = {"player": saved_player if not saved_player.is_empty() else {"position": info.get("spawn", Vector3(8, 140, 8))}}
 	WorldSave.current = save
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
@@ -473,6 +523,16 @@ func _process(delta: float) -> void:
 	if _state_timer <= 0.0:
 		_state_timer = 1.0 / STATE_RATE
 		_send_own_state()
+	if is_host() and players.size() > 1:
+		_snapshot_timer -= delta
+		if _snapshot_timer <= 0.0:
+			_snapshot_timer = SNAPSHOT_SECONDS
+			_send_snapshots()
+	if is_client():
+		_player_save_timer -= delta
+		if _player_save_timer <= 0.0:
+			_player_save_timer = PLAYER_SAVE_SECONDS
+			send_player_state()
 	if is_host():
 		if not _pending_blocks.is_empty():
 			_blocks_changed.rpc(_pending_blocks)
@@ -554,9 +614,9 @@ func send_set_block(pos: Vector3i, id: int) -> void:
 	_client_set_block.rpc_id(1, pos.x, pos.y, pos.z, id)
 
 
-## Client -> host: a block broken by the player.
-func send_destroy(pos: Vector3i) -> void:
-	_client_destroy.rpc_id(1, pos.x, pos.y, pos.z)
+## Client -> host: a block broken by the player (its drops on the ground).
+func send_destroy(pos: Vector3i, drop: bool, can_harvest: bool) -> void:
+	_client_destroy.rpc_id(1, pos.x, pos.y, pos.z, drop, can_harvest)
 
 
 ## Client -> host: a lever, button, door, trapdoor or note block used.
@@ -572,10 +632,10 @@ func _client_set_block(x: int, y: int, z: int, id: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func _client_destroy(x: int, y: int, z: int) -> void:
+func _client_destroy(x: int, y: int, z: int, drop: bool, can_harvest: bool) -> void:
 	var world := _world()
 	if is_host() and _within(multiplayer.get_remote_sender_id(), "edit", EDIT_LIMIT, 1.0) and world:
-		world.destroy_block(Vector3i(x, y, z), false, false)
+		world.destroy_block(Vector3i(x, y, z), drop, can_harvest)
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -607,7 +667,7 @@ func _send_own_state() -> void:
 	if player == null:
 		return
 	var flags := (1 if player.sneaking else 0) | (2 if player.vehicle else 0) | (4 if player.dead else 0) \
-		| (8 if player.sleeping else 0)
+		| (8 if player.sleeping else 0) | (16 if player.is_creative() else 0)
 	_player_state.rpc(player.global_position, player.rotation.y, player.pitch(), flags, player.held_block(), _swings)
 
 
@@ -621,6 +681,7 @@ func _player_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int,
 	if avatar == null or not is_instance_valid(avatar):
 		avatar = RemotePlayer.new()
 		avatar.world = world
+		avatar.peer_id = id
 		avatar.player_name = players[id].name
 		world.add_child(avatar)
 		avatar.global_position = at
@@ -783,3 +844,336 @@ func pardon(tag_or_name: String) -> String:
 			config.save(BANS_PATH)
 			return banned_name
 	return ""
+
+
+# --- Entities and dropped items (the host's, seen by clients) --------------------------------
+
+func _avatar_of(peer: int) -> RemotePlayer:
+	var avatar: RemotePlayer = avatars.get(peer)
+	return avatar if avatar and is_instance_valid(avatar) else null
+
+
+## Host: each client gets the entities and items near its player: new ones
+## whole, all with where they are now, and which ones went.
+func _send_snapshots() -> void:
+	var world := _world()
+	if world == null:
+		return
+	for peer: int in players:
+		if peer == 1:
+			continue
+		var avatar := _avatar_of(peer)
+		if avatar == null:
+			continue
+		var at := avatar.target_position
+		var known: Dictionary = _known_entities.get(peer, {})
+		var seen := {}
+		var entries := []
+		for entity in world.entities.all():
+			if entity.removed or entity.type_name() == "fishing_bobber":
+				continue
+			if Vector2(entity.feet().x - at.x, entity.feet().z - at.z).length() > ENTITY_RANGE:
+				continue
+			if entity.net_id == 0:
+				entity.net_id = _next_net_id
+				_next_net_id += 1
+			seen[entity.net_id] = true
+			var whole: Variant = null if known.has(entity.net_id) else entity.save_state()
+			entries.append([entity.net_id, entity.feet(), entity.net_yaw(), entity.net_state(), whole])
+		var gone := PackedInt32Array()
+		for id: int in known:
+			if not seen.has(id):
+				gone.append(id)
+		_known_entities[peer] = seen
+		var known_items: Dictionary = _known_items.get(peer, {})
+		var seen_items := {}
+		var items := []
+		for item: Dictionary in world.items.net_items():
+			var pos: Vector3 = item.pos
+			if Vector2(pos.x - at.x, pos.z - at.z).length() > ITEM_RANGE:
+				continue
+			if not item.has("nid"):
+				item.nid = _next_net_id
+				_next_net_id += 1
+			seen_items[item.nid] = true
+			items.append([item.nid, item.id, item.count, item.damage, pos])
+		var items_gone := PackedInt32Array()
+		for id: int in known_items:
+			if not seen_items.has(id):
+				items_gone.append(id)
+		_known_items[peer] = seen_items
+		_snapshot.rpc_id(peer, entries, gone, items, items_gone)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _snapshot(entries: Array, gone: PackedInt32Array, items: Array, items_gone: PackedInt32Array) -> void:
+	var world := _world()
+	if world == null:
+		return
+	for entry: Array in entries:
+		var id: int = entry[0]
+		var puppet: Entity = _puppets.get(id)
+		if puppet == null or not is_instance_valid(puppet) or puppet.removed:
+			var whole: Variant = entry[4]
+			if whole == null:
+				continue # (its whole state comes again: seen anew)
+			puppet = world.entities.create(str((whole as Dictionary).get("type", "")))
+			if puppet == null:
+				continue
+			puppet.puppet = true
+			puppet.net_id = id
+			world.entities.spawn(puppet, entry[1])
+			puppet.load_state(whole)
+			_puppets[id] = puppet
+		puppet.apply_net_state(entry[1], entry[2], entry[3])
+	for id in gone:
+		var puppet: Entity = _puppets.get(id)
+		if puppet and is_instance_valid(puppet):
+			puppet.removed = true
+		_puppets.erase(id)
+	world.items.apply_net_items(items, items_gone)
+
+
+## Client -> host: an entity made here (EntityManager.spawn) for the host
+## to make.
+func send_spawn(entity: Entity) -> void:
+	var extra := {"velocity": entity.velocity, "yaw": entity.net_yaw()}
+	if entity is Arrow:
+		extra["power"] = (entity as Arrow).power
+	_client_spawn.rpc_id(1, entity.save_state(), extra)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_spawn(state: Dictionary, extra: Dictionary) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	if not is_host() or world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+		return
+	var entity := world.entities.create(str(state.get("type", "")))
+	if entity == null or entity is Mob:
+		return # (no creatures from clients)
+	world.entities.spawn(entity, state.get("position", Vector3.ZERO))
+	entity.load_state(state)
+	entity.velocity = extra.get("velocity", Vector3.ZERO)
+	if "_yaw" in entity:
+		entity.set("_yaw", float(extra.get("yaw", 0.0)))
+	if entity is Arrow:
+		(entity as Arrow).shooter = _avatar_of(peer)
+		(entity as Arrow).power = float(extra.get("power", 1.0))
+
+
+## Client -> host: hit the host's entity `id` for `amount`.
+func send_attack(id: int, amount: int) -> void:
+	_client_attack.rpc_id(1, id, amount)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_attack(id: int, amount: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	if not is_host() or world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+		return
+	var entity := world.entities.by_net_id(id)
+	var avatar := _avatar_of(peer)
+	if entity == null or avatar == null or entity.center().distance_to(avatar.target_position) > 7.0:
+		return
+	if entity.damage(clampi(amount, 0, 40), avatar.target_position) and entity is Mob:
+		(entity as Mob).hurt_by(avatar)
+
+
+## Client -> host: get into the host's boat or minecart `id`.
+func send_mount(id: int) -> void:
+	_client_mount.rpc_id(1, id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_mount(id: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	if not is_host() or world == null or not players.has(peer):
+		return
+	var entity := world.entities.by_net_id(id)
+	if entity and (entity is Boat or (entity is Minecart and entity.type_name() == "minecart")) and entity.seat_free():
+		entity.remote_rider = peer
+		_mounted.rpc_id(peer, id)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _mounted(id: int) -> void:
+	var puppet: Entity = _puppets.get(id)
+	var player := _game_player()
+	if puppet and is_instance_valid(puppet) and player and player.vehicle == null:
+		player.mount(puppet)
+
+
+## Client -> host: rowing / pushing the vehicle it rides, or getting off.
+func send_steer(id: int, forward: float, look: Vector3) -> void:
+	_client_steer.rpc_id(1, id, forward, look)
+
+
+func send_dismount(id: int) -> void:
+	_client_dismount.rpc_id(1, id)
+
+
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func _client_steer(id: int, forward: float, look: Vector3) -> void:
+	var world := _world()
+	if not is_host() or world == null:
+		return
+	var entity := world.entities.by_net_id(id)
+	if entity and entity.remote_rider == multiplayer.get_remote_sender_id() and entity.has_method("steer"):
+		entity.call("steer", clampf(forward, -1.0, 1.0), look)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_dismount(id: int) -> void:
+	var world := _world()
+	if not is_host() or world == null:
+		return
+	var entity := world.entities.by_net_id(id)
+	if entity and entity.remote_rider == multiplayer.get_remote_sender_id():
+		entity.remote_rider = 0
+
+
+# --- Players hurting players (and creatures hurting clients) -------------------------------------
+
+## Hurts the player of `peer` (the host's creatures, another player's hit).
+func hurt_peer(peer: int, amount: int, from: Vector3) -> void:
+	if peer == multiplayer.get_unique_id():
+		var player := _game_player()
+		if player:
+			if amount > 0:
+				player.damage(amount)
+			if from != Vector3.INF:
+				player.knockback(from)
+		return
+	_hurt.rpc_id(peer, amount, from)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _hurt(amount: int, from: Vector3) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if not players.has(sender) or (sender != 1 and not _within_any(sender)):
+		return
+	var player := _game_player()
+	if player == null:
+		return
+	if amount > 0:
+		player.damage(mini(amount, 20))
+	if from != Vector3.INF and from.is_finite():
+		player.knockback(from)
+
+
+## Hits from other players: at most a few a second.
+func _within_any(sender: int) -> bool:
+	var now := Time.get_ticks_msec() / 1000.0
+	var key := "%d/hurt" % sender
+	var entry: Array = _counters.get(key, [now, 0])
+	if now - float(entry[0]) > 1.0:
+		entry = [now, 0]
+	entry[1] = int(entry[1]) + 1
+	_counters[key] = entry
+	return int(entry[1]) <= 10
+
+
+# --- Dropped items: through the host ----------------------------------------------------------------
+
+## Client -> host: an item dropped or thrown here.
+func send_item(id: int, count: int, position: Vector3, velocity: Vector3, damage: int, delay: int) -> void:
+	_client_item.rpc_id(1, id, count, position, velocity, damage, delay)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_item(id: int, count: int, position: Vector3, velocity: Vector3, damage: int, delay: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	if not is_host() or world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+		return
+	if id <= 0 or count <= 0 or count > 64:
+		return
+	world.items.spawn(id, count, position, velocity, delay, damage)
+
+
+## Client -> host: pick up the host's item `nid` (it walked over it).
+func send_pickup(nid: int) -> void:
+	_client_pickup.rpc_id(1, nid)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_pickup(nid: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	var avatar := _avatar_of(peer)
+	if not is_host() or world == null or avatar == null:
+		return
+	var taken: Array = world.items.take_for_network(nid, avatar.target_position)
+	if not taken.is_empty():
+		_give.rpc_id(peer, taken[0], taken[1], taken[2])
+
+
+@rpc("authority", "call_remote", "reliable")
+func _give(id: int, count: int, damage: int) -> void:
+	var player := _game_player()
+	if player == null:
+		return
+	var left := player.inventory.add(id, count, damage)
+	Sounds.play("random/pop", null, 0.2, ((randf() - randf()) * 0.7 + 1.0) * 2.0)
+	if left > 0: # (no room after all: back on the ground)
+		send_item(id, left, player.global_position + Vector3(0, 1, 0), Vector3.ZERO, damage, 40)
+
+
+# --- Clients' players kept by the host ------------------------------------------------------------
+
+## Client -> host: this player as it is now (every 10 s and on leaving).
+func send_player_state() -> void:
+	var player := _game_player()
+	if player == null or not is_client() or multiplayer.multiplayer_peer == null:
+		return
+	_client_player_state.rpc_id(1, player.save_state())
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_player_state(state: Dictionary) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	if not is_host() or not _tags.has(peer):
+		return
+	saved_players[_tags[peer]] = state
+
+
+# --- Cheats ----------------------------------------------------------------------------------
+
+## Whether commands needing cheats may run here: the network game's choice
+## when online, else the world's ("Allow Cheats").
+func cheats_allowed() -> bool:
+	if is_online():
+		return cheats
+	return WorldSave.current == null or WorldSave.current.allow_cheats
+
+
+## Client -> host: a world command (HOST_COMMANDS) typed by this player.
+func send_command(text: String) -> void:
+	_client_command.rpc_id(1, text)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_command(text: String) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	if not is_host() or world == null or not cheats or not _within(peer, "chat", CHAT_LIMIT, 5.0):
+		return
+	var root := text.strip_edges().trim_prefix("/").get_slice(" ", 0).to_lower()
+	if not root in HOST_COMMANDS:
+		return
+	var source := CommandSource.new()
+	source.name = str(players[peer].name)
+	source.world = world
+	source.origin = _avatar_of(peer) # ~ ~ ~ are where that player is
+	source.output = func(message: String, kind: int) -> void: _command_output.rpc_id(peer, message, kind)
+	Commands.dispatcher.execute(text, source)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _command_output(text: String, kind: int) -> void:
+	var chat := _chat()
+	if chat:
+		chat.add_message(text, kind)

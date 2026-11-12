@@ -1361,17 +1361,12 @@ func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true, e
 	if id == Blocks.AIR:
 		return
 	if remote:
-		# Broken by this player: the bits and sound here, the drops straight
-		# into the inventory (dropped items are the host's for now), the
-		# breaking itself by the host.
+		# Broken by this player: the bits and sound here, the breaking (and
+		# what it drops) by the host.
 		if effects:
 			particles.break_block(pos, id)
 			Sounds.play_block("break", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
-		var local_player := player as Player
-		if drop and local_player and not local_player.is_creative():
-			for entry: Array in Blocks.drops_of(id, rng, can_harvest):
-				local_player.inventory.add(entry[0], entry[1])
-		Net.send_destroy(pos)
+		Net.send_destroy(pos, drop, can_harvest)
 		_applying_network = true
 		set_block(pos, Blocks.AIR, false)
 		_applying_network = false

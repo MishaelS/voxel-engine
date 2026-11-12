@@ -872,6 +872,8 @@ func seat_offset() -> float:
 func _tick_riding() -> void:
 	var off := not GameInput.is_blocked() and Input.is_action_pressed("sneak")
 	if off or vehicle.removed or vehicle.is_dead():
+		if vehicle.puppet:
+			Net.send_dismount(vehicle.net_id) # the host's boat or cart
 		var at := vehicle.feet() + Vector3(0, vehicle.height + 0.1, 0)
 		vehicle = null
 		_x = at.x
@@ -882,7 +884,10 @@ func _tick_riding() -> void:
 		return
 	if vehicle.has_method("steer"):
 		var forward := 0.0 if GameInput.is_blocked() else Input.get_action_strength("move_forward") - Input.get_action_strength("move_back")
-		vehicle.call("steer", forward, look_direction())
+		if vehicle.puppet:
+			Net.send_steer(vehicle.net_id, forward, look_direction()) # the host rows it
+		else:
+			vehicle.call("steer", forward, look_direction())
 	var seat := vehicle.feet() + Vector3(0, seat_offset(), 0)
 	_x = seat.x
 	_y = seat.y

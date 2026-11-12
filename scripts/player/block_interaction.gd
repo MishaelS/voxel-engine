@@ -43,6 +43,8 @@ const CRACK_GROW := 0.004
 var target := {}
 ## The creature under the crosshair (closer than `target`), or null.
 var target_entity: Entity
+## Another player aimed at (a network game), or null.
+var target_player: RemotePlayer
 ## Survival breaking progress of `target` (0..1).
 var break_progress := 0.0
 
@@ -80,6 +82,21 @@ func _process(delta: float) -> void:
 		if not found.is_empty() and not (found[0] as Entity).is_dead():
 			target_entity = found[0]
 			target = {}
+		# Other players (network games): aimed at like creatures.
+		target_player = null
+		var nearest := reach if found.is_empty() else float(found[1])
+		var eye := player.eye_position()
+		var to := eye + player.look_direction() * nearest
+		for avatar: RemotePlayer in Net.avatars.values():
+			if not is_instance_valid(avatar) or avatar.dead:
+				continue
+			var box := AABB(avatar.global_position - Vector3(0.4, 0, 0.4), Vector3(0.8, 1.9, 0.8))
+			var point: Variant = box.intersects_segment(eye, to)
+			if point != null and eye.distance_to(point) < nearest:
+				nearest = eye.distance_to(point)
+				target_player = avatar
+				target_entity = null
+				target = {}
 	var hit: bool = target.get("hit", false)
 	_outline.visible = hit and not player.sleeping
 	if hit:
@@ -133,7 +150,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		MOUSE_BUTTON_LEFT:
 			if _captured():
 				_break_delay = 0.0 # a fresh click breaks right away in creative
-				if target_entity and not player.dead and not player.sleeping:
+				if target_player and not player.dead and not player.sleeping:
+					_attack_player(target_player)
+				elif target_entity and not player.dead and not player.sleeping:
 					_attack(target_entity)
 				elif target.get("hit", false) and Blocks.family_of(target.block) == "note_block":
 					MusicBehavior.play_note(world, target.pos)
@@ -236,6 +255,13 @@ func _attack(entity: Entity) -> void:
 	var critical := player.velocity.y < 0.0 and not player.on_ground and not player.flying and not player.in_water
 	if critical:
 		damage += damage / 2 + (1 if damage % 2 == 1 else 0)
+	if entity.puppet:
+		# The host's creature (network game): the host hits it.
+		Net.send_attack(entity.net_id, damage)
+		world.particles.damage(entity.center() + Vector3(0, entity.height * 0.25, 0), damage)
+		if critical:
+			world.particles.crit(entity.center())
+		return
 	if not entity.damage(damage, player.global_position):
 		return
 	var middle := entity.center()
@@ -255,8 +281,32 @@ func _attack(entity: Entity) -> void:
 		player.inventory.wear(player.selected_slot, 1 if item.tool == "sword" else 2)
 
 
+## Hitting another player (network games): their player gets the damage.
+func _attack_player(avatar: RemotePlayer) -> void:
+	player.swing()
+	var tool := player.held_block()
+	var damage := Items.attack_damage(tool)
+	var critical := player.velocity.y < 0.0 and not player.on_ground and not player.flying and not player.in_water
+	if critical:
+		damage += damage / 2 + (1 if damage % 2 == 1 else 0)
+	avatar.damage(damage)
+	avatar.knockback(player.global_position)
+	world.particles.damage(avatar.global_position + Vector3(0, 1.3, 0), damage)
+	if critical:
+		world.particles.crit(avatar.global_position + Vector3(0, 1.0, 0))
+
+
 ## RMB: the targeted block's own use first (unless sneaking), then the item.
 func _use() -> void:
+	if target_entity and target_entity.puppet:
+		# The host's entity (network game): get into its boat or minecart.
+		if target_entity is Boat or (target_entity is Minecart and target_entity.type_name() == "minecart"):
+			if player.vehicle == null:
+				Net.send_mount(target_entity.net_id)
+				player.swing()
+		else:
+			player.message.emit(Lang.t("Not in network games yet"))
+		return
 	if target_entity and target_entity.has_method("interact") and target_entity.call("interact", player, player.held_block()):
 		player.swing()
 		return

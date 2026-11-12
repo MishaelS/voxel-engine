@@ -14,6 +14,10 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Multiplayer, second step: the world's creatures and things are shared. The host's creatures, boats, minecarts, arrows, primed TNT, paintings and lightning are sent 10 times a second to each client within 96 blocks (new ones with their whole state) and drawn there as copies following the host's (`Entity.puppet`, `net_state`, `apply_net_state`; their hurt sound plays too); what a client makes (an arrow shot, a boat or cart put down, a painting, lit TNT) the host makes (`EntityManager.spawn` hands it over). Clients hit the host's creatures (the host checks the distance), ride its boats and minecarts and steer them (`Entity.remote_rider`). Creatures go after the nearest player, the network game's others too (`RemotePlayer` acts like a player to them: damage and knockback go to its owner), arrows hit them, and players hurt each other (aimed at like creatures). Dropped items are shared within 48 blocks: drops and throws go through the host, a client picks items up by asking it (`ItemEntities.net_items`, `take_for_network`). The host keeps each client's player (place, inventory, armor, health) by its tag in the world's save and gives it back on joining.
+- Allow Cheats, like the game: in Create New World (on with creative, off with survival, until set by hand; saved per world, worlds from before keep them on) and in the new "Open to LAN" screen ("Settings for Other Players": the game mode new players get and whether cheats are allowed, for the host too while the world is open). Without cheats only /help, /seed, /say and the host's /players, /kick, /ban, /pardon run. A client's world commands (/time, /weather, /gamerule, /tick, /setblock, /fill) run on the host, from where that player is, the answer in its chat.
+
+### Added
 - Building and running from the console, without the editor: `tools/build.sh` (release or `--debug`, a zip or `--app`, `--native` to rebuild the C++ library first; imports, exports the "macOS" preset, checks the signature and the native library) and `tools/run.sh` (`--release` shows the release build's short F3 screen: `DebugScreen` reads `--short-f3`).
 
 ### Fixed

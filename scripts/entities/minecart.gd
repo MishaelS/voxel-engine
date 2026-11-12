@@ -226,7 +226,7 @@ func _off_rail() -> void:
 
 func _ridden() -> bool:
 	var player := world.player as Player
-	return player != null and player.vehicle == self
+	return (player != null and player.vehicle == self) or (remote_rider != 0 and Net.players.has(remote_rider))
 
 
 ## The player walking into the cart pushes it away.

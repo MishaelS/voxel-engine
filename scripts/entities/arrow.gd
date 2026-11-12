@@ -117,6 +117,18 @@ func tick() -> void:
 			player.knockback(start)
 			removed = true
 			return
+	# The network game's other players (the host's arrows reach them too).
+	if Net.is_host():
+		for avatar: RemotePlayer in Net.avatars.values():
+			if not is_instance_valid(avatar) or avatar.dead or (avatar == shooter and age < 5):
+				continue
+			var avatar_box := AABB(avatar.target_position - Vector3(0.3, 0, 0.3), Vector3(0.6, 1.8, 0.6))
+			var through: Variant = avatar_box.intersects_segment(start, end)
+			if through != null and start.distance_to(through) < (hit[1] if not hit.is_empty() else block_distance):
+				avatar.damage(Mob._scaled_damage(DAMAGE) if shooter is Mob else maxi(ceili(DAMAGE * power), 1))
+				avatar.knockback(start)
+				removed = true
+				return
 	if not hit.is_empty():
 		var target: Entity = hit[0]
 		target.damage(maxi(ceili(DAMAGE * power), 1), start)

@@ -54,6 +54,10 @@ func spawn(id: int, item_count: int, position: Vector3, velocity: Vector3 = Vect
 		pickup_delay: int = PICKUP_DELAY, damage: int = 0) -> void:
 	if id == Blocks.AIR or item_count <= 0:
 		return
+	if world and world.remote:
+		# A network client: the host's world has the items (Net).
+		Net.send_item(id, item_count, position, velocity, damage, pickup_delay)
+		return
 	var item := {
 		"id": id, "count": item_count, "damage": damage, "pos": position, "prev": position,
 		"vel": velocity, "age": 0, "delay": pickup_delay, "ground": false, "picked": -1,
@@ -120,6 +124,9 @@ func load_state(saved: Array) -> void:
 # --- Simulation --------------------------------------------------------------------
 
 func _tick(tick_index: int) -> void:
+	if world and world.remote:
+		_puppet_tick()
+		return
 	var i := 0
 	while i < _items.size():
 		var item := _items[i]
@@ -377,3 +384,82 @@ func _process(_delta: float) -> void:
 
 func _brightness(point: Vector3, _atmosphere: Atmosphere) -> float:
 	return world.brightness_at(point) if world else 1.0
+
+# --- Network (Net) ------------------------------------------------------------------------
+
+## Host: the items on the ground (not being picked up) for the snapshots.
+func net_items() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for item in _items:
+		if item.picked < 0:
+			result.append(item)
+	return result
+
+
+## Host: a client picks up item `nid` near `at`: [id, count, damage] it
+## gets, or [] (gone, still waiting to be picked up, too far).
+func take_for_network(nid: int, at: Vector3) -> Array:
+	for item in _items:
+		if item.get("nid", 0) != nid or item.picked >= 0 or item.delay > 0:
+			continue
+		if (item.pos as Vector3).distance_to(at + Vector3(0, 0.9, 0)) > 3.0:
+			return []
+		item.picked = 0 # flies off and goes
+		return [item.id, item.count, item.damage]
+	return []
+
+
+## Client: the host's items near the player: [nid, id, count, damage, pos]
+## each, and the numbers of those gone.
+func apply_net_items(items: Array, gone: PackedInt32Array) -> void:
+	var by_nid := {}
+	for item in _items:
+		by_nid[item.get("nid", 0)] = item
+	for entry: Array in items:
+		var item: Dictionary = by_nid.get(entry[0], {})
+		if item.is_empty():
+			item = {"id": entry[1], "count": entry[2], "damage": entry[3], "pos": entry[4], "prev": entry[4],
+				"vel": Vector3.ZERO, "age": 0, "delay": 0, "ground": false, "picked": -1, "spin": _rng.randf() * TAU,
+				"nid": entry[0], "target": entry[4], "asked": false}
+			item.node = _make_node(item)
+			_items.append(item)
+		else:
+			item.target = entry[4]
+			if item.count != entry[2]:
+				item.count = entry[2]
+				_update_copies(item)
+	for nid in gone:
+		var item: Dictionary = by_nid.get(nid, {})
+		if not item.is_empty() and item.picked < 0:
+			item.picked = 0 # (gone: picked up by someone, burnt, merged...)
+
+
+## Client: each tick the copies move to where the host has them; the ones
+## the player walks over are asked for (Net.send_pickup).
+func _puppet_tick() -> void:
+	var i := 0
+	while i < _items.size():
+		var item := _items[i]
+		item.prev = item.pos
+		item.age += 1
+		if item.picked >= 0:
+			item.picked += 1
+			if item.picked >= PICKUP_TICKS:
+				(item.node as Node).queue_free()
+				_items.remove_at(i)
+				continue
+		else:
+			item.pos = item.get("target", item.pos)
+			if item.age - int(item.get("asked_at", -100)) > 20 and player and not player.dead and _near_player(item) \
+					and player.inventory.room_for(item.id, item.damage) > 0:
+				item.asked_at = item.age # (asked again a second later if the host said no)
+				Net.send_pickup(item.nid)
+		i += 1
+
+
+func _near_player(item: Dictionary) -> bool:
+	var feet := player.global_position
+	var position: Vector3 = item.pos
+	return absf(position.x - feet.x) <= Player.HALF_WIDTH + 1.0 + HALF \
+		and absf(position.z - feet.z) <= Player.HALF_WIDTH + 1.0 + HALF \
+		and position.y + HALF >= feet.y - 0.5 and position.y - HALF <= feet.y + Player.HEIGHT + 0.5

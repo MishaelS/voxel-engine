@@ -96,6 +96,17 @@ func _process(delta: float) -> void:
 		_block.set_instance_shader_parameter("entity_light", world.brightness_at(center()))
 
 
+func net_state() -> Dictionary:
+	var state := super()
+	state["fuse"] = fuse
+	return state
+
+
+func apply_net_state(at: Vector3, yaw: float, state: Dictionary) -> void:
+	super(at, yaw, state)
+	fuse = int(state.get("fuse", fuse))
+
+
 func save_state() -> Dictionary:
 	var state := super()
 	state["fuse"] = fuse

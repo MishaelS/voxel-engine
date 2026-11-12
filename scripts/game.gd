@@ -62,7 +62,11 @@ func save_game() -> void:
 	var save := world.save
 	world.save_columns()
 	save.game_mode = player.game_mode
+	# The network game's other players (by tag): kept even when not hosting now.
+	var others: Dictionary = Net.saved_players if Net.is_host() else save.state.get("net_players", {})
 	save.state = {"world": world.save_state(), "player": player.save_state()}
+	if not others.is_empty():
+		save.state["net_players"] = others
 	save.last_played = int(Time.get_unix_time_from_system())
 	save.write_level()
 
