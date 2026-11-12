@@ -1,33 +1,25 @@
 class_name MapView
-extends Control
+extends Node
 ## The map in hand, like the classic game: while the player holds a map it
-## is shown in the lower middle of the screen on parchment, with an arrow
-## where the player is, pointing where they look; meanwhile it fills in
-## around them (Maps.update). A map that has no number yet gets one, drawn
-## around where it is first held.
-
-const P := UiTheme.PIXEL
+## fills in around them (Maps.update) and its picture is kept here
+## (`texture`); HeldItem draws it held in both hands in front of the view,
+## with the player's marker (marker()). A map that has no number yet gets
+## one, drawn around where it is first held.
 
 var player: Player
+## The map's picture (Maps.SIZE square), null before the first map.
+var texture: ImageTexture
+## A map is in hand (and drawn).
+var holding := false
 
-var _texture: ImageTexture
-var _background: Texture2D
 var _number := -1
 var _last_tick := -1
 var _dirty := true
 
 
-func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_background = TexturePacks.load_texture("res://assets/textures/misc/map_background.png")
-
-
 func _process(_delta: float) -> void:
 	var world := player.world if player else null
-	var holding := world != null and not player.dead and Items.name_of(player.held_block()) == "map" \
-		and not GameInput.is_blocked()
-	visible = holding and not player.third_person
+	holding = world != null and not player.dead and Items.name_of(player.held_block()) == "map"
 	if not holding:
 		_number = -1
 		return
@@ -44,39 +36,28 @@ func _process(_delta: float) -> void:
 		_last_tick = tick
 		if Maps.update(world, number, player.global_position, tick):
 			_dirty = true
-	if _dirty and visible:
+	if _dirty:
 		_dirty = false
 		var image := Maps.image_of(world, number)
-		if _texture == null:
-			_texture = ImageTexture.create_from_image(image)
+		if texture == null:
+			texture = ImageTexture.create_from_image(image)
 		else:
-			_texture.update(image)
-	queue_redraw()
+			texture.update(image)
 
 
-func _draw() -> void:
-	if _texture == null or player == null or player.world == null:
-		return
-	# Above the hotbar and the health, armor and food bars.
-	var side := minf(size.y - 56 * P - 8 * P, minf(size.y * 0.6, size.x * 0.5))
-	var origin := Vector2((size.x - side) / 2.0, size.y - side - 56 * P)
-	draw_texture_rect(_background, Rect2(origin, Vector2(side, side)), false)
-	var margin := side * 7.0 / 142.0
-	var inner := Rect2(origin + Vector2(margin, margin), Vector2(side - margin * 2.0, side - margin * 2.0))
-	draw_texture_rect(_texture, inner, false, Color(1, 1, 1, 0.85))
-	# The player: an arrow at their place on the map, pointing where they look.
-	var map: Dictionary = player.world.maps.get(_number, {})
+## The player's marker on the map: [position in map pixels (0..Maps.SIZE),
+## turn in 16ths of a full turn like the game's icons (0 = pointing up,
+## north), on the map (false: off its edge, shown there as a dot)].
+func marker() -> Array:
+	var map: Dictionary = player.world.maps.get(_number, {}) if player and player.world else {}
 	if map.is_empty():
-		return
+		return [Vector2(Maps.SIZE, Maps.SIZE) / 2.0, 0, true]
 	var at := Vector2((player.global_position.x - float(map.x)) / Maps.SCALE + Maps.SIZE / 2.0,
 		(player.global_position.z - float(map.z)) / Maps.SCALE + Maps.SIZE / 2.0)
+	var inside := at.x >= 0.0 and at.y >= 0.0 and at.x <= Maps.SIZE and at.y <= Maps.SIZE
 	at = at.clamp(Vector2.ZERO, Vector2(Maps.SIZE, Maps.SIZE))
-	var center := inner.position + at / Maps.SIZE * inner.size
 	var look := player.look_direction()
-	var forward := Vector2(look.x, look.z).normalized() if Vector2(look.x, look.z).length_squared() > 1e-6 else Vector2(0, -1)
-	var right := Vector2(-forward.y, forward.x)
-	var unit := inner.size.x / Maps.SIZE * 3.0
-	var points := PackedVector2Array([center + forward * unit * 1.4, center - forward * unit + right * unit,
-		center - forward * unit * 0.4, center - forward * unit - right * unit])
-	draw_colored_polygon(points, Color(1, 1, 1))
-	draw_polyline(points + PackedVector2Array([points[0]]), Color(0, 0, 0), maxf(P * 0.5, 1.0))
+	# Map pixels: x east, y south (down); the icon points up at turn 0.
+	var angle := atan2(look.x, -look.z)
+	var turn := posmod(roundi(angle / TAU * 16.0), 16)
+	return [at, turn, inside]

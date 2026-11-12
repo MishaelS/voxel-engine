@@ -14,7 +14,7 @@ Controls
 * 1-9 / mouse wheel: hotbar slot; E: inventory (survival: 2x2 crafting; creative: all blocks and items); Q: throw one item (Ctrl+Q: the stack)
 * Crafting table: 3x3 recipes (sticks, tools, chest, furnace, bed, bucket, ...); furnace: smelts ores, sand, cobblestone and logs with coal, charcoal or wood
 * Beds skip the night (only at night) and set the respawn point; dropped items are picked up by walking over them
-* F3: debug screen; F4: toggle VSync
+* F3: debug screen (the full one in debug builds; in a release build: version, FPS, memory and the world's size on disk; the coordinates are on the map); F4: toggle VSync
 * F1: hide GUI; F2: screenshot; F6: isometric camera (Z / X turn, wheel zooms); F7: isometric screenshot of the whole area
 * Esc: menu (pauses the game): Options - video, controls (key rebinding), world
 * WASD: walk; Space: jump (creative: double-tap to fly, then Space / Shift up and down)
@@ -91,7 +91,7 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 ```
 
 ## Native code
-Heavy loops are moved to C++ (GDExtension) step by step; the column light (`native/src/native_light.cpp`), chunk meshes (`native/src/native_mesher.cpp`) and world generation (`native/src/native_beta_generator.cpp`, block for block the same as `BetaGenerator`; `generate_blocks_script` keeps the GDScript one to compare) and the light after block changes (`NativeLight.relight_edit`). The built library is in `bin/` (macOS, universal), so the project runs as is. After changing `native/src/` rebuild it (clang and cmake; the first build compiles godot-cpp, a few minutes):
+Heavy loops are moved to C++ (GDExtension) step by step; the column light (`native/src/native_light.cpp`), chunk meshes (`native/src/native_mesher.cpp`) and world generation (`native/src/native_beta_generator.cpp`, block for block the same as `BetaGenerator`; `generate_blocks_script` keeps the GDScript one to compare) the light after block changes (`NativeLight.relight_edit`) and particles (`native/src/native_particles.cpp`). The built library is in `bin/` (macOS, universal), so the project runs as is. After changing `native/src/` rebuild it (clang and cmake; the first build compiles godot-cpp, a few minutes):
 ```
 git submodule update --init
 native/build.sh

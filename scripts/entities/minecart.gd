@@ -303,6 +303,8 @@ func _process(delta: float) -> void:
 	var pitch := atan2(rise, run) if run > 1e-4 else 0.0
 	_model.root.rotation.x = lerp_angle(_model.root.rotation.x, -pitch, minf(delta * 10.0, 1.0))
 	var light := world.brightness_at(center()) if world else 1.0
+	if _cargo:
+		_cargo.set_instance_shader_parameter("entity_light", light) # the chest / furnace inside
 	for mesh: MeshInstance3D in _model.meshes:
 		mesh.set_instance_shader_parameter("brightness", light)
 		mesh.set_instance_shader_parameter("hurt", 1.0 if hurt_ticks > 0 else 0.0)

@@ -146,6 +146,7 @@ func _update_renderers(alpha: float) -> void:
 		if not counts.has(id):
 			(_renderers[id] as MultiMeshInstance3D).multimesh.instance_count = 0
 	var next_index := {}
+	var lit := {}
 	for id: int in counts:
 		var multimesh := _renderer(id).multimesh
 		if multimesh.instance_count != counts[id]:
@@ -156,6 +157,12 @@ func _update_renderers(alpha: float) -> void:
 		var position := _previous[i].lerp(_positions[i], alpha)
 		_renderers[id].multimesh.set_instance_transform(next_index[id], Transform3D(Basis.IDENTITY, position))
 		next_index[id] += 1
+		if world and not lit.has(id):
+			# The light where the first block of the kind is (they fall
+			# together), not the full light baked into the block mesh.
+			lit[id] = true
+			(_renderers[id] as MultiMeshInstance3D).set_instance_shader_parameter("entity_light",
+				world.brightness_at(position + Vector3(0.5, 0.5, 0.5)))
 
 
 func _renderer(block_id: int) -> MultiMeshInstance3D:
@@ -168,6 +175,13 @@ func _renderer(block_id: int) -> MultiMeshInstance3D:
 		add_child(instance)
 		_renderers[block_id] = instance
 	return _renderers[block_id]
+
+
+## Lights a held or carried thing where it is: a block mesh (block_mesh(),
+## marked with the "block" meta) through the block shaders' entity_light,
+## anything else through its own brightness.
+static func light(mesh: GeometryInstance3D, brightness: float) -> void:
+	mesh.set_instance_shader_parameter("entity_light" if mesh.get_meta("block", false) else "brightness", brightness)
 
 
 ## Mesh of a single block, built by ChunkMesher so it looks exactly like

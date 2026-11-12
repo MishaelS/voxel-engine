@@ -33,6 +33,11 @@ uniform float sky_darkness = 0.0;
 // lifting dark light levels like the modern game's gamma.
 uniform float classic_gamma = 0.5;
 
+// Blocks drawn as things (dropped block items, falling sand): the
+// brightness where they are (VoxelWorld.brightness_at), set per instance;
+// below 0 (the world's chunks) the light comes from the vertices.
+instance uniform float entity_light = -1.0;
+
 varying flat vec2 tile_layers;
 varying float block_ao;
 varying float block_glow;
@@ -83,7 +88,8 @@ vec4 block_albedo(vec2 uv, vec4 vertex_color) {
 	if (tile_layers.y < -1.5) {
 		return vec4(rgb, base.a); // glowing (lava)
 	}
-	return vec4(rgb * block_ao * light_brightness(vertex_color.a), base.a);
+	float light = entity_light >= 0.0 ? entity_light : light_brightness(vertex_color.a);
+	return vec4(rgb * block_ao * light, base.a);
 }
 
 // 1 for glowing blocks (lava): lit shaders add their color as emission.

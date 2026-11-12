@@ -228,6 +228,7 @@ static func _slide(world: VoxelWorld, id: int, from: Vector3i, to: Vector3i) -> 
 	var node := MeshInstance3D.new()
 	node.mesh = FallingBlocks.block_mesh(id)
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.set_instance_shader_parameter("entity_light", world.brightness_at(Vector3(to) + Vector3(0.5, 0.5, 0.5)))
 	world.add_child(node)
 	node.position = Vector3(from)
 	var tween := node.create_tween()

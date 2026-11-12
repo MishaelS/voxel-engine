@@ -173,6 +173,34 @@ func _update_fog(to_sun: Vector3) -> void:
 		# the world around the player stays clear, its far edge fades.
 		environment.fog_depth_begin = IsometricCamera.DISTANCE + distance * 0.3
 		environment.fog_depth_end = IsometricCamera.DISTANCE + distance * 1.1
+		return
+	_void_fog(environment)
+
+
+## The void fog like the game's (since Beta 1.8): near the bedrock the fog
+## turns black (below y 32) and, in survival, closes in where no sky light
+## reaches (down to 5 blocks at the bottom).
+func _void_fog(environment: Environment) -> void:
+	if world == null or player == null:
+		return
+	var eye := player.eye_position()
+	var shade := eye.y / 32.0
+	if shade < 1.0:
+		shade = maxf(shade, 0.0)
+		environment.fog_light_color *= shade * shade
+	if player.game_mode != Player.GameMode.SURVIVAL:
+		return
+	var sky := float(world.get_light(Vector3i(eye.floor())))
+	var near := sky / 16.0 + (eye.y + 4.0) / 32.0
+	if near >= 1.0:
+		return
+	near = maxf(near, 0.0)
+	near *= near
+	var end := maxf(100.0 * near, 5.0)
+	if not environment.fog_enabled or end < environment.fog_depth_end:
+		environment.fog_enabled = true
+		environment.fog_depth_end = end
+		environment.fog_depth_begin = end * 0.25
 
 
 func _update_clouds(to_sun: Vector3) -> void:

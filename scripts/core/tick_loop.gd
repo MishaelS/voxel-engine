@@ -52,6 +52,14 @@ func _ready() -> void:
 		_listeners.append([])
 
 
+## Quitting (autoloads leave the tree last): the saved world is let go while
+## the engine still runs. Its generator holds native objects
+## (NativeBetaGenerator and its noises); freed with GDScript's static
+## variables at the very end, they could outlive the native library.
+func _exit_tree() -> void:
+	WorldSave.current = null
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("tick_freeze"):
 		frozen = not frozen

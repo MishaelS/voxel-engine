@@ -859,13 +859,47 @@ func get_block_light(pos: Vector3i) -> int:
 ## particles): sky light minus the night (Classic) or dimmed by the daylight
 ## (Dynamic Lighting), or block light if brighter.
 func brightness_at(point: Vector3) -> float:
-	var cell := Vector3i(point.floor())
 	var atmosphere := Atmosphere.find(get_tree())
 	var darkness := atmosphere.sky_darkness if atmosphere else 0.0
-	var sky := ChunkMesher.LIGHT_BRIGHTNESS[clampi(roundi(get_light(cell) - darkness), 0, SkyLight.MAX)]
-	if atmosphere and atmosphere.sky_darkness <= 0.0:
-		sky *= 0.25 + 0.75 * atmosphere.daylight
+	var day := 0.25 + 0.75 * atmosphere.daylight if atmosphere and atmosphere.sky_darkness <= 0.0 else 1.0
+	return _cell_brightness(Vector3i(point.floor()), darkness, day)
+
+
+## Brightness of a cell (brightness_at()); inside a solid block, where no
+## light is stored, the brightest cell next to it (the bits of a block
+## just broken, an item pushed into a wall), like the classic game.
+func _cell_brightness(cell: Vector3i, darkness: float, day: float) -> float:
+	if Blocks.is_opaque_table[get_block(cell)] == 1:
+		var best := 0.0
+		for offset in NEIGHBORS:
+			var next := cell + offset
+			if Blocks.is_opaque_table[get_block(next)] == 0:
+				best = maxf(best, _light_brightness(next, darkness, day))
+		return best
+	return _light_brightness(cell, darkness, day)
+
+
+func _light_brightness(cell: Vector3i, darkness: float, day: float) -> float:
+	var sky := ChunkMesher.LIGHT_BRIGHTNESS[clampi(roundi(get_light(cell) - darkness), 0, SkyLight.MAX)] * day
 	return maxf(sky, ChunkMesher.LIGHT_BRIGHTNESS[get_block_light(cell)])
+
+
+## Blocks and brightness of cells (x, y, z triples) for the particles
+## (NativeParticles.cells_needed()): [ids, brightness].
+func cells_for_particles(cells: PackedInt32Array) -> Array:
+	var count := cells.size() / 3
+	var ids := PackedInt32Array()
+	var brightness := PackedFloat32Array()
+	ids.resize(count)
+	brightness.resize(count)
+	var atmosphere := Atmosphere.find(get_tree())
+	var darkness := atmosphere.sky_darkness if atmosphere else 0.0
+	var day := 0.25 + 0.75 * atmosphere.daylight if atmosphere and atmosphere.sky_darkness <= 0.0 else 1.0
+	for n in count:
+		var cell := Vector3i(cells[n * 3], cells[n * 3 + 1], cells[n * 3 + 2])
+		ids[n] = get_block(cell)
+		brightness[n] = _cell_brightness(cell, darkness, day)
+	return [ids, brightness]
 
 
 ## The brighter of sky light minus `sky_darkness` levels and block light.
@@ -1481,6 +1515,22 @@ func _run_display_ticks() -> void:
 					if handlers[id] == 1:
 						var pos := origin + Vector3i(index & 15, index >> 8, (index >> 4) & 15)
 						Blocks.get_type(id).display_tick.call(self, pos, _display_rng)
+				if coord.y == 0:
+					_void_dust(data, origin)
+
+
+## The void's dust like the game's: in air near the bedrock (below y 8),
+## dark specks drift, more the deeper (a cell at height y: 7 - y in 8).
+const VOID_DUST_TRIES := 40
+
+
+func _void_dust(data: ChunkData, origin: Vector3i) -> void:
+	for i in VOID_DUST_TRIES:
+		var index := _display_rng.randi() & 2047 # the lowest 8 layers
+		var y := index >> 8
+		if data.blocks[index] == Blocks.AIR and _display_rng.randi_range(0, 7) > y:
+			var pos := origin + Vector3i(index & 15, y, (index >> 4) & 15)
+			particles.void_speck(Vector3(pos) + Vector3(_display_rng.randf(), _display_rng.randf(), _display_rng.randf()))
 
 
 func _run_scheduled_ticks() -> void:

@@ -91,6 +91,7 @@ static func held_item(mob: String, item_id: int) -> MeshInstance3D:
 	var scale := 10.0
 	if not ItemMeshes.is_flat(item_id):
 		mesh.mesh = FallingBlocks.block_mesh(item_id)
+		mesh.set_meta("block", true) # lit through entity_light (FallingBlocks.light)
 		scale = 6.0
 		basis = Basis(Vector3.UP, PI / 4.0) * Basis(Vector3.RIGHT, deg_to_rad(20.0))
 		grip = Vector3(0.5, 0.5, 0.5)

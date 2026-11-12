@@ -677,7 +677,7 @@ func _process(delta: float) -> void:
 		flash = 1.0 if int(_fuse / 2.0) % 2 == 0 else 0.0
 		_model.root.scale = Vector3.ONE * float(MobModels.model(mob_type).get("scale", 1.0)) / 16.0 * (1.0 + _fuse / float(CREEPER_FUSE) * 0.2)
 	if _held:
-		_held.set_instance_shader_parameter("brightness", brightness)
+		FallingBlocks.light(_held, brightness)
 	for mesh: MeshInstance3D in _model.meshes:
 		mesh.set_instance_shader_parameter("brightness", brightness)
 		mesh.set_instance_shader_parameter("hurt", 1.0 if hurt_ticks > 0 or is_dead() else 0.0)

@@ -7,7 +7,11 @@ extends Node3D
 ##   and the new one rises;
 ## - lit by the light at the player (sky light and time of day);
 ## - with nothing in hand, the player's right arm (their skin) shows instead,
-##   placed and swung exactly like the classic game's empty hand.
+##   placed and swung exactly like the classic game's empty hand;
+## - a map is held in both hands like the classic game's: low in the view
+##   while looking ahead, rising toward the eyes when looking down, with the
+##   player's marker (textures/misc/map_icons.png) on it and their
+##   coordinates written small across its top (F3 is only in debug builds).
 ## It is a child of the camera and is drawn over the world.
 
 ## Ticks of one swing (a bit slower than the classic 6, smoother).
@@ -107,9 +111,13 @@ func _process(delta: float) -> void:
 		if _swing >= 1.0:
 			_swing = -1.0
 	visible = not hidden and not covered
-	_mesh_instance.visible = _shown != Blocks.AIR
+	var map := _shown != Blocks.AIR and Items.name_of(_shown) == "map"
+	_mesh_instance.visible = _shown != Blocks.AIR and not map
 	_arm_instance().visible = _shown == Blocks.AIR
-	if visible and _shown == Blocks.AIR:
+	_map_node().visible = map
+	if visible and map:
+		_map_pose()
+	elif visible and _shown == Blocks.AIR:
 		_arm_pose()
 	elif visible:
 		_pose()
@@ -229,6 +237,166 @@ func _arm_pose() -> void:
 		* Transform3D(Basis(Vector3.BACK, deg_to_rad(-sin(swing * swing * PI) * 20.0)), Vector3.ZERO)
 	_arm.transform = placed * ARM_IN_VIEW
 	_arm.set_instance_shader_parameter("brightness", _brightness())
+
+
+# --- The map in both hands ------------------------------------------------------
+
+## The arm model's own placement (the classic drawFirstPersonHand: the right
+## arm at its pivot, the model upside down), as at the end of ARM_IN_VIEW.
+static var ARM_MODEL := Transform3D(Basis.IDENTITY, Vector3(-5, 2, 0) / 16.0) \
+	* Transform3D(Basis(Vector3.RIGHT, PI).scaled(Vector3.ONE / 16.0), Vector3.ZERO)
+const MAP_ICONS := "res://assets/textures/misc/map_icons.png"
+const MAP_BACKGROUND := "res://assets/textures/misc/map_background.png"
+
+var _map: Node3D
+var _map_arms: Array[MeshInstance3D] = []
+var _map_picture: MeshInstance3D
+var _map_marker: MeshInstance3D
+var _map_coords: Label3D
+## Ink of the coordinates on the parchment.
+const MAP_INK := Color(0.24, 0.16, 0.08)
+var _map_materials: Array[ShaderMaterial] = []
+var _marker_mesh := ImmediateMesh.new()
+
+
+func _map_node() -> Node3D:
+	if _map:
+		return _map
+	_map = Node3D.new()
+	add_child(_map)
+	var arm := _arm_instance()
+	for side in 2:
+		var hand := MeshInstance3D.new()
+		hand.mesh = arm.mesh
+		hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_map.add_child(hand)
+		_map_arms.append(hand)
+	# The parchment (142 pixels, the map's 128 in the middle) and the map,
+	# in the game's map units (1 = a map pixel).
+	var paper := MeshInstance3D.new()
+	paper.mesh = _map_quad(Rect2(-7, -7, 142, 142), 0.0)
+	paper.material_override = _map_material(TexturePacks.load_texture(MAP_BACKGROUND), 101)
+	_map.add_child(paper)
+	_map_picture = MeshInstance3D.new()
+	_map_picture.mesh = _map_quad(Rect2(0, 0, Maps.SIZE, Maps.SIZE), -0.01)
+	_map_picture.material_override = _map_material(null, 102)
+	_map.add_child(_map_picture)
+	_map_marker = MeshInstance3D.new()
+	_map_marker.mesh = _marker_mesh
+	_map_marker.material_override = _map_material(TexturePacks.load_texture(MAP_ICONS), 103)
+	_map.add_child(_map_marker)
+	# The coordinates: small pixel letters on the parchment above the map.
+	_map_coords = Label3D.new()
+	_map_coords.font = UiTheme.font()
+	_map_coords.font_size = 16
+	_map_coords.pixel_size = 0.3
+	_map_coords.outline_size = 0
+	_map_coords.shaded = false
+	_map_coords.double_sided = true
+	_map_coords.no_depth_test = true
+	_map_coords.render_priority = 104
+	_map_coords.alpha_cut = Label3D.ALPHA_CUT_DISABLED # transparent: drawn after the parchment (render_priority)
+	_map_coords.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_map.add_child(_map_coords)
+	for child in _map.get_children():
+		(child as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return _map
+
+
+func _map_material(texture: Texture2D, priority: int) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/held_map.gdshader")
+	material.set_shader_parameter("picture", texture)
+	material.render_priority = priority
+	_map_materials.append(material)
+	return material
+
+
+## A quad in map units (y down like the picture), the picture's top at the top.
+static func _map_quad(rect: Rect2, z: float) -> ArrayMesh:
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var corners := [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]
+	var uvs := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
+	for k: int in [0, 1, 2, 0, 2, 3]:
+		tool.set_uv(uvs[k])
+		tool.add_vertex(Vector3(corners[k].x, corners[k].y, z))
+	return tool.commit()
+
+
+## The classic first-person map (ItemRenderer, Beta 1.8): held in both
+## hands; the lower the eyes look, the higher the map comes up (looking
+## straight ahead it sits low, half out of the view); swings like an item.
+func _map_pose() -> void:
+	transform = Transform3D.IDENTITY
+	var swing := maxf(_swing, 0.0)
+	var arc := sin(swing * PI)
+	var arc_sqrt := sin(sqrt(swing) * PI)
+	# The game's pitch: degrees, looking down positive.
+	var pitch := rad_to_deg(-asin(clampf(player.look_direction().y, -1.0, 1.0)))
+	var lift := clampf(1.0 - pitch / 45.0 + 0.1, 0.0, 1.0)
+	lift = -cos(lift * PI) * 0.5 + 0.5
+	const HOLD := 0.8
+	var root := Transform3D(Basis.IDENTITY, Vector3(-arc_sqrt * 0.4, sin(sqrt(swing) * TAU) * 0.2, -arc * 0.2)) \
+		* Transform3D(Basis.IDENTITY, Vector3(0, -(1.0 - _equip) * 1.2 - lift * 0.5 + 0.04, -0.9 * HOLD)) \
+		* Transform3D(Basis(Vector3.UP, deg_to_rad(90.0)), Vector3.ZERO) \
+		* Transform3D(Basis(Vector3.BACK, deg_to_rad(lift * -85.0)), Vector3.ZERO)
+	var brightness := _brightness()
+	for side in 2:
+		var s := float(side * 2 - 1)
+		_map_arms[side].transform = root \
+			* Transform3D(Basis.IDENTITY, Vector3(0, -0.6, 1.1 * s)) \
+			* Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-45.0 * s)), Vector3.ZERO) \
+			* Transform3D(Basis(Vector3.BACK, deg_to_rad(-90.0 + 59.0)), Vector3.ZERO) \
+			* Transform3D(Basis(Vector3.UP, deg_to_rad(-65.0 * s)), Vector3.ZERO) \
+			* ARM_MODEL
+		_map_arms[side].set_instance_shader_parameter("brightness", brightness)
+	var swing_turn := sin(swing * swing * PI)
+	_map.transform = Transform3D.IDENTITY
+	var paper := root \
+		* Transform3D(Basis(Vector3.UP, deg_to_rad(-swing_turn * 20.0)), Vector3.ZERO) \
+		* Transform3D(Basis(Vector3.BACK, deg_to_rad(-arc_sqrt * 20.0)), Vector3.ZERO) \
+		* Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-arc_sqrt * 80.0)), Vector3.ZERO) \
+		* Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * 0.38), Vector3.ZERO) \
+		* Transform3D(Basis(Vector3.UP, deg_to_rad(90.0)), Vector3.ZERO) \
+		* Transform3D(Basis(Vector3.BACK, deg_to_rad(180.0)), Vector3.ZERO) \
+		* Transform3D(Basis.IDENTITY, Vector3(-1, -1, 0)) \
+		* Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * 0.015625), Vector3.ZERO)
+	for child in [_map.get_child(2), _map_picture, _map_marker]:
+		(child as Node3D).transform = paper
+	var view := player.map_view
+	if view and view.texture:
+		_map_materials[1].set_shader_parameter("picture", view.texture)
+	for material in _map_materials:
+		material.set_shader_parameter("brightness", brightness)
+	_draw_marker(view.marker() if view else [Vector2(64, 64), 0, true])
+	# Map space has y down and faces away from its own +z: the label (y up,
+	# read from +z) is turned half around X, centered over the map's top.
+	var block := Vector3i(player.global_position.floor())
+	_map_coords.text = "X: %d  Y: %d  Z: %d" % [block.x, block.y, block.z]
+	_map_coords.modulate = Color(MAP_INK.r * brightness, MAP_INK.g * brightness, MAP_INK.b * brightness)
+	_map_coords.transform = paper * Transform3D(Basis(Vector3.RIGHT, PI), Vector3(Maps.SIZE / 2.0, 6.0, -0.03))
+
+
+## The player's icon: the white marker turned the way they look (16 steps,
+## like the game), or a white dot at the edge when they are off the map.
+func _draw_marker(marker: Array) -> void:
+	_marker_mesh.clear_surfaces()
+	var at: Vector2 = marker[0]
+	var inside: bool = marker[2]
+	var icon := 0 if inside else 6
+	var angle := float(marker[1]) / 16.0 * TAU if inside else 0.0
+	var uv0 := Vector2(icon % 4, icon / 4) / 4.0
+	# Map space has y down: turning by `angle` clockwise on the map.
+	var right := Vector2(cos(angle), sin(angle)) * 4.0
+	var down := Vector2(-sin(angle), cos(angle)) * 4.0
+	var corners := [at - right - down, at + right - down, at + right + down, at - right + down]
+	var uvs := [uv0, uv0 + Vector2(0.25, 0), uv0 + Vector2(0.25, 0.25), uv0 + Vector2(0, 0.25)]
+	_marker_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k: int in [0, 1, 2, 0, 2, 3]:
+		_marker_mesh.surface_set_uv(uvs[k])
+		_marker_mesh.surface_add_vertex(Vector3(corners[k].x, corners[k].y, -0.02))
+	_marker_mesh.surface_end()
 
 
 func _brightness() -> float:

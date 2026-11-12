@@ -8,9 +8,15 @@ extends RefCounted
 ## Vector3 would round the clipped distances and let boxes sink into blocks.
 
 
-## The part of the move (dx, dy, dz) a box at feet (x, y, z) can make.
+## Solid entities (boats, like Beta's: their box can be stood on and
+## bumped into), registered while they are in the world.
+static var solid_entities: Array[Entity] = []
+
+
+## The part of the move (dx, dy, dz) a box at feet (x, y, z) can make;
+## `ignore`: the entity moving (not stopped by its own box).
 static func sweep(world: VoxelWorld, x: float, y: float, z: float, half_width: float, height: float,
-		dx: float, dy: float, dz: float) -> PackedFloat64Array:
+		dx: float, dy: float, dz: float, ignore: Object = null) -> PackedFloat64Array:
 	var min_x := x - half_width
 	var max_x := x + half_width
 	var min_y := y
@@ -19,7 +25,7 @@ static func sweep(world: VoxelWorld, x: float, y: float, z: float, half_width: f
 	var max_z := z + half_width
 	var boxes := solid_boxes(world,
 		minf(min_x, min_x + dx), minf(min_y, min_y + dy), minf(min_z, min_z + dz),
-		maxf(max_x, max_x + dx), maxf(max_y, max_y + dy), maxf(max_z, max_z + dz))
+		maxf(max_x, max_x + dx), maxf(max_y, max_y + dy), maxf(max_z, max_z + dz), ignore)
 	for b in boxes:
 		var b_end := b.end
 		if max_x > b.position.x and min_x < b_end.x and max_z > b.position.z and min_z < b_end.z:
@@ -51,10 +57,19 @@ static func sweep(world: VoxelWorld, x: float, y: float, z: float, half_width: f
 ## The collision boxes (world space) of the blocks touching the given box:
 ## full blocks, beds 9/16 high, stairs, fences 1.5 high, door panels...
 static func solid_boxes(world: VoxelWorld, min_x: float, min_y: float, min_z: float,
-		max_x: float, max_y: float, max_z: float) -> Array[AABB]:
+		max_x: float, max_y: float, max_z: float, ignore: Object = null) -> Array[AABB]:
 	var result: Array[AABB] = []
 	if world == null:
 		return result
+	for entity in solid_entities:
+		if entity == ignore or entity.removed or entity.world != world:
+			continue
+		var feet := entity.feet()
+		var box := AABB(Vector3(feet.x - entity.half_width, feet.y, feet.z - entity.half_width),
+			Vector3(entity.half_width * 2.0, entity.height, entity.half_width * 2.0))
+		if box.end.y > min_y and box.position.y < max_y and box.end.x > min_x and box.position.x < max_x \
+				and box.end.z > min_z and box.position.z < max_z:
+			result.append(box)
 	var table := Blocks.collision_table
 	# Fences reach 1.5 blocks up: look one block lower too.
 	for y in range(floori(min_y) - 1, floori(max_y) + 1):

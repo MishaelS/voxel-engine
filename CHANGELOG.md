@@ -13,6 +13,26 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- The void near the bedrock like the game since Beta 1.8: below y 32 the fog turns black, and in survival it closes in where no sky light reaches (down to 5 blocks at the very bottom); dark specks of dust drift in the air below y 8, more the deeper (`VoxelWorld._void_dust`, `BlockParticles.void_speck`).
+- Lava bubbles: now and then tiny embers jump out of a lava surface (besides the pops).
+- Rain and snow hiss into steam on lava, fire and torches (with a fizz now and then); snow falling on water melts into white specks; rain splashes use the game's splash picture, smaller on water with a few droplets.
+- Items burn: in lava at once with smoke, a flame, embers and a fizz; in fire after 5 ticks with flames on them.
+- Boats are solid like Beta's: the player and creatures bump into them and can stand on them, boats bump into each other (`EntityPhysics.solid_entities`, the moving entity ignores its own box).
+- The map is held in both hands like the classic game's (`HeldItem._map_pose`, Beta 1.8's first-person map): looking ahead it sits low and tilted, half out of the view; looking down it comes up to the eyes; it swings like an item and is lit by the light at the player. The player's marker is the game's pixel icon (`textures/misc/map_icons.png`), turned the way they look in 16 steps, a white dot at the edge when they are off the map. The player's coordinates are written small across the top of the map.
+
+### Changed
+- The F3 screen is complete only in debug builds (the editor, debug exports); a release build shows the game and its version, the frame rate, the memory and video memory used and how much the world takes on disk (`DebugScreen.full`); the coordinates are on the map.
+- Boats are slower with inertia: rowing pushes a little each tick (half as much backwards) and water drag takes 3% a tick, so a boat picks up speed smoothly to about 4.5 blocks a second (Beta's went 8) and glides on, slowing down little by little, when the rowing stops; it turns smoothly toward where it goes and only smashes on the shore at full speed (0.2 blocks a tick).
+- Particles are simulated and drawn in native code (`NativeParticles`, `native/src/native_particles.cpp`): movement, stopping on blocks, animation frames and the MultiMesh buffer in one call; the world is asked once a tick for the few cells the particles touch. A tick of about 1200 bits takes 0.3 ms instead of 19, drawing 0.04 ms instead of 0.4. Without the library the GDScript simulation is used.
+- Lit particles (block bits, crumbs, smoke, steam, splashes) take the light where they are every tick, like the classic game, instead of where they started.
+
+### Fixed
+- The map in hand was drawn over the pause menu (it was a 2D overlay; now it is in the 3D view).
+- The bits of a broken block were almost black: they took the light inside the block (none). Light inside a solid block is now the brightest light next to it (`VoxelWorld.brightness_at`).
+- Blocks drawn as things glowed at full light in the dark (a dropped block item in a cave, falling sand, primed TNT, a minecart's chest or furnace, a block held by the player or a creature, a block pushed by a piston, the pumpkin on the player's head): their mesh had full light baked in. The block shaders take the light where the thing is through a per-instance `entity_light` (`FallingBlocks.light`).
+- A possible crash on quitting: the saved world (with the generator's native objects) is let go while the engine still runs (`TickLoop._exit_tree`).
+
 ## [0.0.3] - 2026-11-12
 
 ### Added

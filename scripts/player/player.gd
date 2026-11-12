@@ -453,7 +453,7 @@ func _update_camera(alpha: float, delta: float) -> void:
 				distance = maxf(float(hit.distance) - 0.3, 0.3)
 		transform_3d.origin += back.normalized() * distance
 	body.visible = third_person # asleep too: lying in the bed
-	held_item.covered = body.visible or (map_view != null and map_view.visible)
+	held_item.covered = body.visible
 	camera.transform = transform_3d
 	var base_fov: float = Settings.get_value("fov")
 	camera.fov = clampf(base_fov * lerpf(_prev_fov_factor, _fov_factor, alpha), 1.0, 170.0)

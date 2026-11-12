@@ -170,18 +170,42 @@ static func world_tick(world: VoxelWorld) -> void:
 				LightningBolt.strike(world, Vector3i(x, y, z))
 
 
+## Where rain or snow lands near the player: rain splashes on the ground and
+## on water, snow melts into water, and both hiss into steam on lava, fire
+## and torches (with a fizz now and then).
 static func _rain_effects(world: VoxelWorld, center: Vector3i, strength: float) -> void:
 	var count := int(30.0 * strength * strength)
 	var sound_spot := Vector3.INF
 	var splashes := 0
+	var fizzes := 0
 	for i in count:
 		var x := center.x + randi_range(-10, 10)
 		var z := center.z + randi_range(-10, 10)
 		var y := Weather.precipitation_height(world, x, z)
-		if absi(y - center.y) > 10 or not rains_at(world, Vector3i(x, y, z)):
+		if absi(y - center.y) > 10:
+			continue
+		var raining := rains_at(world, Vector3i(x, y, z))
+		if not raining and not snows_on(world, Vector3i(x, y, z)):
 			continue
 		var below := world.get_block(Vector3i(x, y - 1, z))
+		var family := Blocks.family_of(below)
+		if family == "lava" or family == "fire" or (family.ends_with("torch") and not family.begins_with("unlit_")):
+			# Hot: the drops and flakes hiss into steam.
+			var top := Vector3(x + 0.5, y - 1, z + 0.5) + (TorchBehavior.FLOOR_TIP - Vector3(0.5, 0, 0.5) \
+				if family.ends_with("torch") else Vector3(0, Blocks.height_table[below] + 0.05, 0))
+			if splashes < 30 and randi_range(0, 2) == 0:
+				world.particles.steam(top, 1 if family.ends_with("torch") else 2)
+				splashes += 1
+			if fizzes < 1 and randi_range(0, 9) == 0:
+				Sounds.play("random/fizz", top, 0.15, randf_range(2.0, 2.6))
+				fizzes += 1
+			continue
 		var point := Vector3(x + randf(), y + Blocks.height_table[below] - 1.0 + 0.05, z + randf())
+		if not raining:
+			if Blocks.liquid_table[below] == 1 and splashes < 30:
+				world.particles.snow_melt(point) # snow falls on water
+				splashes += 1
+			continue
 		if splashes < 30:
 			world.particles.rain_splash(point, Blocks.liquid_table[below] == 1)
 			splashes += 1
@@ -192,6 +216,13 @@ static func _rain_effects(world: VoxelWorld, center: Vector3i, strength: float) 
 		var above := sound_spot.y > player.eye_position().y + 1.0 and Vector2(sound_spot.x - player.global_position.x,
 			sound_spot.z - player.global_position.z).length() < 2.0
 		Sounds.play("ambient/rain", sound_spot, 0.1 if above else 0.2, 0.5 if above else 1.0)
+
+
+## Snow falls on this cell right now (cold biomes, open to the sky).
+static func snows_on(world: VoxelWorld, pos: Vector3i) -> bool:
+	if not world.weather.raining or world.weather.rain_strength < 0.2:
+		return false
+	return Weather.snows_at(world, pos.x, pos.z) and Weather.is_open_to_sky(world, pos)
 
 
 ## Rain (not snow, not in deserts) falls on this cell right now.

@@ -136,11 +136,25 @@ func _tick(tick_index: int) -> void:
 			_items.remove_at(i)
 			continue
 		elif world and _in_lava(item.pos):
-			# Items burn up in lava.
-			world.particles.smoke(item.pos, 4)
+			# Items burn up in lava: smoke, a flame, embers and a fizz.
+			world.particles.burn(item.pos, true)
+			Sounds.play("random/fizz", item.pos, 0.4, randf_range(2.0, 2.8))
 			(item.node as Node).queue_free()
 			_items.remove_at(i)
 			continue
+		elif world and _in_fire(item.pos):
+			# In fire an item burns for a few ticks (flames on it), then is gone
+			# like the classic game's (fire hurts its 5 health 1 a tick).
+			item.burning = int(item.get("burning", 0)) + 1
+			if item.burning % 2 == 1:
+				world.particles.torch(item.pos + Vector3(0, 0.1, 0))
+			if item.burning >= BURN_TICKS:
+				world.particles.burn(item.pos, false)
+				Sounds.play("random/fizz", item.pos, 0.3, randf_range(2.0, 2.8))
+				(item.node as Node).queue_free()
+				_items.remove_at(i)
+				continue
+			_physics(item)
 		else:
 			_physics(item)
 			item.delay = maxi(item.delay - 1, 0)
@@ -215,6 +229,14 @@ func _in_water(center: Vector3) -> bool:
 	if Blocks.liquid_table[id] == 0 or Blocks.family_of(id) != "water":
 		return false
 	return center.y < LiquidBehavior.surface_height(world, cell)
+
+
+## Ticks an item lasts in fire.
+const BURN_TICKS := 5
+
+
+func _in_fire(center: Vector3) -> bool:
+	return Blocks.family_of(world.get_block(Vector3i(center.floor()))) == "fire"
 
 
 func _in_lava(center: Vector3) -> bool:
@@ -345,10 +367,12 @@ func _process(_delta: float) -> void:
 		var bob := sin(age / 10.0 + item.spin) * 0.1 + 0.1
 		node.position = position + Vector3(0, bob, 0)
 		node.rotation.y = age / 20.0 + item.spin
-		if ItemMeshes.is_flat(item.id):
-			var brightness := _brightness(position, atmosphere)
-			for child in node.get_children():
-				(child as GeometryInstance3D).set_instance_shader_parameter("brightness", brightness)
+		# The light where it lies: flat items (brightness) and small blocks
+		# (entity_light) alike; a block item was drawn at full light before.
+		var brightness := _brightness(position, atmosphere)
+		var parameter := "brightness" if ItemMeshes.is_flat(item.id) else "entity_light"
+		for child in node.get_children():
+			(child as GeometryInstance3D).set_instance_shader_parameter(parameter, brightness)
 
 
 func _brightness(point: Vector3, _atmosphere: Atmosphere) -> float:

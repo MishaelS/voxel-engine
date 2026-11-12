@@ -175,8 +175,10 @@ func _process(delta: float) -> void:
 			_model.root.rotation.x = 0.18 * MobAnimation.flinch(player.hurt_ticks, alpha, Player.HURT_TICKS)
 	var brightness := player.world.brightness_at(here + Vector3(0, 1, 0)) if player.world else 1.0
 	var hurt := 1.0 if player.hurt_ticks > 0 or player.dead else 0.0
-	if _held and ItemMeshes.is_flat(_held_id):
-		_held.set_instance_shader_parameter("brightness", brightness)
+	if _held:
+		FallingBlocks.light(_held, brightness)
+	if _pumpkin:
+		_pumpkin.set_instance_shader_parameter("entity_light", brightness)
 	for mesh: MeshInstance3D in _model.meshes + _armor_meshes:
 		mesh.set_instance_shader_parameter("brightness", brightness)
 		mesh.set_instance_shader_parameter("hurt", hurt)

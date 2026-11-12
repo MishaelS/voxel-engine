@@ -3,13 +3,21 @@ extends Entity
 ## Boats like Beta 1.7.3 (EntityBoat):
 ## - floats: pushed up by the share of it under water (sampled in 5 slices),
 ##   settling at the surface; on land it slides to a stop;
-## - right-click gets in; walking forward rows it the way the player looks
-##   (at most 0.4 blocks a tick);
-## - running into the shore fast (over 0.15 a tick) smashes it into 3
-##   planks and 2 sticks; hits break it whole (it drops itself).
+## - solid like the game's: the player and creatures bump into it and can
+##   stand on it, boats bump into each other (EntityPhysics.solid_entities);
+## - right-click gets in; walking forward rows it the way the player looks:
+##   slower than Beta's (about 4.5 blocks a second), picking up speed
+##   smoothly and gliding on when the rowing stops, slowing down little by
+##   little (water drag);
+## - running into the shore at full speed smashes it into 3 planks and 2
+##   sticks; hits break it whole (it drops itself).
 
-const MAX_SPEED := 0.4
-const CRASH_SPEED := 0.15
+## Speed added per tick while rowing and the share kept per tick on water:
+## together a smooth rise to about 0.22 blocks a tick and a long glide.
+const ROW_PUSH := 0.007
+const WATER_DRAG := 0.97
+const MAX_SPEED := 0.25
+const CRASH_SPEED := 0.2
 
 var _model := {}
 var _wear := 0.0
@@ -29,6 +37,11 @@ func _ready() -> void:
 	health = max_health
 	_model = MobModels.build("boat")
 	add_child(_model.root)
+	EntityPhysics.solid_entities.append(self)
+
+
+func _exit_tree() -> void:
+	EntityPhysics.solid_entities.erase(self)
 
 
 func steer(forward: float, look: Vector3) -> void:
@@ -52,8 +65,10 @@ func tick() -> void:
 			velocity.y /= 2.0
 		velocity.y += 0.007
 	var rider := _ridden()
-	if rider and _rider_forward != 0.0:
-		var row := Vector2(_rider_look.x, _rider_look.z).normalized() * 0.02 * _rider_forward
+	if rider and _rider_forward != 0.0 and under > 0.0:
+		# Rowing: a little push a tick (backwards at half strength).
+		var row := Vector2(_rider_look.x, _rider_look.z).normalized() * ROW_PUSH \
+			* (_rider_forward if _rider_forward > 0.0 else _rider_forward * 0.5)
 		velocity.x += row.x
 		velocity.z += row.y
 	var flat := Vector2(velocity.x, velocity.z)
@@ -69,11 +84,19 @@ func tick() -> void:
 	if horizontal_collision and speed_before > CRASH_SPEED:
 		_smash()
 		return
-	velocity.x *= 0.99
-	velocity.z *= 0.99
+	# Water drag: the speed falls off little by little (inertia); on land
+	# it stops sooner.
+	var drag := WATER_DRAG if under > 0.0 else 0.9
+	velocity.x *= drag
+	velocity.z *= drag
 	velocity.y *= 0.95
-	if flat.length_squared() > 1e-5:
-		_yaw = atan2(flat.x, flat.y)
+	flat = Vector2(velocity.x, velocity.z)
+	if flat.length_squared() > 1e-4:
+		# Turns toward where it goes (rowing backwards it keeps its heading).
+		var heading := atan2(flat.x, flat.y)
+		if _rider_forward < 0.0 and rider:
+			heading = wrapf(heading + PI, -PI, PI)
+		_yaw = lerp_angle(_yaw, heading, 0.25)
 	if _y < Player.VOID_Y:
 		removed = true
 
@@ -137,7 +160,7 @@ func _process(delta: float) -> void:
 	super(delta)
 	if _model.is_empty():
 		return
-	rotation.y = lerp_angle(rotation.y, _yaw, minf(delta * 6.0, 1.0))
+	rotation.y = lerp_angle(rotation.y, _yaw, minf(delta * 8.0, 1.0))
 	var light := world.brightness_at(center()) if world else 1.0
 	for mesh: MeshInstance3D in _model.meshes:
 		mesh.set_instance_shader_parameter("brightness", light)

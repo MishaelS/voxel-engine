@@ -113,9 +113,8 @@ static func lava_random_tick(world: VoxelWorld, pos: Vector3i) -> void:
 			return
 
 
-## Lava pops: now and then a spark jumps out of a lava surface.
 ## Lava surfaces pop (a spark and a blip, 1 in 100) and bubble (1 in 200),
-## like the classic game.
+## like the classic game, and now and then (1 in 12) throw tiny embers.
 static func lava_display_tick(world: VoxelWorld, pos: Vector3i, rng: RandomNumberGenerator) -> void:
 	if world.get_block(pos + Vector3i.UP) != Blocks.AIR:
 		return
@@ -125,6 +124,9 @@ static func lava_display_tick(world: VoxelWorld, pos: Vector3i, rng: RandomNumbe
 		Sounds.play("liquid/lavapop", surface, 0.2 + rng.randf() * 0.2, 0.9 + rng.randf() * 0.15)
 	if rng.randi_range(0, 199) == 0:
 		Sounds.play("liquid/lava", surface, 0.2 + rng.randf() * 0.2, 0.9 + rng.randf() * 0.15)
+	# Bubbling: now and then a tiny ember or two jumps out of the surface.
+	if rng.randi_range(0, 11) == 0:
+		world.particles.embers(surface, 1 + rng.randi_range(0, 1))
 
 
 ## Flowing water babbles now and then (1 in 64), like the classic game.

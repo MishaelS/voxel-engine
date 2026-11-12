@@ -13,6 +13,7 @@ const POWER := 4.0
 var fuse := FUSE
 var _mesh: Node3D
 var _flash: MeshInstance3D
+var _block: MeshInstance3D
 
 
 ## Lights the TNT block at `pos` (it becomes a primed TNT entity).
@@ -43,6 +44,7 @@ func _ready() -> void:
 	_mesh = Node3D.new()
 	add_child(_mesh)
 	var block := MeshInstance3D.new()
+	_block = block
 	block.mesh = FallingBlocks.block_mesh(Blocks.id_of("tnt")) # drawn like the block in the world
 	block.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_mesh.add_child(block)
@@ -90,6 +92,8 @@ func _process(delta: float) -> void:
 	_mesh.scale = Vector3.ONE * scale_factor
 	_mesh.position = Vector3(-0.5, 0, -0.5) * scale_factor
 	_flash.visible = (fuse / 5) % 2 == 0
+	if world:
+		_block.set_instance_shader_parameter("entity_light", world.brightness_at(center()))
 
 
 func save_state() -> Dictionary:

@@ -4,6 +4,10 @@ extends Control
 ## the left column, system info and the targeted block in the right one,
 ## each line on a translucent gray background. F3 shows/hides it (saved as
 ## the "debug_screen" setting).
+## The full screen is only in debug builds (the editor, debug exports); a
+## release build shows the game and its version, the frame rate, the memory
+## used and how much the world takes on disk (the player's coordinates are
+## on the map).
 
 const LINE_BACKGROUND := Color(0.31, 0.31, 0.31, 0.56)
 const TEXT_COLOR := Color("e0e0e0")
@@ -26,6 +30,12 @@ var _next_refresh_ms := 0
 ## The text is rebuilt this often (re-laying out ~40 labels every frame
 ## costs about 1 ms of CPU).
 const REFRESH_MS := 50
+## Everything (debug builds) or the short release screen.
+static var full := OS.is_debug_build()
+## The world's size on disk is measured this often (it walks the folder).
+const DISK_REFRESH_MS := 5000
+var _disk_bytes := -1
+var _next_disk_ms := 0
 
 
 func _ready() -> void:
@@ -72,6 +82,9 @@ func _left_lines() -> PackedStringArray:
 	var vsync := DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED
 	lines.append("%d fps (%.2f ms) T: %s%s" % [fps, 1000.0 / maxf(fps, 1.0),
 		"unlimited" if Engine.max_fps == 0 else str(Engine.max_fps), " vsync" if vsync else ""])
+	if not full:
+		lines.append("Release build" + (", world: %s" % WorldSave.current.name if WorldSave.current else ""))
+		return lines
 	var viewport_rid := get_viewport().get_viewport_rid()
 	lines.append("Render: CPU %.2f ms, %d draw calls, %d primitives" % [
 		RenderingServer.viewport_get_measured_render_time_cpu(viewport_rid) + RenderingServer.get_frame_setup_time_cpu(),
@@ -145,6 +158,13 @@ func _left_lines() -> PackedStringArray:
 
 func _right_lines() -> PackedStringArray:
 	var lines := PackedStringArray()
+	if not full:
+		lines.append("Mem: %d MB (peak %d MB)" % [OS.get_static_memory_usage() >> 20, OS.get_static_memory_peak_usage() >> 20])
+		lines.append("Video mem: %d MB" % (int(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)) >> 20))
+		var bytes := _world_disk_bytes()
+		if bytes >= 0:
+			lines.append("World on disk: %.1f MB" % (bytes / 1048576.0))
+		return lines
 	lines.append("Renderer: %s, %s" % [RenderingServer.get_current_rendering_driver_name(),
 		ProjectSettings.get_setting("rendering/renderer/rendering_method", "?")])
 	lines.append("Mem: %d MB (peak %d MB)" % [OS.get_static_memory_usage() >> 20, OS.get_static_memory_peak_usage() >> 20])
@@ -180,6 +200,33 @@ func _right_lines() -> PackedStringArray:
 			ticks.append("updates")
 		lines.append("ticks: %s" % (", ".join(ticks) if not ticks.is_empty() else "none"))
 	return lines
+
+
+## How much the current world's folder takes (bytes), measured now and
+## then; -1 without a saved world.
+func _world_disk_bytes() -> int:
+	var save := WorldSave.current
+	if save == null:
+		return -1
+	var now := Time.get_ticks_msec()
+	if now >= _next_disk_ms:
+		_next_disk_ms = now + DISK_REFRESH_MS
+		_disk_bytes = _folder_bytes(save.path(""))
+	return _disk_bytes
+
+
+static func _folder_bytes(path: String) -> int:
+	var total := 0
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return 0
+	for file in dir.get_files():
+		var f := FileAccess.open(path.path_join(file), FileAccess.READ)
+		if f:
+			total += f.get_length()
+	for sub_dir in dir.get_directories():
+		total += _folder_bytes(path.path_join(sub_dir))
+	return total
 
 
 ## Like the classic game: compass direction, axis and yaw / pitch, where

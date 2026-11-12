@@ -147,13 +147,13 @@ func _physics() -> void:
 ## Moves by `motion` (blocks), sliding along blocks and stepping up to
 ## `step_height` without jumping.
 func move(motion: Vector3) -> void:
-	var result := EntityPhysics.sweep(world, _x, _y, _z, half_width, height, motion.x, motion.y, motion.z)
+	var result := EntityPhysics.sweep(world, _x, _y, _z, half_width, height, motion.x, motion.y, motion.z, self)
 	var blocked := result[0] != motion.x or result[2] != motion.z
 	if blocked and step_height > 0.0 and (on_ground or motion.y < 0.0):
-		var up := EntityPhysics.sweep(world, _x, _y, _z, half_width, height, 0.0, step_height, 0.0)
-		var side := EntityPhysics.sweep(world, _x, _y + up[1], _z, half_width, height, motion.x, 0.0, motion.z)
+		var up := EntityPhysics.sweep(world, _x, _y, _z, half_width, height, 0.0, step_height, 0.0, self)
+		var side := EntityPhysics.sweep(world, _x, _y + up[1], _z, half_width, height, motion.x, 0.0, motion.z, self)
 		var down := EntityPhysics.sweep(world, _x + side[0], _y + up[1], _z + side[2], half_width, height,
-			0.0, -up[1] + minf(motion.y, 0.0), 0.0)
+			0.0, -up[1] + minf(motion.y, 0.0), 0.0, self)
 		if side[0] * side[0] + side[2] * side[2] > result[0] * result[0] + result[2] * result[2]:
 			result = PackedFloat64Array([side[0], up[1] + down[1], side[2]])
 	_x += result[0]
