@@ -13,6 +13,17 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-11-13
+
+### Changed
+- Real sounds instead of the made-up placeholders: footsteps and digging (grass, gravel, sand, stone, cloth; digging wood), rain and thunder, the player's hurt sound, cows, pigs, creepers, skeletons, zombies, slimes, spiders, wolves and chickens, and the bow, arrow hits, a tool breaking, burping, clicks, eating, explosions, splashes, picking up, water and the note block's harp. Kept as they were: snow and wood footsteps, sheep, chests, doors, fire, lava, fuses, pistons and the other notes.
+
+- Music: the game's own tracks as .ogg (calm1–3, musicTrack0–4); the time-of-day table still names the old tracks, so every track plays at any time for now.
+- Footstep sounds on wood and snow, cave sounds and lava sounds replaced with new recordings.
+
+### Fixed
+- The glass sound no longer counts twice (import files left of the old glass sounds were removed); the same for the old music's import files.
+
 ## [0.0.7] - 2026-11-13
 
 ### Fixed
@@ -497,7 +508,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.7...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.8...HEAD
+[0.0.8]: https://github.com/MishaelS/voxel-engine/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/MishaelS/voxel-engine/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/MishaelS/voxel-engine/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/MishaelS/voxel-engine/compare/v0.0.4...v0.0.5
