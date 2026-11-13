@@ -92,6 +92,7 @@ var _limb_swing := 0.0
 var _limb_amount := 0.0
 var _prev_limb := 0.0
 var _egg_timer := 0
+var _was_wet := false
 var _jump_timer := 0
 var _say_timer := 0
 var _model := {}
@@ -214,7 +215,14 @@ func _ai_tick() -> void:
 	_say_timer -= 1
 	if _say_timer <= 0:
 		_say_timer = randi_range(80, 400)
-		_sound("say", 1.0)
+		_sound(_living_sound(), 1.0)
+	if mob_type == "wolf":
+		# Out of the water onto the ground: shakes itself dry (Beta's sound).
+		var wet := is_wet()
+		if _was_wet and not wet and on_ground:
+			_sound("shake", 0.4)
+		if wet or on_ground:
+			_was_wet = wet
 	if is_undead():
 		_burn_in_daylight()
 	if spec.get("water", false):
@@ -244,6 +252,7 @@ func _ai_tick() -> void:
 		if _egg_timer <= 0:
 			_egg_timer = randi_range(6000, 12000)
 			world.items.spawn(Items.id_of("egg"), 1, center(), Vector3(0, 0.1, 0))
+			_sound("plop", 1.0)
 	if mob_type == "sheep" and sheared and randi_range(0, 999) == 0:
 		_eat_grass()
 	if in_water:
@@ -816,6 +825,19 @@ func _on_death() -> void:
 	if mob_type == "sheep" and not sheared:
 		world.items.spawn(Blocks.id_of(wool_color + "_wool"), 1, center(), Vector3(0, 0.2, 0))
 
+
+
+## What it says now and then: a wolf like Beta's EntityWolf (growls when
+## angry; else 1 in 3 whines when tame and hurt below 10 or pants; else
+## barks); the others their "say".
+func _living_sound() -> String:
+	if mob_type != "wolf":
+		return "say"
+	if angry:
+		return "growl"
+	if randi_range(0, 2) == 0:
+		return "whine" if tamed and health < 10 else "panting"
+	return "say"
 
 
 func _sound(kind: String, volume: float) -> void:

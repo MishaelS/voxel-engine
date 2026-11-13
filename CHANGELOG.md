@@ -13,6 +13,13 @@ Sections:
 
 ## [Unreleased]
 
+### Fixed
+- The unnamed files given to spiders, wolves and chickens were not theirs (stone-like knocks, taps on thin wood, dull thuds); the dull thuds are now the sound of digging snow.
+
+### Changed
+- Real spider, wolf and chicken sounds. Wolves speak like Beta's EntityWolf: they growl when angry, else now and then whine (tame and hurt below 10 health) or pant, else bark; they shake themselves dry with a sound when they come out of the water. A chicken laying an egg plops.
+- Real sounds for chests (one opening, three closings), doors and trapdoors, fire, water putting out lava and fire, TNT's and creepers' fuse, pistons, the note block's bass, bass drum, snare and hi-hat, sheep (their bleat when hurt and dying too, like Beta's), lava and its pops, clicks and picking items up. Only the flint and steel's sound is still a placeholder.
+
 ## [0.0.8] - 2026-11-13
 
 ### Changed
