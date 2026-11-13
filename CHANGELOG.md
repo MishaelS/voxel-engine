@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.12] - 2026-11-13
+
 ### Added
 - Inventory controls like Minecraft's: drag a stack over slots to split it evenly (left button) or put one in each (right button; middle button fills them in creative), Shift-drag to quick-move every slot passed over, double-click to collect matching items into the held stack (Shift+double-click moves all of them), middle click in creative to take a full stack.
 
@@ -553,7 +555,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.11...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.12...HEAD
+[0.0.12]: https://github.com/MishaelS/voxel-engine/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/MishaelS/voxel-engine/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/MishaelS/voxel-engine/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/MishaelS/voxel-engine/compare/v0.0.8...v0.0.9
