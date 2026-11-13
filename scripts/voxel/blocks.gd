@@ -1408,6 +1408,38 @@ static var _fast_graphics := false
 
 ## Fast graphics: blocks with a fast tile (leaves) become opaque with that
 ## tile, Fancy: back to cutout. Returns true if anything changed (re-mesh).
+## The tables that change with Fast graphics, as they are with it (the
+## native mesher's far chunks: opaque leaves, ChunkMesher.prepare_native).
+static func fast_tables() -> Dictionary:
+	var opaque := is_opaque_table.duplicate()
+	var layers := layer_table.duplicate()
+	var tiles := face_tiles.duplicate()
+	for block in types:
+		if block.fast_tile < 0:
+			continue
+		opaque[block.id] = 1
+		layers[block.id] = Layer.OPAQUE
+		for face in BlockType.FACE_COUNT:
+			tiles[block.id * BlockType.FACE_COUNT + face] = block.fast_tile
+	return {"is_opaque": opaque, "layer": layers, "face_tiles": tiles}
+
+
+## 1 for blocks that look different with Fast graphics (leaves).
+static func fast_leaves_table() -> PackedByteArray:
+	if _fast_leaves.size() != types.size():
+		_fast_leaves.resize(types.size())
+		for block in types:
+			_fast_leaves[block.id] = 1 if block.fast_tile >= 0 else 0
+	return _fast_leaves
+
+
+static var _fast_leaves := PackedByteArray()
+
+
+static func is_fast_graphics() -> bool:
+	return _fast_graphics
+
+
 static func set_fast_graphics(fast: bool) -> bool:
 	if fast == _fast_graphics:
 		return false

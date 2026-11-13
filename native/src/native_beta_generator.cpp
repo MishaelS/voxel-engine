@@ -9,6 +9,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 
@@ -828,163 +829,307 @@ int NativeBetaGenerator::surface_y(const int32_t *blocks, int x, int z) const {
 	return -1;
 }
 
-void NativeBetaGenerator::set_if_air(int32_t *blocks, int x, int y, int z, int32_t id) const {
+int32_t NativeBetaGenerator::at(const int32_t *blocks, int x, int y, int z) const {
 	if (x < 0 || x > 15 || z < 0 || z > 15 || y < 0 || y >= h)
-		return;
-	const int i = idx(x, y, z);
-	if (blocks[i] == AIR)
-		blocks[i] = id;
+		return AIR;
+	return blocks[idx(x, y, z)];
 }
 
-bool NativeBetaGenerator::trunk_fits(const int32_t *blocks, int x, int y, int z, int height) const {
-	if (y + height + 2 >= h)
-		return false;
-	for (int dy = 0; dy < height; dy++)
-		if (blocks[idx(x, y + dy, z)] != AIR)
-			return false;
+void NativeBetaGenerator::put(int32_t *blocks, int x, int y, int z, int32_t id) const {
+	if (x < 0 || x > 15 || z < 0 || z > 15 || y < 0 || y >= h)
+		return;
+	blocks[idx(x, y, z)] = id;
+}
+
+bool NativeBetaGenerator::is_leaves(int32_t id) const {
+	return id == oak_leaves || id == birch_leaves || id == spruce_leaves;
+}
+
+bool NativeBetaGenerator::tree_free(int32_t id) const {
+	return id == AIR || is_leaves(id);
+}
+
+bool NativeBetaGenerator::is_ground(int32_t id) const {
+	return table(grass_named, id) == 1 || id == dirt || id == tree_ground[5]; // snowy_grass
+}
+
+void NativeBetaGenerator::put_leaf(int32_t *blocks, int x, int y, int z, int32_t leaf) const {
+	const int32_t there = at(blocks, x, y, z);
+	if (there != leaf && (is_leaves(there) || (table(collides, there) == 0 && table(liquid, there) == 0)))
+		put(blocks, x, y, z, leaf);
+}
+
+void NativeBetaGenerator::put_log(int32_t *blocks, int x, int y, int z, int32_t log) const {
+	if (tree_free(at(blocks, x, y, z)))
+		put(blocks, x, y, z, log);
+}
+
+bool NativeBetaGenerator::ring_free(const int32_t *blocks, int x, int y, int z, int radius) const {
+	for (int dx = -radius; dx <= radius; dx++)
+		for (int dz = -radius; dz <= radius; dz++)
+			if (!tree_free(at(blocks, x + dx, y, z + dz)))
+				return false;
 	return true;
 }
 
+// Step 6: trees (BetaGenerator._place_trees).
 void NativeBetaGenerator::place_trees(int32_t *blocks, int cx, int cz, const uint8_t *biomes, Pcg &rng) const {
 	const int biome_here = biomes[8 * 16 + 8];
 	const double n = noise2(TREE, cx * 16 + 8, cz * 16 + 8);
-	int count = int((n * 4.0 + rng.randf() * 4.0 + 4.0) / 3.0);
-	count += biome_trees[biome_here];
+	const int noise_count = int((n * 4.0 + rng.randf() * 4.0 + 4.0) / 3.0);
+	int count = 0;
 	if (rng.randi_range(0, 9) == 0)
 		count++;
-	for (int t = 0; t < std::max(count, 0); t++) {
-		const int x = int(rng.randi_range(2, 13));
-		const int z = int(rng.randi_range(2, 13));
-		const int y = surface_y(blocks, x, z);
-		if (y < 0)
-			continue;
-		const int32_t ground = blocks[idx(x, y, z)];
-		bool ok = false;
-		for (const int32_t g : tree_ground)
-			ok = ok || ground == g;
-		if (!ok)
-			continue;
-		switch (biomes[z * 16 + x]) {
+	const int extra = biome_trees[biome_here];
+	count += extra + (extra > 0 ? noise_count : 0);
+	enum { OAK, BIRCH, SPRUCE, PINE, BIG };
+	static const int MARGINS[5] = { 2, 2, 3, 4, 5 };
+	for (int t = 0; t < count; t++) {
+		int x = int(rng.randi_range(2, 13));
+		int z = int(rng.randi_range(2, 13));
+		int kind = OAK;
+		switch (biome_here) {
 			case TAIGA:
-				if (rng.randi_range(0, 2) == 0)
-					pine(blocks, rng, x, y + 1, z);
-				else
-					spruce(blocks, rng, x, y + 1, z);
+				kind = rng.randi_range(0, 2) == 0 ? PINE : SPRUCE;
 				break;
 			case FOREST:
 				if (rng.randi_range(0, 4) == 0)
-					round_tree(blocks, rng, x, y + 1, z, birch_log, birch_leaves, 5);
-				else if (rng.randi_range(0, 9) == 0)
-					big_oak(blocks, rng, x, y + 1, z);
+					kind = BIRCH;
 				else
-					round_tree(blocks, rng, x, y + 1, z, oak_log, oak_leaves, 4);
+					kind = rng.randi_range(0, 2) == 0 ? BIG : OAK;
+				break;
+			case RAINFOREST:
+				kind = rng.randi_range(0, 2) == 0 ? BIG : OAK;
 				break;
 			default:
-				round_tree(blocks, rng, x, y + 1, z, oak_log, oak_leaves, 4);
+				kind = rng.randi_range(0, 9) == 0 ? BIG : OAK;
+		}
+		x = std::clamp(x, MARGINS[kind], 15 - MARGINS[kind]);
+		z = std::clamp(z, MARGINS[kind], 15 - MARGINS[kind]);
+		const int y = surface_y(blocks, x, z);
+		if (y < 0 || !is_ground(blocks[idx(x, y, z)]))
+			continue;
+		switch (kind) {
+			case OAK: oak(blocks, rng, x, y + 1, z, oak_log, oak_leaves, 4); break;
+			case BIRCH: oak(blocks, rng, x, y + 1, z, birch_log, birch_leaves, 5); break;
+			case SPRUCE: spruce(blocks, rng, x, y + 1, z); break;
+			case PINE: pine(blocks, rng, x, y + 1, z); break;
+			default: big_oak(blocks, rng, x, y + 1, z);
 		}
 	}
 }
 
-void NativeBetaGenerator::round_tree(int32_t *blocks, Pcg &rng, int x, int y, int z, int32_t log, int32_t leaf,
+bool NativeBetaGenerator::oak(int32_t *blocks, Pcg &rng, int x, int y, int z, int32_t log, int32_t leaf,
 		int min_height) const {
 	const int height = int(rng.randi_range(min_height, min_height + 2));
-	if (!trunk_fits(blocks, x, y, z, height))
-		return;
-	blocks[idx(x, y - 1, z)] = dirt;
-	for (int ly = y + height - 3; ly <= y + height; ly++) {
+	if (y < 1 || y + height + 1 > h)
+		return false;
+	for (int ly = y; ly <= y + height + 1; ly++) {
+		const int radius = ly == y ? 0 : (ly >= y + height + 1 - 2 ? 2 : 1);
+		if (!ring_free(blocks, x, ly, z, radius))
+			return false;
+	}
+	if (!is_ground(at(blocks, x, y - 1, z)))
+		return false;
+	put(blocks, x, y - 1, z, dirt);
+	for (int ly = y - 3 + height; ly <= y + height; ly++) {
 		const int above_top = ly - (y + height);
 		const int radius = 1 - above_top / 2;
 		for (int lx = x - radius; lx <= x + radius; lx++)
-			for (int lz = z - radius; lz <= z + radius; lz++) {
-				const bool corner = std::abs(lx - x) == radius && std::abs(lz - z) == radius;
-				if (corner && (rng.randi_range(0, 1) == 0 || above_top == 0))
-					continue;
-				set_if_air(blocks, lx, ly, lz, leaf);
-			}
+			for (int lz = z - radius; lz <= z + radius; lz++)
+				if (std::abs(lx - x) != radius || std::abs(lz - z) != radius || (rng.randi_range(0, 1) != 0 && above_top != 0))
+					put_leaf(blocks, lx, ly, lz, leaf);
 	}
 	for (int dy = 0; dy < height; dy++)
-		blocks[idx(x, y + dy, z)] = log;
+		put_log(blocks, x, y + dy, z, log);
+	return true;
 }
 
-void NativeBetaGenerator::spruce(int32_t *blocks, Pcg &rng, int x, int y, int z) const {
+bool NativeBetaGenerator::spruce(int32_t *blocks, Pcg &rng, int x, int y, int z) const {
 	const int height = int(rng.randi_range(6, 9));
-	if (!trunk_fits(blocks, x, y, z, height))
-		return;
 	const int bare = int(rng.randi_range(1, 2));
-	int radius = 0;
-	const int max_radius = int(rng.randi_range(2, 3));
-	for (int ly = y + height; ly > y + bare - 1; ly--) {
-		for (int lx = x - radius; lx <= x + radius; lx++)
-			for (int lz = z - radius; lz <= z + radius; lz++) {
-				if (radius > 0 && std::abs(lx - x) == radius && std::abs(lz - z) == radius)
-					continue;
-				set_if_air(blocks, lx, ly, lz, spruce_leaves);
-			}
-		radius = radius >= max_radius ? 0 : radius + 1;
-		if (radius == 0 && ly < y + height - 1)
-			radius = 1;
-	}
-	set_if_air(blocks, x, y + height + 1, z, spruce_leaves);
-	blocks[idx(x, y - 1, z)] = dirt;
-	for (int dy = 0; dy < height; dy++)
-		blocks[idx(x, y + dy, z)] = spruce_log;
-}
-
-void NativeBetaGenerator::pine(int32_t *blocks, Pcg &rng, int x, int y, int z) const {
-	const int height = int(rng.randi_range(7, 11));
-	if (!trunk_fits(blocks, x, y, z, height))
-		return;
-	const int cap = int(rng.randi_range(3, 4));
-	for (int ly = y + height - cap; ly <= y + height; ly++) {
-		const int radius = ly < y + height - 1 ? 1 : 0;
+	const int leafy = height - bare;
+	const int widest = int(rng.randi_range(2, 3));
+	if (y < 1 || y + height + 1 > h)
+		return false;
+	for (int ly = y; ly <= y + height + 1; ly++)
+		if (!ring_free(blocks, x, ly, z, ly - y < bare ? 0 : widest))
+			return false;
+	if (!is_ground(at(blocks, x, y - 1, z)))
+		return false;
+	put(blocks, x, y - 1, z, dirt);
+	int radius = int(rng.randi_range(0, 1));
+	int limit = 1;
+	int restart = 0;
+	for (int i = 0; i <= leafy; i++) {
+		const int ly = y + height - i;
 		for (int lx = x - radius; lx <= x + radius; lx++)
 			for (int lz = z - radius; lz <= z + radius; lz++)
-				set_if_air(blocks, lx, ly, lz, spruce_leaves);
+				if (std::abs(lx - x) != radius || std::abs(lz - z) != radius || radius <= 0)
+					put_leaf(blocks, lx, ly, lz, spruce_leaves);
+		if (radius >= limit) {
+			radius = restart;
+			restart = 1;
+			limit = std::min(limit + 1, widest);
+		} else {
+			radius++;
+		}
 	}
-	set_if_air(blocks, x, y + height + 1, z, spruce_leaves);
-	blocks[idx(x, y - 1, z)] = dirt;
-	for (int dy = 0; dy < height; dy++)
-		blocks[idx(x, y + dy, z)] = spruce_log;
+	const int shorter = int(rng.randi_range(0, 2));
+	for (int dy = 0; dy < height - shorter; dy++)
+		put_log(blocks, x, y + dy, z, spruce_log);
+	return true;
 }
 
-void NativeBetaGenerator::big_oak(int32_t *blocks, Pcg &rng, int x, int y, int z) const {
-	const int height = int(rng.randi_range(8, 12));
-	if (!trunk_fits(blocks, x, y, z, height))
-		return;
-	blocks[idx(x, y - 1, z)] = dirt;
-	std::vector<int> clusters = { x, y + height, z };
-	const int64_t branches = rng.randi_range(3, 5);
-	for (int64_t branch = 0; branch < branches; branch++) {
-		const int start_y = y + int(rng.randi_range(height / 2, height - 2));
-		const double angle = rng.randf() * TAU_D;
-		const int length = int(rng.randi_range(2, 3));
-		int tx = x + int(std::round(std::cos(angle) * length));
-		const int ty = start_y + length - 1;
-		int tz = z + int(std::round(std::sin(angle) * length));
-		tx = std::clamp(tx, 2, 13);
-		tz = std::clamp(tz, 2, 13);
-		for (int s = 0; s <= length; s++) {
-			const double t = double(s) / length;
-			const int bx = int(std::round(x + (tx - x) * t));
-			const int by = int(std::round(start_y + (ty - start_y) * t));
-			const int bz = int(std::round(z + (tz - z) * t));
-			if (by < h && blocks[idx(bx, by, bz)] == AIR)
-				blocks[idx(bx, by, bz)] = oak_log;
-		}
-		clusters.push_back(tx);
-		clusters.push_back(ty);
-		clusters.push_back(tz);
+bool NativeBetaGenerator::pine(int32_t *blocks, Pcg &rng, int x, int y, int z) const {
+	const int height = int(rng.randi_range(7, 11));
+	const int bare = height - int(rng.randi_range(0, 1)) - 3;
+	const int leafy = height - bare;
+	const int widest = 1 + int(rng.randi_range(0, leafy));
+	if (y < 1 || y + height + 1 > h)
+		return false;
+	for (int ly = y; ly <= y + height + 1; ly++)
+		if (!ring_free(blocks, x, ly, z, ly - y < bare ? 0 : widest))
+			return false;
+	if (!is_ground(at(blocks, x, y - 1, z)))
+		return false;
+	put(blocks, x, y - 1, z, dirt);
+	int radius = 0;
+	for (int ly = y + height; ly >= y + bare; ly--) {
+		for (int lx = x - radius; lx <= x + radius; lx++)
+			for (int lz = z - radius; lz <= z + radius; lz++)
+				if (std::abs(lx - x) != radius || std::abs(lz - z) != radius || radius <= 0)
+					put_leaf(blocks, lx, ly, lz, spruce_leaves);
+		if (radius >= 1 && ly == y + bare + 1)
+			radius--;
+		else if (radius < widest)
+			radius++;
 	}
-	for (size_t c = 0; c < clusters.size(); c += 3)
-		for (int dy = -1; dy < 3; dy++) {
-			const double radius = dy < 2 ? 2.5 : 1.5;
-			for (int dx = -3; dx < 4; dx++)
-				for (int dz = -3; dz < 4; dz++)
-					if (dx * dx + dz * dz + dy * dy * 0.5 <= radius * radius)
-						set_if_air(blocks, clusters[c] + dx, clusters[c + 1] + dy, clusters[c + 2] + dz, oak_leaves);
+	for (int dy = 0; dy < height - 1; dy++)
+		put_log(blocks, x, y + dy, z, spruce_log);
+	return true;
+}
+
+// The cells of the line a..b, b included (TreeShapes._line); their number.
+int NativeBetaGenerator::line_cells(const int a[3], const int b[3], int (*cells)[3], int max) const {
+	static const int OTHER[6] = { 2, 0, 0, 1, 2, 1 };
+	int delta[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+	int main = 0;
+	for (int axis = 0; axis < 3; axis++)
+		if (std::abs(delta[axis]) > std::abs(delta[main]))
+			main = axis;
+	if (delta[main] == 0)
+		return 0;
+	const int first = OTHER[main], second = OTHER[main + 3];
+	const int step = delta[main] > 0 ? 1 : -1;
+	const double d1 = double(delta[first]) / delta[main];
+	const double d2 = double(delta[second]) / delta[main];
+	int count = 0;
+	for (int k = 0; k != delta[main] + step && count < max; k += step) {
+		cells[count][main] = int(std::floor(a[main] + k + 0.5));
+		cells[count][first] = int(std::floor(a[first] + k * d1 + 0.5));
+		cells[count][second] = int(std::floor(a[second] + k * d2 + 0.5));
+		count++;
+	}
+	return count;
+}
+
+int NativeBetaGenerator::check_line(const int32_t *blocks, const int a[3], const int b[3]) const {
+	int cells[64][3];
+	const int count = line_cells(a, b, cells, 64);
+	for (int i = 0; i < count; i++)
+		if (!tree_free(at(blocks, cells[i][0], cells[i][1], cells[i][2])))
+			return i;
+	return -1;
+}
+
+bool NativeBetaGenerator::big_oak(int32_t *blocks, Pcg &rng, int x, int y, int z) const {
+	int height_limit = 5 + int(rng.randi_range(0, 11));
+	if (!is_ground(at(blocks, x, y - 1, z)))
+		return false;
+	{
+		const int a[3] = { x, y, z }, b[3] = { x, y + height_limit - 1, z };
+		const int blocked = check_line(blocks, a, b);
+		if (blocked != -1) {
+			if (blocked < 6)
+				return false;
+			height_limit = blocked;
 		}
-	for (int dy = 0; dy < height; dy++)
-		blocks[idx(x, y + dy, z)] = oak_log;
+	}
+	if (y + height_limit > h)
+		return false;
+	int trunk_height = int(height_limit * 0.618);
+	if (trunk_height >= height_limit)
+		trunk_height = height_limit - 1;
+	// Leaf nodes (TreeShapes._leaf_nodes).
+	const int per_layer = std::max(int(1.382 + std::pow(height_limit / 13.0, 2.0)), 1);
+	const int top = y + height_limit - 4;
+	const int trunk_top = y + trunk_height;
+	std::vector<std::array<int, 4>> nodes = { { x, top, z, trunk_top } };
+	int ny = top - 1;
+	for (int layer = top - y; layer >= 0; layer--, ny--) {
+		double size;
+		if (layer < height_limit * 0.3) {
+			size = -1.618;
+		} else {
+			const double half = height_limit / 2.0;
+			const double off = height_limit / 2.0 - layer;
+			if (off == 0.0)
+				size = half;
+			else if (std::abs(off) >= half)
+				size = 0.0;
+			else
+				size = std::sqrt(half * half - off * off);
+			size *= 0.5;
+		}
+		if (size < 0.0)
+			continue;
+		for (int attempt = 0; attempt < per_layer; attempt++) {
+			const double distance = size * (rng.randf() + 0.328);
+			const double angle = rng.randf() * 2.0 * 3.14159;
+			const int nx = int(std::floor(distance * std::sin(angle) + x + 0.5));
+			const int nz = int(std::floor(distance * std::cos(angle) + z + 0.5));
+			if (nx < 2 || nx > 13 || nz < 2 || nz > 13)
+				continue;
+			const int node[3] = { nx, ny, nz }, node_top[3] = { nx, ny + 4, nz };
+			if (check_line(blocks, node, node_top) != -1)
+				continue;
+			const double reach = std::sqrt(std::pow(std::abs(x - nx), 2.0) + std::pow(std::abs(z - nz), 2.0)) * 0.381;
+			const int from_y = ny - reach > trunk_top ? trunk_top : int(ny - reach);
+			const int from[3] = { x, from_y, z };
+			if (check_line(blocks, from, node) == -1)
+				nodes.push_back({ nx, ny, nz, from_y });
+		}
+	}
+	for (const auto &node : nodes)
+		for (int ly = node[1]; ly < node[1] + 4; ly++) {
+			const int layer = ly - node[1];
+			const double size = (layer == 0 || layer == 3) ? 2.0 : 3.0;
+			const int reach = int(size + 0.618);
+			for (int dx = -reach; dx <= reach; dx++)
+				for (int dz = -reach; dz <= reach; dz++) {
+					if (std::sqrt(std::pow(std::abs(dx) + 0.5, 2.0) + std::pow(std::abs(dz) + 0.5, 2.0)) > size)
+						continue;
+					const int32_t there = at(blocks, node[0] + dx, ly, node[2] + dz);
+					if (there == AIR || is_leaves(there))
+						put(blocks, node[0] + dx, ly, node[2] + dz, oak_leaves);
+				}
+		}
+	int cells[64][3];
+	{
+		const int a[3] = { x, y, z }, b[3] = { x, y + trunk_height, z };
+		const int count = line_cells(a, b, cells, 64);
+		for (int i = 0; i < count; i++)
+			put(blocks, cells[i][0], cells[i][1], cells[i][2], oak_log);
+	}
+	for (const auto &node : nodes)
+		if (node[3] - y >= height_limit * 0.2) {
+			const int a[3] = { x, node[3], z }, b[3] = { node[0], node[1], node[2] };
+			const int count = line_cells(a, b, cells, 64);
+			for (int i = 0; i < count; i++)
+				put(blocks, cells[i][0], cells[i][1], cells[i][2], oak_log);
+		}
+	return true;
 }
 
 // --- Plants and the rest ----------------------------------------------------------------

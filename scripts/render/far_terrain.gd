@@ -1,7 +1,8 @@
 class_name FarTerrain
 extends Node3D
-## Far terrain (LOD): beyond the render distance, out to the "far_terrain"
-## setting (16, 24 or 32 chunks), the land drawn simplified, its quality
+## Far terrain (LOD): with a render distance over 16 chunks (REAL_LIMIT),
+## the real chunks stop at 16 and the rest, out to the render distance, is
+## the land drawn simplified, its quality
 ## falling off with distance, so mountains and coasts far away are seen
 ## before their chunks load:
 ## - each far column is read (its save) or generated on a worker thread,
@@ -23,7 +24,11 @@ extends Node3D
 
 const REGION := 8                ## columns per region side
 const MAX_JOBS := 2              ## columns read at once (when nothing nearer waits)
-const RADII := [0, 16, 24, 32]   ## the setting's choices, in chunks
+## For measurements: the far terrain's radius whatever the setting (-1: the
+## setting's).
+static var test_radius := -1
+## Real chunks up to this render distance; the far terrain beyond it.
+const REAL_LIMIT := 16
 ## Cell sizes by distance beyond the render distance: [columns, cell blocks].
 const DETAIL := [[4, 1], [10, 2], [1000, 4]]
 const SHADE_X := 0.6             ## faces toward x, like the classic game's
@@ -55,7 +60,7 @@ func _ready() -> void:
 	_material.set_shader_parameter("tiles", BlockMaterials.tiles())
 	_tables = _block_tables()
 	Settings.changed.connect(func(key: String, _value: Variant) -> void:
-		if key == "far_terrain" or key == "render_distance":
+		if key == "render_distance":
 			_center = Vector2i(2147483647, 0))
 
 
@@ -66,9 +71,13 @@ func _exit_tree() -> void:
 		WorkerThreadPool.wait_for_task_completion(entry[0])
 
 
-## How far (chunks) the far terrain reaches, 0 = off.
+## How far (chunks) the far terrain reaches, 0 = off (a render distance of
+## 16 or less: only real chunks).
 static func radius_setting() -> int:
-	return RADII[clampi(int(Settings.get_value("far_terrain")), 0, RADII.size() - 1)]
+	if test_radius >= 0:
+		return test_radius
+	var distance := int(Settings.get_value("render_distance"))
+	return distance if distance > REAL_LIMIT else 0
 
 
 ## Per block id: "top" / "side" (tile array layers; leaves: the fast

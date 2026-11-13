@@ -48,8 +48,15 @@ struct Tables {
 };
 
 std::shared_ptr<const Tables> g_tables;
+// The same with Fast graphics' leaves (opaque, their fast tile): far chunks.
+std::shared_ptr<const Tables> g_fast_tables;
 
-std::shared_ptr<const Tables> tables() {
+std::shared_ptr<const Tables> tables(bool fast = false) {
+	if (fast) {
+		std::shared_ptr<const Tables> f = std::atomic_load(&g_fast_tables);
+		if (f)
+			return f;
+	}
 	return std::atomic_load(&g_tables);
 }
 
@@ -547,6 +554,18 @@ void NativeMesher::set_tables(const Dictionary &d) {
 	ERR_FAIL_COND_MSG(!ok, "NativeMesher: block tables of different sizes.");
 	std::shared_ptr<const Tables> shared = t;
 	std::atomic_store(&g_tables, shared);
+	// "fast": the tables that differ with Fast graphics' leaves.
+	std::shared_ptr<const Tables> fast_shared;
+	if (d.has("fast")) {
+		const Dictionary f = d["fast"];
+		auto ft = std::make_shared<Tables>(*t);
+		ft->opaque = copy_of<uint8_t>(PackedByteArray(f["is_opaque"]));
+		ft->layer = copy_of<uint8_t>(PackedByteArray(f["layer"]));
+		ft->face_tiles = copy_of<int32_t>(PackedInt32Array(f["face_tiles"]));
+		if (ft->opaque.size() >= n && ft->layer.size() >= n && ft->face_tiles.size() >= n * 6)
+			fast_shared = ft;
+	}
+	std::atomic_store(&g_fast_tables, fast_shared);
 }
 
 bool NativeMesher::has_tables() {
@@ -556,9 +575,9 @@ bool NativeMesher::has_tables() {
 Array NativeMesher::build_chunk(const Vector3i &coord, const PackedInt32Array &center, const Dictionary &neighbors,
 		const PackedByteArray &center_light, const Dictionary &neighbor_light,
 		const PackedByteArray &center_block_light, const Dictionary &neighbor_block_light,
-		const PackedColorArray &grass, const PackedColorArray &foliage, int smooth, bool rotate) {
+		const PackedColorArray &grass, const PackedColorArray &foliage, int smooth, bool rotate, bool fast) {
 	Array result;
-	const std::shared_ptr<const Tables> t = tables();
+	const std::shared_ptr<const Tables> t = tables(fast);
 	ERR_FAIL_COND_V_MSG(!t, result, "NativeMesher: set_tables() first.");
 	std::vector<int32_t> padded(PADDED, 0);
 	std::vector<uint8_t> light(PADDED, MAX_LIGHT);
@@ -615,8 +634,8 @@ void NativeMesher::_bind_methods() {
 	ClassDB::bind_static_method("NativeMesher", D_METHOD("has_tables"), &NativeMesher::has_tables);
 	ClassDB::bind_static_method("NativeMesher",
 			D_METHOD("build_chunk", "coord", "center", "neighbors", "center_light", "neighbor_light",
-					"center_block_light", "neighbor_block_light", "grass", "foliage", "smooth", "rotate"),
-			&NativeMesher::build_chunk);
+					"center_block_light", "neighbor_block_light", "grass", "foliage", "smooth", "rotate", "fast"),
+			&NativeMesher::build_chunk, DEFVAL(false));
 }
 
 } // namespace voxel

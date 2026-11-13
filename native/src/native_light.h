@@ -52,9 +52,11 @@ public:
 			const godot::PackedByteArray &opacity);
 
 	// ChunkData.count_tickable() for the 16 chunks of a column: [air, tickable,
-	// glowing] for each, from Blocks' tables.
+	// glowing, leaves] for each, from Blocks' tables (`leaves`: 1 for blocks
+	// that change with Fast graphics).
 	static godot::PackedInt32Array chunk_counts(const godot::PackedInt32Array &blocks,
-			const godot::PackedByteArray &ticks, const godot::PackedByteArray &emission);
+			const godot::PackedByteArray &ticks, const godot::PackedByteArray &emission,
+			const godot::PackedByteArray &leaves);
 
 	static godot::Array relight_edits(bool sky, const godot::PackedInt32Array &positions, int columns_x,
 			int columns_z, const godot::Array &blocks, const godot::Array &light,

@@ -99,16 +99,18 @@ static func split_column(blocks: PackedInt32Array) -> Array[ChunkData]:
 	var chunks: Array[ChunkData] = []
 	var counts := PackedInt32Array()
 	if _native_light:
-		counts = ClassDB.class_call_static("NativeLight", "chunk_counts", blocks, Blocks.ticks_randomly, Blocks.light_emission_table)
+		counts = ClassDB.class_call_static("NativeLight", "chunk_counts", blocks, Blocks.ticks_randomly,
+			Blocks.light_emission_table, Blocks.fast_leaves_table())
 	for k in HEIGHT_CHUNKS:
 		var chunk := ChunkData.new()
 		if counts.is_empty():
 			chunk.blocks = blocks.slice(k * ChunkData.VOLUME, (k + 1) * ChunkData.VOLUME)
 			chunk.count_tickable()
 		else:
-			chunk.air_count = counts[k * 3]
-			chunk.tickable_count = counts[k * 3 + 1]
-			chunk.glow_count = counts[k * 3 + 2]
+			chunk.air_count = counts[k * 4]
+			chunk.tickable_count = counts[k * 4 + 1]
+			chunk.glow_count = counts[k * 4 + 2]
+			chunk.leaf_count = counts[k * 4 + 3]
 			if chunk.air_count < ChunkData.VOLUME: # (an empty one keeps the shared air)
 				chunk.blocks = blocks.slice(k * ChunkData.VOLUME, (k + 1) * ChunkData.VOLUME)
 		chunk.share_uniform()

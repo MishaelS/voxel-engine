@@ -83,12 +83,21 @@ private:
 	void place_springs(int32_t *blocks, Pcg &rng) const;
 	void freeze(int32_t *blocks, const uint8_t *biomes) const;
 	int surface_y(const int32_t *blocks, int x, int z) const;
-	bool trunk_fits(const int32_t *blocks, int x, int y, int z, int height) const;
-	void set_if_air(int32_t *blocks, int x, int y, int z, int32_t id) const;
-	void round_tree(int32_t *blocks, Pcg &rng, int x, int y, int z, int32_t log, int32_t leaf, int min_height) const;
-	void spruce(int32_t *blocks, Pcg &rng, int x, int y, int z) const;
-	void pine(int32_t *blocks, Pcg &rng, int x, int y, int z) const;
-	void big_oak(int32_t *blocks, Pcg &rng, int x, int y, int z) const;
+	// Trees like Beta 1.7.3's (TreeShapes in GDScript, the same steps).
+	int32_t at(const int32_t *blocks, int x, int y, int z) const;
+	void put(int32_t *blocks, int x, int y, int z, int32_t id) const;
+	bool is_leaves(int32_t id) const;
+	bool is_ground(int32_t id) const;
+	bool tree_free(int32_t id) const;
+	void put_leaf(int32_t *blocks, int x, int y, int z, int32_t leaf) const;
+	void put_log(int32_t *blocks, int x, int y, int z, int32_t log) const;
+	bool ring_free(const int32_t *blocks, int x, int y, int z, int radius) const;
+	bool oak(int32_t *blocks, Pcg &rng, int x, int y, int z, int32_t log, int32_t leaf, int min_height) const;
+	bool spruce(int32_t *blocks, Pcg &rng, int x, int y, int z) const;
+	bool pine(int32_t *blocks, Pcg &rng, int x, int y, int z) const;
+	bool big_oak(int32_t *blocks, Pcg &rng, int x, int y, int z) const;
+	int line_cells(const int a[3], const int b[3], int (*cells)[3], int max) const;
+	int check_line(const int32_t *blocks, const int a[3], const int b[3]) const;
 	bool can_stay(int32_t plant, int32_t ground) const;
 	uint8_t table(const std::vector<uint8_t> &t, int32_t id) const {
 		return id >= 0 && size_t(id) < t.size() ? t[id] : 0;

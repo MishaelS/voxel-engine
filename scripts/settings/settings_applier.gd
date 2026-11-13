@@ -36,7 +36,8 @@ func _apply(key: String, value: Variant) -> void:
 				world.remesh_all()
 		"render_distance":
 			if world:
-				world.set_render_distance(int(value))
+				# Real chunks up to 16; beyond, the far terrain (FarTerrain).
+				world.set_render_distance(mini(int(value), FarTerrain.REAL_LIMIT))
 		"brightness":
 			ShaderPackApplier.apply_brightness(world_environment.environment if world_environment else null, value)
 		"debug_screen":

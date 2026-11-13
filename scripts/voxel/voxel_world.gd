@@ -89,7 +89,7 @@ var next_map_id := 0
 ## Where this world is saved (WorldSave.current when started from the
 ## title screen); null = not saved.
 var save: WorldSave
-## The simplified land beyond the render distance (the "far_terrain" setting).
+## The simplified land beyond 16 chunks when the render distance is more (FarTerrain).
 var far_terrain: FarTerrain
 ## The world's height (no blocks at or above it: 128 in classic worlds like
 ## Beta 1.7.3) and sea level (WorldSave.layout).
@@ -190,13 +190,15 @@ class MeshJob:
 	var connectivity := ChunkMesher.ALL_CONNECTED
 	var mesh_ms := 0.0
 	var task_id := -1
+	## Leaves as with Fast graphics (a chunk far from the player).
+	var fast := false
 
 	func run() -> void:
 		var start_us := Time.get_ticks_usec()
 		if ChunkMesher.native:
 			var built: Array = ClassDB.class_call_static("NativeMesher", "build_chunk", coord, center, neighbors,
 				center_light, neighbor_light, center_block_light, neighbor_block_light, colors[0], colors[1],
-				ChunkMesher.smooth_lighting, ChunkMesher.random_rotation)
+				ChunkMesher.smooth_lighting, ChunkMesher.random_rotation, fast)
 			surfaces = built[0]
 			connectivity = built[1]
 		else:
@@ -474,7 +476,34 @@ func _top_block_y(x: int, z: int) -> int:
 
 
 ## Rebuilds the meshes of all chunks in the background.
+## Fancy graphics: leaves in chunks more than this many columns from the
+## player are drawn opaque, like Fast graphics (the rest is as near).
+const FAST_LEAVES_DISTANCE := 8
+
+
+func _far_leaves(column: Vector2i) -> bool:
+	return not Blocks.is_fast_graphics() and maxi(absi(column.x - _player_column.x), absi(column.y - _player_column.y)) > FAST_LEAVES_DISTANCE
+
+
+## The chunks with leaves that crossed FAST_LEAVES_DISTANCE (the columns at
+## 8 and 9 from the player, now that it moved) are meshed again.
+func _remesh_leaf_ring() -> void:
+	if Blocks.is_fast_graphics():
+		return
+	for ring in [FAST_LEAVES_DISTANCE, FAST_LEAVES_DISTANCE + 1]:
+		for i in range(-ring, ring + 1):
+			for column: Vector2i in [_player_column + Vector2i(i, -ring), _player_column + Vector2i(i, ring),
+					_player_column + Vector2i(-ring, i), _player_column + Vector2i(ring, i)]:
+				var chunks: Variant = _columns.get(column)
+				if chunks == null:
+					continue
+				for k in (chunks as Array).size():
+					if (chunks[k] as ChunkData).leaf_count > 0:
+						_mark_dirty_chunk(Vector3i(column.x, k, column.y))
+
+
 func remesh_all() -> void:
+	ChunkMesher.prepare_native() # (the block tables changed: Fast / Fancy)
 	for coord: Vector3i in _chunks:
 		_dirty[coord] = true
 	_deferred.clear()
@@ -522,7 +551,10 @@ func _update_streaming() -> void:
 	if center == _player_column and others == _remote_centers:
 		return
 	_remote_centers = others
+	var moved := center != _player_column and _player_column.x != 2147483647
 	_player_column = center
+	if moved:
+		_remesh_leaf_ring()
 	_mesh_scan_needed = true
 	_light_scan_needed = true
 	_wake_deferred()
@@ -815,6 +847,7 @@ func _set_light(pos: Vector3i, level: int) -> void:
 	var local := pos - coord * ChunkData.SIZE
 	var i := ChunkData.index(local.x, local.y, local.z)
 	if data.light[i] != level:
+		data.own_light()
 		data.light[i] = level
 		_mark_dirty_around(coord, local)
 
@@ -1003,6 +1036,7 @@ func _set_block_light(pos: Vector3i, level: int) -> void:
 	var local := pos - coord * ChunkData.SIZE
 	var i := ChunkData.index(local.x, local.y, local.z)
 	if data.block_light[i] != level:
+		data.own_block_light()
 		data.block_light[i] = level
 		_mark_dirty_around(coord, local)
 
@@ -1934,6 +1968,7 @@ func _start_mesh_jobs() -> void:
 		job.center_light = data.light
 		job.center_block_light = data.block_light
 		job.colors = _column_colors.get(Vector2i(coord.x, coord.z), job.colors)
+		job.fast = data.leaf_count > 0 and _far_leaves(Vector2i(coord.x, coord.z))
 		for dx in range(-1, 2):
 			for dy in range(-1, 2):
 				for dz in range(-1, 2):

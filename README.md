@@ -107,7 +107,7 @@ Create New World → World Type: **Default** is Beta 1.7.3's world, 128 blocks h
 
 Texture packs are Beta 1.7.3's: put a pack's `.zip` (or the folder, unpacked) into the pack folder (Options → Texture Packs → Open Pack Folder) and pick it there; it shows its `pack.png` and the two lines of `pack.txt` and is used from the next start. Every file of a Beta pack is used at its place (terrain, items, GUI, icons, mobs, armor, boat, minecart, arrows, paintings `art/kz.png`, rain, snow, clouds, grass and foliage colors, map, clock, pumpkin blur, sun, moon, title logo and Mojang screen); a picture of another size is scaled to Beta's. A pack's `particles.png` and `font/default.png` are used too (Cyrillic stays in the game's font).
 
-Video Settings → Far Terrain (16, 24 or 32 chunks) draws the land beyond the render distance simplified with the blocks' own textures, in 1, 2 and 4 block cells further and further out (`scripts/render/far_terrain.gd`).
+Render Distance goes up to 32 chunks: up to 16 every chunk is real; beyond 16 the land past 16 chunks is drawn simplified with the blocks' own textures, in 1, 2 and 4 block cells further and further out (`scripts/render/far_terrain.gd`).
 
 ## Multiplayer
 Open a world to the network from the pause menu ("Open to LAN", port 25565); others join from "Multiplayer" on the title screen (the address, or a game found on the local network). The host runs the world; see `scripts/net/net.gd`. Tab shows the players and their signal. The host's commands: `/players` (with each player's tag), `/kick <player>`, `/ban <player>` (bans that computer from this server), `/pardon <tag or name>`.

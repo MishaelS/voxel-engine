@@ -563,17 +563,18 @@ PackedInt32Array NativeLight::heightmap(const PackedInt32Array &blocks, const Pa
 }
 
 PackedInt32Array NativeLight::chunk_counts(const PackedInt32Array &blocks, const PackedByteArray &ticks,
-		const PackedByteArray &emission) {
+		const PackedByteArray &emission, const PackedByteArray &leaves) {
 	PackedInt32Array counts;
-	counts.resize(CHUNKS * 3);
+	counts.resize(CHUNKS * 4);
 	ERR_FAIL_COND_V(blocks.size() < 256 * H, counts);
 	const int32_t *b = blocks.ptr();
 	const uint8_t *t = ticks.ptr();
 	const uint8_t *e = emission.ptr();
-	const int64_t t_size = ticks.size(), e_size = emission.size();
+	const uint8_t *l = leaves.ptr();
+	const int64_t t_size = ticks.size(), e_size = emission.size(), l_size = leaves.size();
 	int32_t *out = counts.ptrw();
 	for (int k = 0; k < CHUNKS; k++) {
-		int air = 0, tick = 0, glow = 0;
+		int air = 0, tick = 0, glow = 0, leaf = 0;
 		for (int i = k * VOLUME; i < (k + 1) * VOLUME; i++) {
 			const int32_t id = b[i];
 			if (id == 0) {
@@ -584,17 +585,20 @@ PackedInt32Array NativeLight::chunk_counts(const PackedInt32Array &blocks, const
 				tick += t[id];
 			if (id > 0 && id < e_size && e[id] > 0)
 				glow++;
+			if (id > 0 && id < l_size && l[id] > 0)
+				leaf++;
 		}
-		out[k * 3] = air;
-		out[k * 3 + 1] = tick;
-		out[k * 3 + 2] = glow;
+		out[k * 4] = air;
+		out[k * 4 + 1] = tick;
+		out[k * 4 + 2] = glow;
+		out[k * 4 + 3] = leaf;
 	}
 	return counts;
 }
 
 void NativeLight::_bind_methods() {
 	ClassDB::bind_static_method("NativeLight", D_METHOD("heightmap", "blocks", "opacity"), &NativeLight::heightmap);
-	ClassDB::bind_static_method("NativeLight", D_METHOD("chunk_counts", "blocks", "ticks", "emission"),
+	ClassDB::bind_static_method("NativeLight", D_METHOD("chunk_counts", "blocks", "ticks", "emission", "leaves"),
 			&NativeLight::chunk_counts);
 	ClassDB::bind_static_method("NativeLight", D_METHOD("compute_column", "chunks", "heights", "glowing", "opacity", "emission"),
 			&NativeLight::compute_column);

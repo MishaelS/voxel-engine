@@ -13,6 +13,16 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- Trees exactly like Beta 1.7.3's generators (`TreeShapes`; `NativeBetaGenerator` the same, block for block): oaks and birches with Beta's room check (the whole tree's volume, not only the trunk); spruces (WorldGenTaiga2) with rings growing from the top and starting over, the trunk 0..2 shorter than the leaves; pines (WorldGenTaiga1) with a long bare trunk and a cone of leaves 1..5 wide; big oaks (WorldGenBigTree, 5..16 high) with leaf clusters at the ends of sloping branches. Kinds and numbers by biome like Beta: big oaks 1 in 10 everywhere, 1 in 3 in rainforests and in forests' oaks; only forests, rainforests, seasonal forests and taiga get many trees (savannas, shrublands and swamps one now and then). Each tree stays in its column (bigger kinds further from its edges). Saplings grow the same trees (an oak sometimes a big one).
+- Far chunks (more than 8 columns away) draw leaves opaque like Fast graphics; nearer ones as before (Fancy). Switching Fast / Fancy in the game updates the native mesher's tables too.
+
+### Fixed
+- Chunks of only air or uniform light shared their arrays by reference (GDScript's packed arrays are not copied on write): a block set or light changed in one such chunk showed in all of them. A chunk now takes its own copy before changing one (`ChunkData.own_blocks`, `own_light`, `own_block_light`).
+
+### Changed
+- Far terrain is part of the render distance instead of its own setting: Render Distance goes up to 32 chunks; up to 16 every chunk is real, beyond 16 the real chunks stop at 16 and the far terrain draws the rest out to the chosen distance (`FarTerrain.REAL_LIMIT`). The "Far Terrain" setting is gone.
+
 ### Added
 - Far terrain (Video Settings → Far Terrain: OFF, 16, 24 or 32 chunks; 16 by default): beyond the render distance the land is drawn simplified, its quality falling off with distance, so far mountains and coasts are seen (`FarTerrain`, `far_terrain.gdshader`). Far columns are read from the save or generated on worker threads once the near ones are done and kept only as summaries (each block column's top block, the block under it and its biome tint); they are drawn with the blocks' own textures repeated per block (leaves as Beta's fast leaves), tinted and shaded per face like the blocks and darkened at night, in cells of 1 block next to the real chunks, 2 blocks 4 chunks further and 4 blocks beyond 10: a cell's top at its highest block (equal tops in a row are one quad), walls down to the lower neighbor (the top block's side, then the block under it). One mesh per 8 x 8 columns, built on a worker thread, left out where the real chunks are; moving rebuilds only the regions where the cell size changes. The fog moves out to the far edge. Measured (24 chunks, flying 30 s): no frame over 33 ms, about +10 MB.
 - Texture packs: a pack's particles.png (smoke, flames, lava, notes, hearts, rain splashes at their Beta places; the game's own critical hits and sweep stay) and font/default.png (Beta's letters and signs, each as wide as its pixels like Beta's; letters it has not, Cyrillic, come from the game's font) are used too.

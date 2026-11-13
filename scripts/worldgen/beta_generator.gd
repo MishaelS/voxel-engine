@@ -774,39 +774,62 @@ func _place_vein(blocks: PackedInt32Array, rng: RandomNumberGenerator, id: int, 
 							blocks[j] = id
 
 
-## Step 6: trees. Kept 2 blocks away from the column edge so the leaves fit.
+## Step 6: trees like Beta 1.7.3's (TreeShapes): forests, rainforests,
+## seasonal forests and taiga get a number from the tree noise (plus 5, or 2
+## in seasonal forests), every biome one more now and then, deserts, tundra
+## and plains none. The kind by biome: taiga pines (1 in 3) and spruces;
+## forests birches (1 in 5), big oaks (1 in 3 of the rest) and oaks;
+## rainforests big oaks (1 in 3) and oaks; elsewhere big oaks (1 in 10) and
+## oaks. Each in its column: bigger kinds stand further from its edges so
+## their leaves fit.
 func _place_trees(blocks: PackedInt32Array, cx: int, cz: int, biomes: PackedByteArray, rng: RandomNumberGenerator) -> void:
 	var biome_here := biomes[8 * 16 + 8]
-	var count := int((_tree_noise.get_noise_2d(cx * 16 + 8, cz * 16 + 8) * 4.0 + rng.randf() * 4.0 + 4.0) / 3.0)
-	count += _biome_trees[biome_here]
+	var noise_count := int((_tree_noise.get_noise_2d(cx * 16 + 8, cz * 16 + 8) * 4.0 + rng.randf() * 4.0 + 4.0) / 3.0)
+	var count := 0
 	if rng.randi_range(0, 9) == 0:
 		count += 1
+	var extra: int = _biome_trees[biome_here]
+	count += extra + (noise_count if extra > 0 else 0)
+	var canvas := TreeShapes.ColumnCanvas.new(blocks, _h)
 	for t in maxi(count, 0):
 		var x := rng.randi_range(2, 13)
 		var z := rng.randi_range(2, 13)
+		var kind := _tree_kind(BIOME_NAMES[biome_here], rng)
+		var margin: int = TREE_MARGINS[kind]
+		x = clampi(x, margin, 15 - margin)
+		z = clampi(z, margin, 15 - margin)
 		var y := _surface_y(blocks, x, z)
-		if y < 0:
+		if y < 0 or not TreeShapes.is_ground(blocks[index(x, y, z)]):
 			continue
-		var ground := blocks[index(x, y, z)]
-		if ground != _id["grass_plains"] and ground != _id["grass_forest"] and ground != _id["grass_taiga"] \
-				and ground != _id["grass_swamp"] and ground != _id["grass_savanna"] and ground != _id["snowy_grass"] \
-				and ground != _id["dirt"]:
-			continue
-		match BIOME_NAMES[biomes[z * 16 + x]]:
-			"taiga":
-				if rng.randi_range(0, 2) == 0:
-					_pine(blocks, rng, x, y + 1, z)
-				else:
-					_spruce(blocks, rng, x, y + 1, z)
-			"forest":
-				if rng.randi_range(0, 4) == 0:
-					_round_tree(blocks, rng, x, y + 1, z, _id["birch_log"], _id["birch_leaves"], 5)
-				elif rng.randi_range(0, 9) == 0:
-					_big_oak(blocks, rng, x, y + 1, z)
-				else:
-					_round_tree(blocks, rng, x, y + 1, z, _id["oak_log"], _id["oak_leaves"], 4)
-			_:
-				_round_tree(blocks, rng, x, y + 1, z, _id["oak_log"], _id["oak_leaves"], 4)
+		match kind:
+			"oak":
+				TreeShapes.oak(canvas, rng, x, y + 1, z, _id["oak_log"], _id["oak_leaves"], 4)
+			"birch":
+				TreeShapes.oak(canvas, rng, x, y + 1, z, _id["birch_log"], _id["birch_leaves"], 5)
+			"spruce":
+				TreeShapes.spruce(canvas, rng, x, y + 1, z)
+			"pine":
+				TreeShapes.pine(canvas, rng, x, y + 1, z)
+			"big_oak":
+				TreeShapes.big_oak(canvas, rng, x, y + 1, z)
+
+
+## How far from the column's edge each kind's trunk stands (its leaves fit).
+const TREE_MARGINS := {"oak": 2, "birch": 2, "spruce": 3, "pine": 4, "big_oak": 5}
+
+
+## A tree kind for the biome, like Beta's getRandomWorldGenForTrees.
+static func _tree_kind(biome: String, rng: RandomNumberGenerator) -> String:
+	match biome:
+		"taiga":
+			return "pine" if rng.randi_range(0, 2) == 0 else "spruce"
+		"forest":
+			if rng.randi_range(0, 4) == 0:
+				return "birch"
+			return "big_oak" if rng.randi_range(0, 2) == 0 else "oak"
+		"rainforest":
+			return "big_oak" if rng.randi_range(0, 2) == 0 else "oak"
+	return "big_oak" if rng.randi_range(0, 9) == 0 else "oak"
 
 
 ## Lava lakes like the classic game: one column in 8 may get one, mostly
@@ -916,85 +939,6 @@ func _surface_y(blocks: PackedInt32Array, x: int, z: int) -> int:
 		if blocks[index(x, y, z)] != Blocks.AIR:
 			return y
 	return -1
-
-
-func _set_if_air(blocks: PackedInt32Array, x: int, y: int, z: int, id: int) -> void:
-	if x < 0 or x > 15 or z < 0 or z > 15 or y < 0 or y >= _h:
-		return
-	var i := index(x, y, z)
-	if blocks[i] == Blocks.AIR:
-		blocks[i] = id
-
-
-func _trunk_fits(blocks: PackedInt32Array, x: int, y: int, z: int, height: int) -> bool:
-	if y + height + 2 >= _h:
-		return false
-	for dy in height:
-		if blocks[index(x, y + dy, z)] != Blocks.AIR:
-			return false
-	return true
-
-
-## Oak and birch: a trunk with two wide leaf layers and two narrow ones;
-## corner leaves are randomly left out.
-func _round_tree(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: int, z: int, log_id: int, leaves: int, min_height: int) -> void:
-	var height := rng.randi_range(min_height, min_height + 2)
-	if not _trunk_fits(blocks, x, y, z, height):
-		return
-	blocks[index(x, y - 1, z)] = _id["dirt"]
-	for ly in range(y + height - 3, y + height + 1):
-		var above_top := ly - (y + height)
-		var radius := 1 - above_top / 2
-		for lx in range(x - radius, x + radius + 1):
-			for lz in range(z - radius, z + radius + 1):
-				var corner := absi(lx - x) == radius and absi(lz - z) == radius
-				if corner and (rng.randi_range(0, 1) == 0 or above_top == 0):
-					continue
-				_set_if_air(blocks, lx, ly, lz, leaves)
-	for dy in height:
-		blocks[index(x, y + dy, z)] = log_id
-
-
-## Spruce: a cone of leaf rings that widen and narrow going down.
-func _spruce(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: int, z: int) -> void:
-	var height := rng.randi_range(6, 9)
-	if not _trunk_fits(blocks, x, y, z, height):
-		return
-	var leaves: int = _id["spruce_leaves"]
-	var bare := rng.randi_range(1, 2) # trunk without leaves at the bottom
-	var radius := 0
-	var max_radius := rng.randi_range(2, 3)
-	for ly in range(y + height, y + bare - 1, -1):
-		for lx in range(x - radius, x + radius + 1):
-			for lz in range(z - radius, z + radius + 1):
-				if radius > 0 and absi(lx - x) == radius and absi(lz - z) == radius:
-					continue
-				_set_if_air(blocks, lx, ly, lz, leaves)
-		radius = 0 if radius >= max_radius else radius + 1
-		if radius == 0 and ly < y + height - 1:
-			radius = 1
-	_set_if_air(blocks, x, y + height + 1, z, leaves)
-	blocks[index(x, y - 1, z)] = _id["dirt"]
-	for dy in height:
-		blocks[index(x, y + dy, z)] = _id["spruce_log"]
-
-
-## Pine: a tall bare trunk with a small cap of leaves.
-func _pine(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: int, z: int) -> void:
-	var height := rng.randi_range(7, 11)
-	if not _trunk_fits(blocks, x, y, z, height):
-		return
-	var leaves: int = _id["spruce_leaves"]
-	var cap := rng.randi_range(3, 4)
-	for ly in range(y + height - cap, y + height + 1):
-		var radius := 1 if ly < y + height - 1 else 0
-		for lx in range(x - radius, x + radius + 1):
-			for lz in range(z - radius, z + radius + 1):
-				_set_if_air(blocks, lx, ly, lz, leaves)
-	_set_if_air(blocks, x, y + height + 1, z, leaves)
-	blocks[index(x, y - 1, z)] = _id["dirt"]
-	for dy in height:
-		blocks[index(x, y + dy, z)] = _id["spruce_log"]
 
 
 ## Clay like the classic game: a few small patches on the sand and dirt at
@@ -1121,42 +1065,6 @@ func _place_springs(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> voi
 					air += 1
 			if walls == 3 and air == 1:
 				blocks[index(x, y, z)] = _id[kind[0]]
-
-
-## A big oak (sometimes in forests), like the classic game's big trees: a
-## tall trunk, a few branches reaching out and up, round leaf clusters at
-## their ends and at the top.
-func _big_oak(blocks: PackedInt32Array, rng: RandomNumberGenerator, x: int, y: int, z: int) -> void:
-	var height := rng.randi_range(8, 12)
-	if not _trunk_fits(blocks, x, y, z, height):
-		return
-	var log_id: int = _id["oak_log"]
-	var leaves: int = _id["oak_leaves"]
-	blocks[index(x, y - 1, z)] = _id["dirt"]
-	var clusters: Array[Vector3i] = [Vector3i(x, y + height, z)]
-	for branch in rng.randi_range(3, 5):
-		var start_y := y + rng.randi_range(height / 2, height - 2)
-		var angle := rng.randf() * TAU
-		var length := rng.randi_range(2, 3)
-		var tip := Vector3i(x + roundi(cos(angle) * length), start_y + length - 1, z + roundi(sin(angle) * length))
-		tip.x = clampi(tip.x, 2, 13)
-		tip.z = clampi(tip.z, 2, 13)
-		# Logs from the trunk to the tip.
-		for step in length + 1:
-			var t := float(step) / length
-			var cell := Vector3i(roundi(lerpf(x, tip.x, t)), roundi(lerpf(start_y, tip.y, t)), roundi(lerpf(z, tip.z, t)))
-			if cell.y < _h and blocks[index(cell.x, cell.y, cell.z)] == Blocks.AIR:
-				blocks[index(cell.x, cell.y, cell.z)] = log_id
-		clusters.append(tip)
-	for cluster in clusters:
-		for dy in range(-1, 3):
-			var radius := 2.5 if dy < 2 else 1.5
-			for dx in range(-3, 4):
-				for dz in range(-3, 4):
-					if dx * dx + dz * dz + dy * dy * 0.5 <= radius * radius:
-						_set_if_air(blocks, cluster.x + dx, cluster.y + dy, cluster.z + dz, leaves)
-	for dy in height:
-		blocks[index(x, y + dy, z)] = log_id
 
 
 ## Ice on the sea surface of cold biomes; snow lying on the land and trees.

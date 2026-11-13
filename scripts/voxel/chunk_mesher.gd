@@ -130,7 +130,7 @@ static func prepare_native() -> bool:
 		"random_rotation": Blocks.random_rotation_table, "height": Blocks.height_table,
 		"uv_mode": Blocks.uv_mode_table, "cull_group": Blocks.cull_group_table,
 		"liquid_level": Blocks.liquid_level_table, "shape": Blocks.shape_table, "model": Blocks.model_table,
-		"models": models,
+		"models": models, "fast": Blocks.fast_tables(),
 	})
 	native = ClassDB.class_call_static("NativeMesher", "has_tables")
 	return native

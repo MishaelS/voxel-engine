@@ -18,6 +18,9 @@ var air_count := VOLUME
 ## Number of glowing blocks (torches, lava...): block light only looks for
 ## its sources in chunks that have some.
 var glow_count := 0
+## Number of leaves (blocks that change with Fast graphics): far chunks with
+## some are meshed again when they cross FAST_LEAVES_DISTANCE (VoxelWorld).
+var leaf_count := 0
 ## Sky light per block (0..15), same layout as `blocks`. Filled by
 ## SkyLight when the column is lit, then kept up to date by VoxelWorld.
 var light := PackedByteArray()
@@ -26,9 +29,11 @@ var light := PackedByteArray()
 var block_light := PackedByteArray()
 
 
-## Arrays every chunk of only air / of full sky light / of no light shares
-## (packed arrays copy on write: a chunk that changes gets its own). Most
-## of a 256 high world is sky: this keeps its memory to almost nothing.
+## Arrays every chunk of only air / of full sky light / of no light shares.
+## Packed arrays are shared by reference in GDScript (not copied on write):
+## a chunk takes its own copy before changing one (own_blocks, own_light,
+## own_block_light; the _shared_* flags). Most of a 256 high world is sky:
+## this keeps its memory to almost nothing.
 static var _air_blocks := _filled_ints(0)
 static var _full_light := _filled_bytes(15)
 static var _no_light := _filled_bytes(0)
@@ -48,22 +53,63 @@ static func _filled_bytes(value: int) -> PackedByteArray:
 	return array
 
 
+var _shared_blocks := true
+var _shared_light := true
+var _shared_block_light := true
+
+
 func _init() -> void:
 	blocks = _air_blocks # (all AIR)
 	light = _no_light
 	block_light = _no_light
 
 
+## The arrays, the chunk's own (copied from the shared ones before a change).
+func own_blocks() -> void:
+	if _shared_blocks:
+		blocks = blocks.duplicate()
+		_shared_blocks = false
+
+
+func own_light() -> void:
+	if _shared_light:
+		light = light.duplicate()
+		_shared_light = false
+
+
+func own_block_light() -> void:
+	if _shared_block_light:
+		block_light = block_light.duplicate()
+		_shared_block_light = false
+
+
+## Arrays given to the chunk (generated, loaded, lit): its own.
+func set_blocks(value: PackedInt32Array) -> void:
+	blocks = value
+	_shared_blocks = false
+
+
+func set_light(sky: PackedByteArray, glow: PackedByteArray) -> void:
+	light = sky
+	block_light = glow
+	_shared_light = false
+	_shared_block_light = false
+
+
 ## Shares the arrays that are all one value (after generating or lighting).
 func share_uniform() -> void:
 	if air_count == VOLUME:
 		blocks = _air_blocks
+		_shared_blocks = true
 	if light.count(15) == VOLUME:
 		light = _full_light
+		_shared_light = true
 	elif light.count(0) == VOLUME:
 		light = _no_light
+		_shared_light = true
 	if block_light.count(0) == VOLUME:
 		block_light = _no_light
+		_shared_block_light = true
 
 
 ## Layout: x changes fastest, then z, then y (horizontal layers).
@@ -85,6 +131,9 @@ func set_block(x: int, y: int, z: int, id: int) -> void:
 	tickable_count += Blocks.ticks_randomly[id] - Blocks.ticks_randomly[old]
 	air_count += int(id == Blocks.AIR) - int(old == Blocks.AIR)
 	glow_count += int(Blocks.light_emission_table[id] > 0) - int(Blocks.light_emission_table[old] > 0)
+	var leaves := Blocks.fast_leaves_table()
+	leaf_count += int(leaves[id]) - int(leaves[old])
+	own_blocks()
 	blocks[i] = id
 
 
@@ -94,12 +143,15 @@ func count_tickable() -> void:
 	air_count = blocks.count(Blocks.AIR)
 	tickable_count = 0
 	glow_count = 0
+	leaf_count = 0
 	if air_count == VOLUME:
 		return
 	var ticks := Blocks.ticks_randomly
 	var emission := Blocks.light_emission_table
+	var leaves := Blocks.fast_leaves_table()
 	for id in blocks:
 		tickable_count += ticks[id]
+		leaf_count += leaves[id]
 		if emission[id] > 0:
 			glow_count += 1
 

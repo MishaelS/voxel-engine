@@ -24,7 +24,9 @@ public:
 	// `tables`: Blocks' tables by name ("is_opaque", "layer", "cull_self",
 	// "face_tiles", "face_overlays", "tints", "collides", "liquid",
 	// "biome_tint", "random_rotation", "height", "uv_mode", "cull_group",
-	// "liquid_level", "shape", "model") and "models" (BlockModel's quads).
+	// "liquid_level", "shape", "model") and "models" (BlockModel's quads);
+	// "fast" (optional): "is_opaque", "layer", "face_tiles" with Fast
+	// graphics' leaves, for far chunks.
 	static void set_tables(const godot::Dictionary &tables);
 	static bool has_tables();
 
@@ -32,14 +34,15 @@ public:
 	// 26 neighbors' (Dictionaries Vector3i offset -> array; missing: air, full
 	// sky light, no block light). `grass` / `foliage`: the column's colors
 	// (empty: the blocks' tints). `smooth`: ChunkMesher.smooth_lighting,
-	// `rotate`: ChunkMesher.random_rotation.
+	// `rotate`: ChunkMesher.random_rotation, `fast`: leaves as with Fast
+	// graphics (the "fast" tables of set_tables).
 	// Returns [surfaces {layer: mesh arrays}, connectivity].
 	static godot::Array build_chunk(const godot::Vector3i &coord,
 			const godot::PackedInt32Array &center, const godot::Dictionary &neighbors,
 			const godot::PackedByteArray &center_light, const godot::Dictionary &neighbor_light,
 			const godot::PackedByteArray &center_block_light, const godot::Dictionary &neighbor_block_light,
 			const godot::PackedColorArray &grass, const godot::PackedColorArray &foliage,
-			int smooth, bool rotate);
+			int smooth, bool rotate, bool fast = false);
 };
 
 } // namespace voxel
