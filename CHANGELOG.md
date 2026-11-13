@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-11-13
+
 ### Fixed
 - The unnamed files given to spiders, wolves and chickens were not theirs (stone-like knocks, taps on thin wood, dull thuds); the dull thuds are now the sound of digging snow.
 
@@ -515,7 +517,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.8...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.9...HEAD
+[0.0.9]: https://github.com/MishaelS/voxel-engine/compare/v0.0.8...v0.0.9
 [0.0.8]: https://github.com/MishaelS/voxel-engine/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/MishaelS/voxel-engine/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/MishaelS/voxel-engine/compare/v0.0.5...v0.0.6
