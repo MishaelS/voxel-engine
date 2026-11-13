@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.11] - 2026-11-13
+
 ### Added
 - Hardcore game mode: survival on Hard that can't be changed, cheats off, one life; on death "Game over!" with only Delete World, which removes the world.
 
@@ -540,7 +542,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.10...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.11...HEAD
+[0.0.11]: https://github.com/MishaelS/voxel-engine/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/MishaelS/voxel-engine/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/MishaelS/voxel-engine/compare/v0.0.8...v0.0.9
 [0.0.8]: https://github.com/MishaelS/voxel-engine/compare/v0.0.7...v0.0.8
