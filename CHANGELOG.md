@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.10] - 2026-11-13
+
 ### Added
 - World types Floating Islands (Beta's biomes, trees, ores and springs on islands in the sky over the void), Island (one big island in an endless sea; seas inside it become low land) and Debug Mode (every block in every state in a grid on a stone floor, and a row of every creature and its looks standing still; nothing ticks or spawns there).
 - Bonus Chest option when creating a world: a chest of wood, wooden tools, apples and bread by the spawn with a torch on each side.
@@ -532,7 +534,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.9...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.10...HEAD
+[0.0.10]: https://github.com/MishaelS/voxel-engine/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/MishaelS/voxel-engine/compare/v0.0.8...v0.0.9
 [0.0.8]: https://github.com/MishaelS/voxel-engine/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/MishaelS/voxel-engine/compare/v0.0.6...v0.0.7
