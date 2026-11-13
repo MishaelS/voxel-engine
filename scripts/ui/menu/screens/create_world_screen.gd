@@ -6,7 +6,8 @@ extends MenuScreen
 ## the bottom, over the menu's darker band like the other menu screens. An
 ## empty seed is random, text is hashed.
 
-const MODES := ["Survival", "Creative"]
+## [name, game mode (Player.GameMode), hardcore], in the game's order.
+const MODES := [["Survival", 0, false], ["Hardcore", 0, true], ["Creative", 1, false]]
 ## World types: [name, generator (VoxelWorld.Generator), terrain (WorldSave)].
 ## Default is Beta 1.7.3's world, 128 high with the sea at 64; Tall
 ## Mountains the same land 256 high.
@@ -28,7 +29,7 @@ var on_play := Callable()
 
 var _name: LineEdit
 var _seed: LineEdit
-var _mode := 1
+var _mode := 2
 var _type := 0
 var _mode_button: Button
 var _type_button: Button
@@ -65,7 +66,7 @@ func build() -> void:
 	_mode_button = _button(row, func() -> void:
 		_mode = (_mode + 1) % MODES.size()
 		if not _cheats_set:
-			_cheats = _mode == 1
+			_cheats = MODES[_mode][1] == 1
 		_update_labels())
 	_type_button = _button(row, func() -> void:
 		_type = (_type + 1) % TYPES.size()
@@ -124,17 +125,20 @@ func _button(row: HBoxContainer, on_pressed: Callable) -> Button:
 
 
 func _update_labels() -> void:
-	_mode_button.text = Lang.t("Game Mode: %s") % Lang.t(MODES[_mode])
+	_mode_button.text = Lang.t("Game Mode: %s") % Lang.t(MODES[_mode][0])
 	_type_button.text = Lang.t("World Type: %s") % Lang.t(TYPES[_type][0])
-	_cheats_button.text = Lang.t("Allow Cheats: %s") % Lang.t("ON" if _cheats else "OFF")
+	_cheats_button.text = Lang.t("Allow Cheats: %s") % Lang.t("ON" if _cheats and not MODES[_mode][2] else "OFF")
+	_cheats_button.disabled = MODES[_mode][2] # (no cheats in Hardcore)
 	_bonus_button.text = Lang.t("Bonus Chest: %s") % Lang.t("ON" if _bonus_chest else "OFF")
 	# (the debug world is a showcase: no chest in it)
 	_bonus_button.disabled = TYPES[_type][1] == VoxelWorld.Generator.DEBUG
 
 
 func _create() -> void:
-	var save := WorldSave.create(_name.text, WorldSave.seed_from_text(_seed.text), TYPES[_type][1], _mode, _cheats,
-		TYPES[_type][2])
+	var hardcore: bool = MODES[_mode][2]
+	var save := WorldSave.create(_name.text, WorldSave.seed_from_text(_seed.text), TYPES[_type][1], MODES[_mode][1],
+		_cheats and not hardcore, TYPES[_type][2])
+	save.hardcore = hardcore
 	save.bonus_chest = _bonus_chest and TYPES[_type][1] != VoxelWorld.Generator.DEBUG
 	save.write_level()
 	on_play.call(save)

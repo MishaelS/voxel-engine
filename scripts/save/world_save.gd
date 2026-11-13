@@ -34,6 +34,9 @@ var allow_cheats := true
 ## A chest of starting things by the spawn, put there when the world is
 ## first played (VoxelWorld.place_bonus_chest).
 var bonus_chest := false
+## Hardcore: survival on Hard that can't be changed, no cheats, one life;
+## the world is deleted when the player dies (DeathScreen).
+var hardcore := false
 ## The world type: "classic" (Beta 1.7.3: 128 high, the sea at 64), "tall"
 ## (Tall Mountains: 256 high, the sea at 64) or "old" (made 256 high with
 ## the sea at 128 and a deep layer, before the world types).
@@ -125,6 +128,7 @@ func load_level() -> bool:
 	game_mode = config.get_value("world", "game_mode", 0)
 	allow_cheats = config.get_value("world", "allow_cheats", true)
 	bonus_chest = config.get_value("world", "bonus_chest", false)
+	hardcore = config.get_value("world", "hardcore", false)
 	created = config.get_value("world", "created", 0)
 	last_played = config.get_value("world", "last_played", 0)
 	height = config.get_value("world", "height", WorldGenerator.LEGACY_HEIGHT)
@@ -146,6 +150,7 @@ func write_level() -> void:
 	config.set_value("world", "game_mode", game_mode)
 	config.set_value("world", "allow_cheats", allow_cheats)
 	config.set_value("world", "bonus_chest", bonus_chest)
+	config.set_value("world", "hardcore", hardcore)
 	config.set_value("world", "created", created)
 	config.set_value("world", "last_played", last_played)
 	config.set_value("world", "height", height)

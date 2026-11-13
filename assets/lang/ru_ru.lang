@@ -815,3 +815,7 @@ Falling Block=Падающий блок
 Fishing Bobber=Поплавок
 Player=Игрок
 Set %s's game mode to %s Mode=Режим игры %s изменён на «%s»
+Hardcore=Хардкор
+Game over!=Игра окончена!
+You cannot respawn in Hardcore mode=В режиме «Хардкор» нельзя возродиться
+Delete World=Удалить мир

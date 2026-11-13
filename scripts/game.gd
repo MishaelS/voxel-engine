@@ -26,6 +26,9 @@ func _ready() -> void:
 		get_tree().change_scene_to_file.call_deferred(TITLE_SCENE)
 		return
 	add_to_group("game")
+	Settings.forced.clear()
+	if WorldSave.current.hardcore:
+		Settings.forced["difficulty"] = 3 # Hard, and it stays
 	Stats.add("saves_loaded")
 	get_tree().auto_accept_quit = false # save first (NOTIFICATION_WM_CLOSE_REQUEST)
 	var loading := LoadingScreen.new()
@@ -34,6 +37,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	Settings.forced.clear()
 	if is_inside_tree():
 		get_tree().auto_accept_quit = true
 

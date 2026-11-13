@@ -67,7 +67,7 @@ func _make_entry(save: WorldSave, index: int) -> PanelContainer:
 	details.add_theme_color_override("font_color", Color("808080"))
 	lines.add_child(details)
 	var mode := Label.new()
-	mode.text = Lang.t("%s Mode, seed %d") % [Lang.t(MODE_NAMES[clampi(save.game_mode, 0, 1)]), save.world_seed]
+	mode.text = Lang.t("%s Mode, seed %d") % [Lang.t("Hardcore" if save.hardcore else MODE_NAMES[clampi(save.game_mode, 0, 1)]), save.world_seed]
 	mode.add_theme_color_override("font_color", Color("808080"))
 	lines.add_child(mode)
 	for label: Label in [name_label, details, mode]:

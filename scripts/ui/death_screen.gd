@@ -10,6 +10,8 @@ const P := UiTheme.PIXEL
 @export var world: VoxelWorld
 
 var _buttons: VBoxContainer
+var _title: Label
+var _hardcore_note: Label
 var _shown_at := 0.0
 
 
@@ -38,6 +40,7 @@ func _ready() -> void:
 	add_child(rect)
 
 	var title := Label.new()
+	_title = title
 	title.text = "You died!"
 	title.add_theme_color_override("font_color", Color.WHITE)
 	title.add_theme_font_size_override("font_size", UiTheme.FONT_SIZE * 2)
@@ -58,6 +61,16 @@ func _ready() -> void:
 	score.offset_right = 150 * P
 	score.offset_top = 100 * P
 	add_child(score)
+	# Hardcore: "Game over!" and why there is no respawning.
+	_hardcore_note = Label.new()
+	_hardcore_note.text = "You cannot respawn in Hardcore mode"
+	_hardcore_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hardcore_note.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_hardcore_note.offset_left = -150 * P
+	_hardcore_note.offset_right = 150 * P
+	_hardcore_note.offset_top = 115 * P
+	_hardcore_note.visible = false
+	add_child(_hardcore_note)
 
 	_buttons = VBoxContainer.new()
 	_buttons.set_anchors_preset(Control.PRESET_CENTER)
@@ -87,12 +100,31 @@ func _button(text: String, on_pressed: Callable) -> Button:
 
 func _show() -> void:
 	visible = true
+	if WorldSave.current and WorldSave.current.hardcore and not Net.is_client():
+		_title.text = "Game over!"
+		_hardcore_note.visible = true
+		for child in _buttons.get_children():
+			child.queue_free()
+		_buttons.add_child(_button("Delete World", _delete_world))
 	_shown_at = Time.get_ticks_msec() / 1000.0
 	GameInput.lock()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	# Like the classic game the buttons appear after a moment.
 	_buttons.visible = false
 	get_tree().create_timer(1.0).timeout.connect(func() -> void: _buttons.visible = true)
+
+
+## Hardcore's one life is over: the world goes (written first on the way
+## to the title, then deleted from the tree's timer, which outlives this
+## screen).
+func _delete_world() -> void:
+	var save := WorldSave.current
+	var game := Game.find(get_tree())
+	if game:
+		game.quit_to_title()
+	if save and not save.remote:
+		# (a lambda: it keeps the save alive until then; a method Callable wouldn't)
+		Engine.get_main_loop().create_timer(0.5).timeout.connect(func() -> void: save.delete())
 
 
 func _respawn() -> void:

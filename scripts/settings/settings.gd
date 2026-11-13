@@ -149,7 +149,12 @@ func in_category(category: String) -> Array:
 
 
 func get_value(key: String) -> Variant:
-	return _values.get(key)
+	return forced.get(key, _values.get(key))
+
+
+## Values the world being played fixes, whatever the player's settings (a
+## Hardcore world's Hard difficulty); not saved, cleared on leaving it.
+var forced := {}
 
 
 func set_value(key: String, value: Variant) -> void:

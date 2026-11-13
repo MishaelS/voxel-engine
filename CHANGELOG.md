@@ -13,6 +13,12 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Hardcore game mode: survival on Hard that can't be changed, cheats off, one life; on death "Game over!" with only Delete World, which removes the world.
+
+### Changed
+- The boot splash is a pixel-art Godot logo with "Godot Engine" in the game's font on the menus' dark color, drawn again in the middle once the window takes its saved size (it used to stay in a corner).
+
 ## [0.0.10] - 2026-11-13
 
 ### Added

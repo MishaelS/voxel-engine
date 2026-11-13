@@ -30,6 +30,7 @@ func _ready() -> void:
 	window.min_size = MIN_SIZE
 	_load_window()
 	restore_window()
+	_redraw_boot_splash()
 	window.size_changed.connect(_on_size_changed)
 	process_mode = Node.PROCESS_MODE_ALWAYS # hotkeys also work in menus
 	# Needed for the render CPU time in the HUD.
@@ -62,6 +63,20 @@ func _exit_tree() -> void:
 
 ## Back to a normal window (start, leaving fullscreen): maximized if it was,
 ## else the saved size in the middle of the screen.
+## The boot splash (the pixel Godot logo) was drawn for the window's size
+## before restore_window() changed it, which left it in a corner until the
+## first frame: drawn again, in the middle of the window as it is now.
+func _redraw_boot_splash() -> void:
+	var path: String = ProjectSettings.get_setting("application/boot_splash/image", "")
+	if path == "" or not ResourceLoader.exists(path):
+		return
+	var image := (load(path) as Texture2D).get_image()
+	if image.is_compressed():
+		image.decompress()
+	RenderingServer.set_boot_image(image, ProjectSettings.get_setting("application/boot_splash/bg_color"),
+		false, false)
+
+
 func restore_window() -> void:
 	var window := get_window()
 	if _maximized:
