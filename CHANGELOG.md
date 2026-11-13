@@ -13,6 +13,17 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Inventory controls like Minecraft's: drag a stack over slots to split it evenly (left button) or put one in each (right button; middle button fills them in creative), Shift-drag to quick-move every slot passed over, double-click to collect matching items into the held stack (Shift+double-click moves all of them), middle click in creative to take a full stack.
+
+### Changed
+- The pause menu laid out like the game's: Back to Game; Achievements and Statistics side by side; Options... and Open to LAN side by side; Save and Quit to Title, starting a quarter of the screen down.
+
+### Fixed
+- Dropped items on the edge of a block were set down into the next block, pushed out up and fell again over and over.
+- The breaking cracks stayed on their first picture after going back into a world (the cached crack meshes kept the previous world's material).
+- The bottom of grass blocks was tinted with the grass color instead of being plain dirt.
+
 ## [0.0.11] - 2026-11-13
 
 ### Added

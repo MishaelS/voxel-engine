@@ -841,7 +841,10 @@ func _make_crack_mesh() -> ArrayMesh:
 	return _crack_mesh_for(Blocks.id_of("stone"))
 
 
-static var _crack_meshes := {} # block id -> ArrayMesh
+## (This interaction's own: the meshes carry its _crack_material, so ones
+## kept from an earlier world showed a material nobody updated any more,
+## stuck on the first crack stage.)
+var _crack_meshes := {} # block id -> ArrayMesh
 
 
 ## The cracks over a block's shape (its outline boxes: slabs, fences,

@@ -199,10 +199,12 @@ func _physics(item: Dictionary) -> void:
 		if _box_blocked(next):
 			if axis == 1 and velocity.y < 0.0:
 				on_ground = true
-				# Rest on the block's top (beds are lower).
-				var cell := Vector3i(floori(position.x), floori(next.y - HALF), floori(position.z))
-				var top := cell.y + Blocks.top_at(world.get_block(cell), position.x - cell.x, position.z - cell.z)
-				if top <= position.y - HALF + 1e-3:
+				# Rest on the top of what holds it (beds are lower): the highest
+				# under any of its four bottom corners, so an item on the edge
+				# of a block isn't set down into it (and pushed out up, falling
+				# again, over and over).
+				var top := _support_top(position, next.y - HALF)
+				if top > -INF and top <= position.y - HALF + 1e-3:
 					position.y = top + HALF
 			velocity[axis] = 0.0
 		else:
@@ -215,6 +217,20 @@ func _physics(item: Dictionary) -> void:
 	item.vel = velocity
 	item.pos = position
 	item.ground = on_ground
+
+
+## The highest top of the blocks under the item's bottom corners at height
+## `bottom_y` (-INF if none of them holds anything).
+func _support_top(center: Vector3, bottom_y: float) -> float:
+	var best := -INF
+	for corner in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		var x: float = center.x + corner.x * (HALF - 0.001)
+		var z: float = center.z + corner.y * (HALF - 0.001)
+		var cell := Vector3i(floori(x), floori(bottom_y), floori(z))
+		var id := world.get_block(cell)
+		if Blocks.blocks_point(id, Vector3(x, bottom_y, z) - Vector3(cell)):
+			best = maxf(best, cell.y + Blocks.top_at(id, x - cell.x, z - cell.z))
+	return best
 
 
 func _box_blocked(center: Vector3) -> bool:

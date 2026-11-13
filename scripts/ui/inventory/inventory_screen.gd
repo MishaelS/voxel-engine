@@ -14,13 +14,21 @@ extends Control
 ##   the cooking arrow.
 ## Each shows the player's inventory and hotbar below.
 ##
-## Mouse, like the classic game:
+## Mouse, like Minecraft Java's container screens:
 ## - LMB: pick up / put down / swap a stack; RMB: pick up half, put one;
+## - dragging a held stack over slots: LMB splits it evenly between them
+##   (the rest stays held), RMB puts one into each, MMB (creative) fills
+##   each with a full stack; the split is previewed while dragging;
 ## - Shift + LMB: move a stack to the other part of the window (inventory:
 ##   hotbar <-> main; chest <-> inventory; furnace: into input or fuel;
-##   result: craft all);
+##   result: craft all); keeping Shift + LMB down and moving over slots
+##   moves each of them; Shift + double click moves every stack of that
+##   item in the same part;
+## - double click with a held stack: gathers that item from every slot
+##   into it, up to a full stack (not from the crafting result);
+## - MMB (creative): a full stack of the slot's item;
 ## - 1-9 over a slot: swap it with that hotbar slot; Q over a slot: throw
-##   one item out (Ctrl+Q the stack);
+##   one item out (Ctrl+Q the stack) - both with nothing held, like Java;
 ## - clicking outside the window throws the held stack (RMB one item);
 ## - catalog: LMB takes a full stack, RMB one more; clicking it while
 ##   holding something deletes what is held; the mouse wheel scrolls it,
@@ -45,6 +53,10 @@ const CREATIVE_WINDOW := Rect2i(0, 0, 176, 222)
 const TITLE_COLOR := Color("404040")
 const TOOLTIP_BACKGROUND := Color(0.063, 0.0, 0.063, 0.94)
 const TOOLTIP_BORDER := Color(0.31, 0.0, 1.0, 0.31)
+## Two presses on one slot closer than this are a double click (Java's 250 ms).
+const DOUBLE_CLICK_MS := 250
+## The white overlay over the hovered and dragged-over slots.
+const HIGHLIGHT_COLOR := Color(1, 1, 1, 0.5)
 
 @export var player: Player
 
@@ -74,6 +86,23 @@ var _container: Inventory
 var _containers: Array[Inventory] = []
 var _flame: Control
 var _arrow: Control
+## The mouse button spreading the held stack over slots (Java's "quick
+## craft"), MOUSE_BUTTON_NONE when not dragging. Nothing changes until it
+## is released; until then the split is only shown.
+var _drag_button := MOUSE_BUTTON_NONE
+## Indices into _slots that the drag has passed over, in order.
+var _drag_slots: Array[int] = []
+## The slot the drag was pressed on: clicked normally if no slot took part.
+var _drag_press := -1
+var _drag_marks: Array[ColorRect] = []
+## Shift + LMB is held: every slot the mouse passes is quick-moved once.
+var _shift_dragging := false
+var _shift_visited: Array[int] = []
+## For double clicks: the last left press's slot and time, and the item the
+## last shift-click moved (Shift + double click moves all like it).
+var _last_click_slot := -1
+var _last_click_time := -DOUBLE_CLICK_MS
+var _last_quick_id := Blocks.AIR
 
 
 func _ready() -> void:
@@ -161,6 +190,7 @@ func close() -> void:
 	_containers.clear()
 	_container = null
 	_entity = {}
+	_reset_drags()
 	_open = false
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -184,7 +214,9 @@ func _input(event: InputEvent) -> void:
 		close()
 		get_viewport().set_input_as_handled()
 		return
-	if event is InputEventKey and event.pressed and not event.echo and _hover >= 0:
+	# Java only throws or swaps with an empty cursor (and not mid-drag).
+	if event is InputEventKey and event.pressed and not event.echo and _hover >= 0 \
+			and _held_count == 0 and _drag_button == MOUSE_BUTTON_NONE:
 		if event.is_action_pressed("drop_item"):
 			_throw_from_slot(_slots[_hover], event is InputEventWithModifiers and (event.ctrl_pressed or event.meta_pressed))
 			get_viewport().set_input_as_handled()
@@ -218,6 +250,8 @@ func _build() -> void:
 	_thumb = null
 	_dragging_scroll = false
 	_arrow = null
+	_reset_drags()
+	_drag_marks.clear()
 
 	add_child(UiTheme.blur_rect()) # the world behind is slightly blurred
 	var dim := ColorRect.new()
@@ -335,7 +369,7 @@ func _build() -> void:
 		_add_slot(Kind.INVENTORY, i, Vector2i(8 + i * 18, hotbar_y))
 
 	_highlight = ColorRect.new()
-	_highlight.color = Color(1, 1, 1, 0.5)
+	_highlight.color = HIGHLIGHT_COLOR
 	_highlight.size = Vector2(16, 16) * P
 	_highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_highlight.visible = false
@@ -463,11 +497,19 @@ func _craft_grid() -> PackedInt32Array:
 func _refresh() -> void:
 	if not _open:
 		return
-	for slot in _slots:
+	# While dragging, the slots and the cursor show the split to come.
+	var plan := _drag_plan()
+	var planned: Dictionary = plan.counts
+	for i in _slots.size():
+		var slot := _slots[i]
 		var content := _content(slot)
+		if planned.has(i):
+			content = [_held_id, planned[i], _held_damage]
 		(slot.view as ItemSlotView).set_item(content[0], content[1], slot.kind != Kind.CATALOG, content[2])
-	_held.set_item(_held_id, _held_count, true, _held_damage)
-	_held.visible = _held_count > 0
+	var held_count: int = plan.left
+	_held.set_item(_held_id, held_count, true, _held_damage)
+	_held.visible = held_count > 0
+	_update_drag_marks(planned.keys())
 	if _creative and _thumb:
 		var room := SCROLL_TRACK.size.y - SCROLL_THUMB.size.y
 		var t := _scroll / float(_max_scroll()) if _max_scroll() > 0 else 0.0
@@ -484,8 +526,13 @@ func _gui_input(event: InputEvent) -> void:
 		if _dragging_scroll:
 			_scroll_to(event.position)
 		_update_hover(event.position)
-	elif event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		_dragging_scroll = false
+		_drag_over(event.position, event.shift_pressed)
+	elif event is InputEventMouseButton and not event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			_dragging_scroll = false
+			_shift_dragging = false
+		if event.button_index == _drag_button:
+			_finish_drag()
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
@@ -493,27 +540,237 @@ func _gui_input(event: InputEvent) -> void:
 					var step := -1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1
 					_scroll = clampi(_scroll + step, 0, _max_scroll())
 					_refresh()
-			MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT:
-				var right: bool = event.button_index == MOUSE_BUTTON_RIGHT
-				if _creative and not right and _on_scrollbar(event.position):
-					_dragging_scroll = true
-					_scroll_to(event.position)
-					accept_event()
-					return
-				var index := _slot_at(event.position)
-				if index >= 0:
-					_click(_slots[index], right, event.shift_pressed)
-					_refresh()
-				elif _held_count > 0 and not Rect2(_window.position, _window.size).has_point(event.position):
-					# Outside the window: throw the held stack (one with RMB).
-					var thrown := 1 if right else _held_count
-					player.throw_items(_held_id, thrown, _held_damage)
-					_held_count -= thrown
-					if _held_count == 0:
-						_held_id = Blocks.AIR
-						_held_damage = 0
-					_refresh()
+			MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE:
+				_press(event)
 		accept_event()
+
+
+## A left, right or middle press.
+func _press(event: InputEventMouseButton) -> void:
+	if _drag_button != MOUSE_BUTTON_NONE:
+		# Another button during a drag cancels it, like Java.
+		_reset_drags()
+		_refresh()
+		return
+	var button := event.button_index
+	var right := button == MOUSE_BUTTON_RIGHT
+	if _creative and button == MOUSE_BUTTON_LEFT and _on_scrollbar(event.position):
+		_dragging_scroll = true
+		_scroll_to(event.position)
+		return
+	var index := _slot_at(event.position)
+	if index < 0:
+		if _held_count > 0 and button != MOUSE_BUTTON_MIDDLE \
+				and not Rect2(_window.position, _window.size).has_point(event.position):
+			# Outside the window: throw the held stack (one with RMB).
+			var thrown := 1 if right else _held_count
+			player.throw_items(_held_id, thrown, _held_damage)
+			_held_count -= thrown
+			_clear_held_if_empty()
+			_refresh()
+		return
+	var slot := _slots[index]
+	var now := Time.get_ticks_msec()
+	var double := button == MOUSE_BUTTON_LEFT and index == _last_click_slot and now - _last_click_time < DOUBLE_CLICK_MS
+	if button == MOUSE_BUTTON_LEFT:
+		_last_click_slot = index
+		# A third quick press is a new first click, not another double.
+		_last_click_time = -DOUBLE_CLICK_MS if double else now
+	if button == MOUSE_BUTTON_MIDDLE:
+		if not player.is_creative():
+			return
+		if _held_count == 0:
+			_clone(slot)
+		elif _draggable(slot):
+			_start_drag(button, index)
+	elif event.shift_pressed and button == MOUSE_BUTTON_LEFT:
+		if double and _last_quick_id != Blocks.AIR:
+			_move_all_like(slot, _last_quick_id)
+		else:
+			_last_quick_id = _content(slot)[0]
+			_click(slot, false, true)
+		_shift_dragging = true
+		_shift_visited = [index]
+	elif double and _held_count > 0 and slot.kind != Kind.RESULT and slot.kind != Kind.CATALOG:
+		_collect()
+	elif _held_count > 0 and _draggable(slot):
+		_start_drag(button, index)
+	else:
+		_click(slot, right, event.shift_pressed)
+	_refresh()
+
+
+func _clear_held_if_empty() -> void:
+	if _held_count <= 0:
+		_held_id = Blocks.AIR
+		_held_count = 0
+		_held_damage = 0
+
+
+# --- Dragging -------------------------------------------------------------------------
+
+func _reset_drags() -> void:
+	_drag_button = MOUSE_BUTTON_NONE
+	_drag_slots.clear()
+	_drag_press = -1
+	_shift_dragging = false
+	_shift_visited.clear()
+
+
+## Slots a held stack can be spread over (not results, outputs or the
+## catalog, whose clicks have their own rules).
+func _draggable(slot: Dictionary) -> bool:
+	return slot.kind in [Kind.INVENTORY, Kind.CRAFT, Kind.CONTAINER, Kind.ARMOR]
+
+
+func _start_drag(button: MouseButton, index: int) -> void:
+	_drag_button = button
+	_drag_press = index
+	_drag_slots.clear()
+	if _drag_accepts(_slots[index]):
+		_drag_slots.append(index)
+
+
+## Whether the drag may put the held item into a slot: empty or the same
+## item with room (MMB fills any of them), armor only of its kind.
+func _drag_accepts(slot: Dictionary) -> bool:
+	if not _draggable(slot) or _held_count == 0:
+		return false
+	if slot.kind == Kind.ARMOR and not _fits_armor(_held_id, slot.index):
+		return false
+	var content := _content(slot)
+	if content[1] == 0:
+		return true
+	if content[0] != _held_id or content[2] != _held_damage:
+		return false
+	return _drag_button == MOUSE_BUTTON_MIDDLE or content[1] < Items.max_stack(_held_id)
+
+
+func _drag_over(point: Vector2, shift: bool) -> void:
+	var index := _slot_at(point)
+	if index < 0:
+		return
+	if _shift_dragging and shift and not _shift_visited.has(index):
+		_shift_visited.append(index)
+		var slot := _slots[index]
+		if slot.kind != Kind.RESULT and slot.kind != Kind.CATALOG and _content(slot)[1] > 0:
+			_click(slot, false, true)
+			_refresh()
+	elif _drag_button != MOUSE_BUTTON_NONE and not _drag_slots.has(index) and _drag_accepts(_slots[index]):
+		# LMB and RMB need at least one item for every slot.
+		if _drag_button == MOUSE_BUTTON_MIDDLE or _drag_slots.size() < _held_count:
+			_drag_slots.append(index)
+			_refresh()
+
+
+## What the drag would do: {counts: {slot index: new count}, left: what
+## stays held}. LMB splits evenly, RMB gives one each, MMB a full stack
+## each (creative, the held stack stays).
+func _drag_plan() -> Dictionary:
+	var counts := {}
+	var left := _held_count
+	if _drag_button == MOUSE_BUTTON_NONE or _drag_slots.is_empty():
+		return {"counts": counts, "left": left}
+	var stack := Items.max_stack(_held_id)
+	var share := _held_count / _drag_slots.size()
+	for i in _drag_slots:
+		if not _drag_accepts(_slots[i]):
+			continue # changed under the drag (Net)
+		var have: int = _content(_slots[i])[1]
+		var target := stack
+		if _drag_button == MOUSE_BUTTON_LEFT:
+			target = mini(have + share, stack)
+		elif _drag_button == MOUSE_BUTTON_RIGHT:
+			target = mini(have + 1, stack)
+		if _drag_button != MOUSE_BUTTON_MIDDLE:
+			left -= target - have
+		counts[i] = target
+	return {"counts": counts, "left": left}
+
+
+## Release: the planned split happens; a drag over no slot is a plain click
+## on the slot it started on (a swap, say).
+func _finish_drag() -> void:
+	var plan := _drag_plan()
+	var button := _drag_button
+	var press := _drag_press
+	var empty := _drag_slots.is_empty()
+	_reset_drags()
+	if empty:
+		if button != MOUSE_BUTTON_MIDDLE and press >= 0:
+			_click(_slots[press], button == MOUSE_BUTTON_RIGHT, false)
+	else:
+		var counts: Dictionary = plan.counts
+		var id := _held_id
+		var damage := _held_damage
+		_held_count = plan.left
+		_clear_held_if_empty()
+		for i: int in counts:
+			_put(_slots[i], id, counts[i], damage)
+	_refresh()
+
+
+## The white overlay over each dragged-over slot.
+func _update_drag_marks(indices: Array) -> void:
+	while _drag_marks.size() < indices.size():
+		var mark := ColorRect.new()
+		mark.color = HIGHLIGHT_COLOR
+		mark.size = Vector2(16, 16) * P
+		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_window.add_child(mark)
+		_drag_marks.append(mark)
+	for i in _drag_marks.size():
+		_drag_marks[i].visible = i < indices.size() and indices[i] != _hover
+		if i < indices.size():
+			_drag_marks[i].position = Vector2(_slots[indices[i]].pos) * P
+
+
+## Double click: the held stack gathers its item from every slot (partial
+## stacks first, like Java), the crafting result and catalog left alone.
+func _collect() -> void:
+	var stack := Items.max_stack(_held_id)
+	for full_pass in [false, true]:
+		for slot in _slots:
+			if _held_count >= stack:
+				return
+			if slot.kind == Kind.RESULT or slot.kind == Kind.CATALOG:
+				continue
+			var content := _content(slot)
+			if content[1] == 0 or content[0] != _held_id or content[2] != _held_damage or (content[1] >= stack) != full_pass:
+				continue
+			var taken := mini(content[1], stack - _held_count)
+			if slot.kind == Kind.OUTPUT:
+				Stats.smelted(content[0], taken)
+			_held_count += taken
+			_put(slot, content[0], content[1] - taken, content[2])
+
+
+## Shift + double click: every stack of `id` in the clicked slot's part of
+## the window (a container, the grid, the hotbar or the main inventory) is
+## quick-moved.
+func _move_all_like(clicked: Dictionary, id: int) -> void:
+	if clicked.kind == Kind.RESULT or clicked.kind == Kind.CATALOG:
+		return
+	# In the inventory window hotbar and main inventory trade places, so
+	# they count as separate parts there.
+	var split_hotbar: bool = clicked.kind == Kind.INVENTORY and _mode == Mode.INVENTORY
+	var in_hotbar: bool = clicked.index < Inventory.HOTBAR_SIZE
+	for slot in _slots:
+		if slot.kind != clicked.kind or _content(slot)[0] != id:
+			continue
+		if split_hotbar and (int(slot.index) < Inventory.HOTBAR_SIZE) != in_hotbar:
+			continue
+		_click(slot, false, true)
+
+
+## MMB in creative: a full stack of the slot's item on the cursor.
+func _clone(slot: Dictionary) -> void:
+	var content := _content(slot)
+	if content[1] == 0:
+		return
+	_held_id = content[0]
+	_held_count = Items.max_stack(content[0])
+	_held_damage = content[2]
 
 
 ## How far the catalog scrolls (rows past the first page).

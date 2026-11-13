@@ -41,7 +41,10 @@ static var is_opaque_table := PackedByteArray()
 static var layer_table := PackedByteArray()
 static var cull_self_table := PackedByteArray()
 static var face_tiles := PackedInt32Array()    # [id * 6 + face]
-static var face_overlays := PackedInt32Array() # [id * 6 + face], -1 = none
+static var face_overlays := PackedInt32Array() # [id * 6 + face], -1 = none, -2 glowing, -3 = UNTINTED
+## A face's overlay meaning "no overlay and not tinted": the grass block's
+## bottom is plain dirt, not the grass color (block_common.gdshaderinc).
+const UNTINTED := -3
 static var tints_linear := PackedColorArray()  # [id]
 # 1 if the block has a random tick handler: lets the world skip others fast.
 static var ticks_randomly := PackedByteArray()
@@ -1224,9 +1227,12 @@ static func _bed(part: String, facing: int) -> BlockType:
 
 
 static func _grass(block_name: String, tint: Color) -> BlockType:
-	# Top: grayscale grass tinted. Sides: dirt-based tile + tinted grass fringe.
-	return BlockType.column(block_name, 0, 3, 2).set_side_overlay(38).set_tint(tint).set_random_rotation() \
+	# Top: grayscale grass tinted. Sides: dirt-based tile + tinted grass
+	# fringe. Bottom: plain dirt, not tinted (like Beta's).
+	var block := BlockType.column(block_name, 0, 3, 2).set_side_overlay(38).set_tint(tint).set_random_rotation() \
 		.set_hardness(0.6).set_drop("dirt").set_biome_tint(1).set_random_tick(Callable(GrassBehavior, "random_tick"))
+	block.overlays[BlockModel.DOWN] = UNTINTED
+	return block
 
 
 ## Sand, gravel: fall when the block below is air or water.

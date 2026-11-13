@@ -82,10 +82,12 @@ vec4 block_albedo(vec2 uv, vec4 vertex_color) {
 		// Overlay (e.g. grass fringe on dirt): tint applies to the overlay only.
 		vec4 overlay = texture(tiles, vec3(uv, tile_layers.y));
 		rgb = mix(base.rgb, overlay.rgb * vertex_color.rgb, overlay.a);
+	} else if (tile_layers.y < -2.5) {
+		rgb = base.rgb; // -3: not tinted (the grass block's dirt bottom)
 	} else {
 		rgb = base.rgb * vertex_color.rgb;
 	}
-	if (tile_layers.y < -1.5) {
+	if (tile_layers.y < -1.5 && tile_layers.y > -2.5) {
 		return vec4(rgb, base.a); // glowing (lava)
 	}
 	float light = entity_light >= 0.0 ? entity_light : light_brightness(vertex_color.a);
@@ -94,5 +96,5 @@ vec4 block_albedo(vec2 uv, vec4 vertex_color) {
 
 // 1 for glowing blocks (lava): lit shaders add their color as emission.
 float block_emission() {
-	return tile_layers.y < -1.5 ? 1.0 : 0.0;
+	return tile_layers.y < -1.5 && tile_layers.y > -2.5 ? 1.0 : 0.0;
 }
