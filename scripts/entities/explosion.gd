@@ -27,6 +27,8 @@ static func explode(world: VoxelWorld, center: Vector3, power: float, source: Va
 							destroyed[cell] = id
 					point += dir * 0.3
 					strength -= 0.3 * 0.75
+	if source is Mob and not GameRules.flag(world, "mobGriefing"):
+		destroyed.clear() # a creeper's blast hurts but breaks nothing
 	# Creatures and the player.
 	var reach := power * 2.0
 	var player := world.player as Player

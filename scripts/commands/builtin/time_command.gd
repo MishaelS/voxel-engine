@@ -22,18 +22,18 @@ static func register(d: CommandDispatcher) -> void:
 		.then(CommandNode.literal("add")
 			.then(CommandNode.argument("time", TimeArgument.new()).executes(func(ctx: CommandContext) -> int:
 				ctx.source.world.clock.add_day_time(ctx.arg("time"))
-				return ctx.feedback("Set the time to %d" % int(ctx.source.world.clock.day_time)))))
+				return ctx.feedback(Lang.t("Set the time to %d") % int(ctx.source.world.clock.day_time)))))
 		.then(CommandNode.literal("query")
 			.then(CommandNode.literal("daytime").executes(func(ctx: CommandContext) -> int:
-				return ctx.feedback("The time is %d" % int(ctx.source.world.clock.time_of_day()))))
+				return ctx.feedback(Lang.t("The time is %d") % int(ctx.source.world.clock.time_of_day()))))
 			.then(CommandNode.literal("gametime").executes(func(ctx: CommandContext) -> int:
-				return ctx.feedback("The time is %d" % ctx.source.world.clock.game_time)))
+				return ctx.feedback(Lang.t("The time is %d") % ctx.source.world.clock.game_time)))
 			.then(CommandNode.literal("day").executes(func(ctx: CommandContext) -> int:
-				return ctx.feedback("The time is %d" % ctx.source.world.clock.day())))))
+				return ctx.feedback(Lang.t("The time is %d") % ctx.source.world.clock.day())))))
 
 
 ## Like the classic game: sets the time of the current day, keeps the day count.
 static func _set_time(ctx: CommandContext, ticks: int) -> int:
 	var clock := ctx.source.world.clock
 	clock.day_time = clock.day() * WorldClock.TICKS_PER_DAY + ticks
-	return ctx.feedback("Set the time to %d" % ticks)
+	return ctx.feedback(Lang.t("Set the time to %d") % ticks)

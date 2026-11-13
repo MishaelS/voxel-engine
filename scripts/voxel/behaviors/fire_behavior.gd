@@ -49,6 +49,9 @@ static func scheduled_tick(world: VoxelWorld, pos: Vector3i) -> void:
 	var id := world.get_block(pos)
 	if not is_fire(id):
 		return
+	if not GameRules.flag(world, "doFireTick"):
+		world.schedule_tick(pos, TICK_DELAY) # burns on as it is (the doFireTick game rule)
+		return
 	var rng := world.rng
 	var age: int = Blocks.family_ids("fire").find(id)
 	if age < MAX_AGE:

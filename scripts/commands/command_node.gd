@@ -18,6 +18,14 @@ var children: Array[CommandNode] = []
 var executor := Callable()
 ## Shown by /help for top-level commands.
 var description := ""
+## Where parsing goes on after this node (the next token is matched against
+## the redirect's children), like Brigadier's redirects: /execute chains
+## its parts by redirecting back to itself, and "run" to the root.
+var redirect: CommandNode
+## Called as modifier(ctx: CommandContext) -> Array[CommandSource] when a
+## command goes on past this node: the sources the rest runs with (none
+## stops it, several run it once each). Without one the source stays.
+var modifier := Callable()
 
 
 static func literal(literal_name: String) -> CommandNode:
@@ -40,6 +48,13 @@ func then(child: CommandNode) -> CommandNode:
 
 func executes(callable: Callable) -> CommandNode:
 	executor = callable
+	return self
+
+
+## Parsing goes on at `target` after this node (see redirect, modifier).
+func redirects(target: CommandNode, source_modifier: Callable = Callable()) -> CommandNode:
+	redirect = target
+	modifier = source_modifier
 	return self
 
 

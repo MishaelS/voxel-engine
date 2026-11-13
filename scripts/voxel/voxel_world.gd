@@ -29,6 +29,9 @@ extends Node3D
 enum Generator {
 	BETA,          ## Beta 1.7.3 style terrain, biomes, caves, ores, trees.
 	RANDOM_BLOCKS, ## Debug: every block type scattered randomly.
+	FLOATING_ISLANDS, ## Islands in the sky over the void (FloatingIslandsGenerator).
+	ISLAND,        ## One big island in the sea (IslandGenerator).
+	DEBUG,         ## Every block in every state and every creature (DebugGenerator).
 }
 
 const NEIGHBORS: Array[Vector3i] = [
@@ -75,6 +78,9 @@ var sign_texts: SignTexts
 var world_generator: WorldGenerator
 ## keepInventory game rule: the player keeps the items on death.
 var keep_inventory := false
+## Where players appear, set by /setworldspawn (Vector3.INF: find_spawn()
+## looks for a place near the origin).
+var world_spawn := Vector3.INF
 ## Blocks sliding from pistons: cell -> {id, node} (PistonBehavior).
 var moving_blocks := {}
 ## Maps drawn so far: number -> {x, z (center), colors} (see Maps).
@@ -409,6 +415,15 @@ func generate() -> void:
 			world_generator = beta
 		Generator.RANDOM_BLOCKS:
 			world_generator = RandomBlocksGenerator.new(world_seed, random_density)
+		Generator.FLOATING_ISLANDS:
+			world_generator = FloatingIslandsGenerator.new(world_seed)
+		Generator.ISLAND:
+			var island := IslandGenerator.new(world_seed)
+			island.set_layout(layout)
+			world_generator = island
+		Generator.DEBUG:
+			world_generator = DebugGenerator.new(world_seed)
+			random_tick_speed = 0 # (the blocks stay as shown)
 
 	if player:
 		var player_state: Dictionary = save.state.get("player", {}) if save else {}
@@ -419,6 +434,80 @@ func generate() -> void:
 			player.global_position = position
 		else:
 			player.global_position = find_spawn()
+			if save and not remote and save.state.is_empty():
+				_first_start()
+
+
+## A new world's first start: the bonus chest by the spawn, the debug
+## world's creatures.
+func _first_start() -> void:
+	if generator == Generator.DEBUG:
+		place_debug_mobs()
+	elif save.bonus_chest:
+		place_bonus_chest(Vector3i(player.global_position.floor()))
+
+
+## The bonus chest like the game's (since 1.3): on the ground a few blocks
+## from the spawn, a torch on each side, with wood, tools and food to start.
+func place_bonus_chest(spawn: Vector3i) -> Vector3i:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([world_seed, "bonus"])
+	for attempt in 64:
+		var x := spawn.x + rng.randi_range(-5, 5)
+		var z := spawn.z + rng.randi_range(-5, 5)
+		if absi(x - spawn.x) + absi(z - spawn.z) < 2:
+			continue # not where the player stands
+		var y := _top_block_y(x, z)
+		while y > 0 and Blocks.collides_table[get_block(Vector3i(x, y, z))] == 0:
+			y -= 1 # (under grass and flowers)
+		var ground := Vector3i(x, y, z)
+		if y <= 0 or Blocks.liquid_table[get_block(ground)] == 1 or Blocks.is_opaque_table[get_block(ground)] == 0:
+			continue
+		var pos := ground + Vector3i.UP
+		if get_block(pos) != Blocks.AIR and Blocks.collides_table[get_block(pos)] == 1:
+			continue
+		set_block(pos, Blocks.variant("chest", rng.randi_range(0, 3)))
+		var inventory: Inventory = block_entity(pos).inventory
+		var loot := [["stick", 1, 12], ["oak_planks", 1, 12], ["oak_log", 1, 3], ["wooden_axe", 1, 1],
+			["wooden_pickaxe", 1, 1], ["stone_pickaxe", 0, 1], ["apple", 1, 2], ["bread", 1, 2]]
+		for entry: Array in loot:
+			var count := rng.randi_range(entry[1], entry[2])
+			if count > 0:
+				var slot := rng.randi_range(0, inventory.size() - 1)
+				while not inventory.is_empty_slot(slot):
+					slot = (slot + 1) % inventory.size()
+				inventory.set_slot(slot, Items.id_of(entry[0]), count)
+		for side: Vector3i in [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]:
+			var spot := pos + side
+			if get_block(spot) == Blocks.AIR and Blocks.is_opaque_table[get_block(spot + Vector3i.DOWN)] == 1:
+				set_block(spot, Blocks.id_of("torch"))
+		return pos
+	return Vector3i.MAX
+
+
+## The debug world's creatures in a row in front of the blocks, standing
+## still (no AI): every kind, and the looks some have (a saddled pig, a
+## sheared and a colored sheep, tame and angry wolves, three slime sizes).
+func place_debug_mobs() -> void:
+	var kinds: Array = []
+	for type: String in Mob.TYPES:
+		kinds.append({"type": type})
+	kinds.append_array([{"type": "pig", "saddled": true}, {"type": "sheep", "sheared": true},
+		{"type": "sheep", "wool": "black"}, {"type": "wolf", "tamed": true}, {"type": "wolf", "angry": true},
+		{"type": "slime", "size": 2}, {"type": "slime", "size": 4}])
+	for i in kinds.size():
+		var kind: Dictionary = kinds[i]
+		var mob := Mob.create(kind.type)
+		mob.no_ai = true
+		mob.saddled = kind.get("saddled", false)
+		mob.sheared = kind.get("sheared", false)
+		mob.wool_color = kind.get("wool", "white")
+		mob.tamed = kind.get("tamed", false)
+		mob.angry = kind.get("angry", false)
+		mob.size = kind.get("size", 1)
+		var at := Vector3(1.5 + i * 3, DebugGenerator.FLOOR_Y + 1, -6.5)
+		_generate_now(Vector2i(floori(at.x / 16.0), floori(at.z / 16.0)))
+		entities.spawn(mob, at)
 
 
 ## Like the classic game, spawn on land: search columns in a spiral from the
@@ -429,9 +518,15 @@ const SPAWN_SEARCH_RADIUS := 6
 func find_spawn() -> Vector3:
 	if remote:
 		return Net.world_info.get("spawn", Vector3(8.5, sea_level + 1.0, 8.5))
+	if world_spawn != Vector3.INF:
+		return world_spawn
 	if generator == Generator.RANDOM_BLOCKS:
 		_generate_now(Vector2i.ZERO)
 		return Vector3(24, 20, 24)
+	if generator == Generator.DEBUG:
+		_generate_now(Vector2i(0, -1))
+		_generate_now(Vector2i.ZERO)
+		return Vector3(0.5, DebugGenerator.FLOOR_Y + 1, -2.5)
 	for ring in SPAWN_SEARCH_RADIUS + 1:
 		for dx in range(-ring, ring + 1):
 			for dz in range(-ring, ring + 1):
@@ -1542,7 +1637,7 @@ func destroy_block(pos: Vector3i, drop: bool = true, can_harvest: bool = true, e
 	if effects:
 		particles.break_block(pos, id)
 		Sounds.play_block("break", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
-	if drop:
+	if drop and GameRules.flag(self, "doTileDrops"):
 		for entry: Array in Blocks.drops_of(id, rng, can_harvest):
 			items.drop_from_block(pos, entry[0], entry[1])
 	var entity: Dictionary = _block_entities.get(pos, {})
@@ -1689,8 +1784,8 @@ func _tick_furnace(pos: Vector3i, entity: Dictionary) -> void:
 ## Requests a scheduled tick for the block at pos in `delay` game ticks.
 ## Several requests for the same position and tick are merged.
 func schedule_tick(pos: Vector3i, delay: int) -> void:
-	if remote:
-		return
+	if remote or generator == Generator.DEBUG:
+		return # (the debug world stays as shown: no flowing, falling, burning)
 	var due := clock.game_time + maxi(delay, 1)
 	if not _scheduled.has(due):
 		_scheduled[due] = {}
@@ -2351,7 +2446,8 @@ func save_state() -> Dictionary:
 		saved_block_entities[pos] = entity
 	return {"game_time": clock.game_time, "day_time": clock.day_time, "rules": rules,
 		"block_entities": saved_block_entities, "items": items.save_state(), "entities": entities.save_state(),
-		"maps": maps, "next_map_id": next_map_id, "weather": weather.save_state(), "stats": Stats.save_state()}
+		"maps": maps, "next_map_id": next_map_id, "weather": weather.save_state(), "stats": Stats.save_state(),
+		"spawn": world_spawn}
 
 
 func _restore_state() -> void:
@@ -2373,6 +2469,7 @@ func _restore_state() -> void:
 	maps = world_state.get("maps", {})
 	weather.load_state(world_state.get("weather", {}))
 	next_map_id = world_state.get("next_map_id", 0)
+	world_spawn = world_state.get("spawn", Vector3.INF)
 	clock.day_time = world_state.get("day_time", start_day_time)
 	var rules: Dictionary = world_state.get("rules", {})
 	for rule_name: String in rules:

@@ -6,4 +6,4 @@ extends RefCounted
 static func register(d: CommandDispatcher) -> void:
 	d.register(CommandNode.literal("seed").describe("Shows the world seed")
 		.executes(func(ctx: CommandContext) -> int:
-			return ctx.feedback("Seed: [%d]" % ctx.source.world.world_seed)))
+			return ctx.feedback(Lang.t("Seed: [%d]") % ctx.source.world.world_seed)))

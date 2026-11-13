@@ -38,6 +38,11 @@ extends Node
 ## edits or column requests. Commands: /players, /kick, /ban,
 ## /pardon. (A changed client can fake its tag: this stops casual bots and
 ## spam, not a determined attacker or a flood at the network level.)
+##
+## The server list pings without joining: while hosting, a ServerStatus
+## Responder answers small UDP asks on the game port + 1 with the players
+## in, the most, the version, the host's name and the world's name (the
+## protocol and its limits are in server_status.gd).
 
 signal players_changed
 signal lan_games_changed
@@ -70,11 +75,13 @@ var mode := Mode.OFFLINE
 ## it on joining) and the game mode new players get.
 var cheats := false
 var lan_game_mode := 0
-## Commands that need cheats and change the world: a client's run on the
-## host (Commands not listed here run on the player's own side).
-const HOST_COMMANDS: Array[String] = ["time", "weather", "gamerule", "tick", "setblock", "fill"]
+## Commands that change the world (or reach other players): a client's run
+## on the host (Commands not listed here run on the player's own side).
+const HOST_COMMANDS: Array[String] = ["time", "weather", "gamerule", "tick", "setblock", "fill", "clone", "summon",
+	"kill", "damage", "execute", "setworldspawn", "difficulty", "msg", "tell", "w"]
 ## Commands always allowed (no cheats needed).
-const FREE_COMMANDS: Array[String] = ["help", "seed", "say", "players", "kick", "ban", "pardon"]
+const FREE_COMMANDS: Array[String] = ["help", "seed", "say", "players", "kick", "ban", "pardon", "list", "me",
+	"msg", "tell", "w"]
 var player_name := ""
 var last_address := "127.0.0.1"
 ## Peer id -> {"name": String, "ping": ms (-1 unknown)}, everyone in the
@@ -96,6 +103,7 @@ var last_error := ""
 var _peer: ENetMultiplayerPeer
 var _lan_out: PacketPeerUDP
 var _lan_in: PacketPeerUDP
+var _status_responder: ServerStatus.Responder
 var _lan_timer := 0.0
 var _sync_timer := 0.0
 var _state_timer := 0.0
@@ -209,6 +217,8 @@ func host(port: int = PORT) -> String:
 	var world := _world()
 	saved_players = world.save.state.get("net_players", {}) if world and world.save else {}
 	looks = {1: _own_look()}
+	_status_responder = ServerStatus.Responder.new()
+	_status_responder.open(port)
 	_lan_out = PacketPeerUDP.new()
 	_lan_out.set_broadcast_enabled(true)
 	_lan_out.set_dest_address("255.255.255.255", LAN_PORT)
@@ -267,6 +277,9 @@ func leave() -> void:
 	_container_slots.clear()
 	world_info.clear()
 	_lan_out = null
+	if _status_responder:
+		_status_responder.close()
+	_status_responder = null
 	players_changed.emit()
 
 
@@ -475,6 +488,14 @@ func _joined_message(text: String) -> void:
 	_message(text)
 
 
+## The server list's status answer (ServerStatus): players in, the most,
+## the version, the host's name, the world's name as the message of the day.
+func _status_info() -> Array:
+	var world := _world()
+	return [players.size(), MAX_PLAYERS, str(ProjectSettings.get_setting("application/config/version", "dev")),
+		player_name, world.save.name if world and world.save else "World"]
+
+
 # --- LAN discovery ---------------------------------------------------------------------
 
 ## Starts listening for games on the local network (the join screen).
@@ -495,6 +516,8 @@ func stop_listening_lan() -> void:
 
 func _process(delta: float) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
+	if is_host() and _status_responder:
+		_status_responder.poll(_status_info)
 	if is_host() and _lan_out:
 		_lan_timer -= delta
 		if _lan_timer <= 0.0:
@@ -1321,10 +1344,10 @@ func send_command(text: String) -> void:
 func _client_command(text: String) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if not is_host() or world == null or not cheats or not _within(peer, "chat", CHAT_LIMIT, 5.0):
+	if not is_host() or world == null or not _within(peer, "chat", CHAT_LIMIT, 5.0):
 		return
 	var root := text.strip_edges().trim_prefix("/").get_slice(" ", 0).to_lower()
-	if not root in HOST_COMMANDS:
+	if not root in HOST_COMMANDS or (not cheats and not root in FREE_COMMANDS):
 		return
 	var source := CommandSource.new()
 	source.name = str(players[peer].name)

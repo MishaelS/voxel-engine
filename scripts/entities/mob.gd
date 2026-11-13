@@ -40,6 +40,8 @@ const TYPES := {
 	"spider": {"health": 16, "speed": 0.13, "hostile": true, "damage": 2, "drops": [["string", 0, 2]], "sound": "spider"},
 	"slime": {"health": 4, "speed": 0.1, "hostile": true, "damage": 1, "drops": [["slimeball", 0, 2]], "sound": "slime"},
 }
+## Shadow sizes of Beta's renderers (the rest 0.5); slimes' grow with them.
+const SHADOW_SIZES := {"pig": 0.7, "cow": 0.7, "sheep": 0.7, "chicken": 0.3, "squid": 0.7, "spider": 1.0, "slime": 0.25}
 const ANIMALS := ["pig", "cow", "sheep", "chicken"]
 const MONSTERS := ["zombie", "skeleton", "creeper", "spider"]
 const SIGHT := 16.0
@@ -68,6 +70,9 @@ var tamed := false
 var sitting := false
 ## Pigs: wearing a saddle (the player can ride them).
 var saddled := false
+## Stands still and lives on (the debug world's creatures, like the game's
+## NoAI): no moving, attacking, burning, despawning or sounds.
+var no_ai := false
 var _squid_push := 0.0
 var _squid_pitch := 0.0
 var angry := false
@@ -181,6 +186,7 @@ func _ready() -> void:
 
 ## Box, health and model size (slimes come in sizes 1, 2 and 4).
 func _apply_size() -> void:
+	shadow_size = SHADOW_SIZES.get(mob_type, 0.5) * (size if mob_type == "slime" else 1)
 	var model := MobModels.model(mob_type)
 	half_width = float(model.get("width", 0.6)) / 2.0
 	height = float(model.get("height", 1.0))
@@ -206,6 +212,8 @@ func _ai_tick() -> void:
 	if _look_ticks <= 0:
 		_look_at = Vector3.INF
 	_panic = maxi(_panic - 1, 0)
+	if no_ai:
+		return
 	var player = _player()
 	if is_hostile() and _despawn(player):
 		return
@@ -815,6 +823,8 @@ func _on_death() -> void:
 			child.size = size / 2
 			world.entities.spawn(child, feet() + Vector3(randf_range(-0.5, 0.5), 0.5, randf_range(-0.5, 0.5)))
 		return
+	if not GameRules.flag(world, "doMobLoot"):
+		return
 	for drop: Array in spec.drops:
 		var count := randi_range(drop[1], drop[2])
 		var item: String = drop[0]
@@ -992,7 +1002,7 @@ func apply_net_state(at: Vector3, yaw: float, state: Dictionary) -> void:
 
 func save_state() -> Dictionary:
 	var state := super()
-	state.merge({"sheared": sheared, "wool": wool_color, "size": size, "tamed": tamed, "sitting": sitting, "saddled": saddled})
+	state.merge({"sheared": sheared, "wool": wool_color, "size": size, "tamed": tamed, "sitting": sitting, "saddled": saddled, "no_ai": no_ai})
 	return state
 
 
@@ -1012,6 +1022,7 @@ func load_state(saved: Dictionary) -> void:
 	tamed = saved.get("tamed", false)
 	sitting = saved.get("sitting", false)
 	saddled = saved.get("saddled", false)
+	no_ai = saved.get("no_ai", false)
 	_update_wool()
 	_apply_size()
 	health = mini(saved.get("health", max_health), max_health)

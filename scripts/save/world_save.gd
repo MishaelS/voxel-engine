@@ -31,13 +31,18 @@ var game_mode := 0 # Player.GameMode
 ## Commands that change the world or the player (/gamemode, /time, /tp...)
 ## are allowed, like the game's "Allow Cheats". Worlds from before: allowed.
 var allow_cheats := true
+## A chest of starting things by the spawn, put there when the world is
+## first played (VoxelWorld.place_bonus_chest).
+var bonus_chest := false
 ## The world type: "classic" (Beta 1.7.3: 128 high, the sea at 64), "tall"
 ## (Tall Mountains: 256 high, the sea at 64) or "old" (made 256 high with
 ## the sea at 128 and a deep layer, before the world types).
 const CLASSIC := "classic"
 const TALL := "tall"
 const OLD := "old"
-const TYPES: Array[String] = [CLASSIC, TALL]
+## Floating Islands: 256 high, no sea.
+const FLOATING := "floating"
+const TYPES: Array[String] = [CLASSIC, TALL, FLOATING]
 var terrain := CLASSIC
 ## The world's height (128 or 256) and, in old worlds, whether the terrain
 ## has the taller mountains.
@@ -119,6 +124,7 @@ func load_level() -> bool:
 	generator = config.get_value("world", "generator", 0)
 	game_mode = config.get_value("world", "game_mode", 0)
 	allow_cheats = config.get_value("world", "allow_cheats", true)
+	bonus_chest = config.get_value("world", "bonus_chest", false)
 	created = config.get_value("world", "created", 0)
 	last_played = config.get_value("world", "last_played", 0)
 	height = config.get_value("world", "height", WorldGenerator.LEGACY_HEIGHT)
@@ -139,6 +145,7 @@ func write_level() -> void:
 	config.set_value("world", "generator", generator)
 	config.set_value("world", "game_mode", game_mode)
 	config.set_value("world", "allow_cheats", allow_cheats)
+	config.set_value("world", "bonus_chest", bonus_chest)
 	config.set_value("world", "created", created)
 	config.set_value("world", "last_played", last_played)
 	config.set_value("world", "height", height)
@@ -157,6 +164,8 @@ static func layout_of(world_type: String, old_tall: bool = false) -> Dictionary:
 	match world_type:
 		TALL:
 			return {"height": 256, "sea": 64, "shift": 0, "deep": false, "upper": 256, "tall": true}
+		FLOATING:
+			return {"height": 256, "sea": 0, "shift": 0, "deep": false, "upper": 256, "tall": false}
 		OLD:
 			return {"height": 256, "sea": 128, "shift": WorldGenerator.LEGACY_SHIFT, "deep": true,
 				"upper": 192 if old_tall else 128, "tall": old_tall}

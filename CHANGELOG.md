@@ -13,6 +13,21 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- World types Floating Islands (Beta's biomes, trees, ores and springs on islands in the sky over the void), Island (one big island in an endless sea; seas inside it become low land) and Debug Mode (every block in every state in a grid on a stone floor, and a row of every creature and its looks standing still; nothing ticks or spawns there).
+- Bonus Chest option when creating a world: a chest of wood, wooden tools, apples and bread by the spawn with a torch on each side.
+- The multiplayer screen is a server list like Minecraft's: saved servers (Add, Edit, Delete, Direct Connect, Refresh) with their message, players and signal bars from a status ping that doesn't join, and the games on the local network below them.
+- The survival inventory shows the player (skin, armor, item in hand) in the black box, turning toward the mouse like Beta's.
+- Creatures cast Beta's round shadow (misc/shadow.png) on the blocks under them, fainter the higher they are, in the dark and with distance; Fancy graphics only.
+- Empty armor slots in the inventory show the outlines of a helmet, chestplate, leggings and boots (items.png's last column, like Beta's).
+- Commands: target selectors (@p @a @r @s @e with filters), local coordinates (^ ^ ^), /execute, /summon, /kill, /damage, /clear, /clone, /setworldspawn, /difficulty, /particle, /playsound, /list, /me, /msg (/tell, /w); /give with count and damage, /tp to entities and with rotation, /fill and /setblock modes, /help pages; game rules doMobSpawning, mobGriefing, doFireTick, doMobLoot, doTileDrops and sendCommandFeedback. Command messages are translated.
+- Nightmares like Beta's: you can't sleep with monsters within 8 blocks of the bed, and sleeping in the dark a zombie, skeleton or spider that can walk to you may appear by the bed and wake you (the night isn't skipped).
+
+### Changed
+- The Create New World screen: game mode and world type, cheats and the bonus chest two to a row, Create New World and Cancel side by side, over the menu's darker band.
+- Lying down in a bed and getting up move the view at once instead of sliding.
+- The player in the inventory stays inside its black box.
+
 ## [0.0.9] - 2026-11-13
 
 ### Fixed

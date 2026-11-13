@@ -9,7 +9,7 @@ func parse(text: String, _source: CommandSource) -> Dictionary:
 			return ok(true)
 		"false":
 			return ok(false)
-	return fail("Expected true or false, got '%s'" % text)
+	return fail(Lang.t("Expected true or false, got '%s'") % text)
 
 
 func suggest(partial: String, _source: CommandSource) -> PackedStringArray:

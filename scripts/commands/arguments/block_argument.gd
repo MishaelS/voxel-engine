@@ -7,7 +7,7 @@ func parse(text: String, _source: CommandSource) -> Dictionary:
 	for block in Blocks.types:
 		if block.name == text:
 			return ok(block.id)
-	return fail("Unknown block '%s'" % text)
+	return fail(Lang.t("Unknown block '%s'") % text)
 
 
 func suggest(partial: String, _source: CommandSource) -> PackedStringArray:

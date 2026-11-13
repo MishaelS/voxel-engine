@@ -14,10 +14,10 @@ func parse(text: String, _source: CommandSource) -> Dictionary:
 		factor = UNITS[unit]
 		number_text = text.left(-1)
 	if not number_text.is_valid_float():
-		return fail("Invalid time '%s' (use ticks, or a number with t, s or d)" % text)
+		return fail(Lang.t("Invalid time '%s' (use ticks, or a number with t, s or d)") % text)
 	var ticks := roundi(number_text.to_float() * factor)
 	if ticks < 0:
-		return fail("Time must not be negative")
+		return fail(Lang.t("Time must not be negative"))
 	return ok(ticks)
 
 

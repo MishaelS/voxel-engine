@@ -383,6 +383,67 @@ func _process(_delta: float) -> void:
 	if vehicle and is_instance_valid(vehicle) and not vehicle.removed:
 		global_position = _seat_feet(vehicle.render_feet()) # where its seat is drawn
 	_show_flames()
+	_show_shadow()
+
+
+## Beta's round shadow (Render.renderShadow), this wide around the feet (0:
+## none): misc/shadow.png laid on the tops of the solid blocks under it,
+## fainter the higher it floats over them, the darker the spot and the
+## farther the camera (gone at 16 blocks); with Fancy graphics only.
+var shadow_size := 0.0
+var _shadow: MeshInstance3D
+static var _shadow_material: ShaderMaterial
+
+
+func _show_shadow() -> void:
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var opacity := 0.0
+	if shadow_size > 0.0 and world and camera and not is_dead() and not Blocks.is_fast_graphics() and visible:
+		opacity = 1.0 - camera.global_position.distance_squared_to(global_position) / 256.0
+	if opacity <= 0.0:
+		if _shadow:
+			_shadow.visible = false
+		return
+	if _shadow == null:
+		if _shadow_material == null:
+			_shadow_material = ShaderMaterial.new()
+			_shadow_material.shader = load("res://shaders/entity_shadow.gdshader")
+			_shadow_material.set_shader_parameter("shadow_texture",
+				TexturePacks.load_texture("res://assets/textures/misc/shadow.png"))
+		_shadow = MeshInstance3D.new()
+		_shadow.top_level = true # (laid on the world, not turned with the creature)
+		_shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_shadow.mesh = ImmediateMesh.new()
+		add_child(_shadow)
+	_shadow.visible = true
+	_shadow.global_transform = Transform3D.IDENTITY
+	var mesh := _shadow.mesh as ImmediateMesh
+	mesh.clear_surfaces()
+	var at := global_position
+	var size := shadow_size
+	var quads := 0
+	for bx in range(floori(at.x - size), floori(at.x + size) + 1):
+		for by in range(floori(at.y - size), floori(at.y) + 1):
+			for bz in range(floori(at.z - size), floori(at.z + size) + 1):
+				var below := world.get_block(Vector3i(bx, by - 1, bz))
+				if Blocks.is_opaque_table[below] == 0:
+					continue # (Beta: on full blocks only)
+				var light := world.brightness_at(Vector3(bx + 0.5, by + 0.5, bz + 0.5))
+				var alpha := clampf((opacity - (at.y - by) / 2.0) * 0.5 * light, 0.0, 1.0)
+				if alpha <= 0.0:
+					continue
+				if quads == 0:
+					mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES, _shadow_material)
+				quads += 1
+				var y := by + 0.015625
+				var corners := [Vector2(bx, bz), Vector2(bx + 1, bz), Vector2(bx + 1, bz + 1), Vector2(bx, bz + 1)]
+				for i: int in [0, 1, 2, 0, 2, 3]:
+					var corner: Vector2 = corners[i]
+					mesh.surface_set_color(Color(1, 1, 1, alpha))
+					mesh.surface_set_uv(Vector2((corner.x - at.x) / 2.0 / size + 0.5, (corner.y - at.z) / 2.0 / size + 0.5))
+					mesh.surface_add_vertex(Vector3(corner.x, y, corner.y))
+	if quads > 0:
+		mesh.surface_end()
 
 
 ## Burning creatures are wrapped in flames like the game's: the animated

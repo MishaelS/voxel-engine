@@ -23,7 +23,7 @@ func choices() -> PackedStringArray:
 func parse(text: String, _source: CommandSource) -> Dictionary:
 	if choices().has(text):
 		return ok(text)
-	return fail("Unknown %s '%s'" % [_what, text])
+	return fail(Lang.t("Unknown %s '%s'") % [Lang.t(_what), text])
 
 
 func suggest(partial: String, _source: CommandSource) -> PackedStringArray:

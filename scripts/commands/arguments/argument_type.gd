@@ -16,6 +16,12 @@ func parse(_text: String, _source: CommandSource) -> Dictionary:
 	return {"error": "Not implemented"}
 
 
+## Whether a token may begin this argument (multi-token arguments: a
+## shorter input is then "incomplete" rather than wrong).
+func accepts_start(_token: String) -> bool:
+	return true
+
+
 ## Completions for the partially typed argument text.
 func suggest(_partial: String, _source: CommandSource) -> PackedStringArray:
 	return PackedStringArray()

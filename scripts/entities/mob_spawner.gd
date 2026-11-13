@@ -75,7 +75,7 @@ func tick() -> void:
 			block_spawners[pos] = delay
 	_update_views()
 	_counter += 1
-	if not enabled or _counter % INTERVAL != 0:
+	if not enabled or _counter % INTERVAL != 0 or world.generator == VoxelWorld.Generator.DEBUG:
 		return
 	var around := _player_positions()
 	if around.is_empty():
@@ -208,8 +208,10 @@ static func _weighted(weights: Dictionary) -> String:
 	return ""
 
 
-## Whether a mob of that kind may stand at pos (its feet's cell).
-func _suits(category: String, mob_type: String, pos: Vector3i) -> bool:
+## Whether a mob of that kind may stand at pos (its feet's cell);
+## `keep_away`: not within MIN_DISTANCE of a player (nightmares come close,
+## Nightmares).
+func _suits(category: String, mob_type: String, pos: Vector3i, keep_away: bool = true) -> bool:
 	if not world.is_inside(pos) or pos.y < 1 or pos.y >= WorldGenerator.HEIGHT - 2:
 		return false
 	var feet := world.get_block(pos)
@@ -223,9 +225,10 @@ func _suits(category: String, mob_type: String, pos: Vector3i) -> bool:
 		return false
 	if mob_type == "spider" and not (_free(world.get_block(pos + Vector3i(1, 0, 0))) and _free(world.get_block(pos + Vector3i(0, 0, 1)))):
 		return false
-	for at in _player_positions():
-		if at.distance_to(Vector3(pos)) < MIN_DISTANCE:
-			return false
+	if keep_away:
+		for at in _player_positions():
+			if at.distance_to(Vector3(pos)) < MIN_DISTANCE:
+				return false
 	var darkness := sky_darkness(world)
 	if category == "animal":
 		var ground := Blocks.get_type(below).name

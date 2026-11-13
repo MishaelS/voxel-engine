@@ -130,6 +130,8 @@ var spawn_point := Vector3.INF
 ## Asleep in a bed (ticks asleep), like the classic game.
 var sleeping := false
 var sleep_ticks := 0
+## Whether the eyes are at the bed's height (they jump there and back).
+var _eye_asleep := false
 ## Ticks the bow has been drawn (-1 = not drawing), for the hand, the
 ## icon, the third-person arms and the view zooming in.
 var bow_pull := -1.0
@@ -285,14 +287,15 @@ func spawn_position() -> Vector3:
 	return world.find_spawn() if world else Vector3.ZERO
 
 
-## Lies down in the bed at `bed` (its head half) like the classic game:
-## only at night; the bed becomes the spawn point; after SLEEP_TICKS the
-## night is skipped to the morning.
 ## The bed slept in (its head half).
 func bed_position() -> Vector3i:
 	return _bed
 
 
+## Lies down in the bed at `bed` (its head half) like the classic game:
+## only at night, close to it and with no monsters near (Nightmares); the
+## bed becomes the spawn point; after SLEEP_TICKS the night is skipped to
+## the morning (unless a nightmare comes).
 func sleep_in(bed: Vector3i) -> void:
 	if world == null or sleeping or dead:
 		return
@@ -301,6 +304,9 @@ func sleep_in(bed: Vector3i) -> void:
 		return
 	if Vector3(bed).distance_to(global_position) > 3.0:
 		message.emit(Lang.t("You may not rest now, the bed is too far away"))
+		return
+	if Nightmares.monsters_near(world, bed):
+		message.emit(Lang.t("You may not rest now, there are monsters nearby"))
 		return
 	sleeping = true
 	Stats.grant("sleepyhead")
@@ -425,6 +431,10 @@ func _update_camera(alpha: float, delta: float) -> void:
 	var target_eye := EYE_HEIGHT - (SNEAK_EYE_DROP if sneaking else 0.0)
 	if sleeping:
 		target_eye = 0.25 # lying in the bed
+	if sleeping != _eye_asleep:
+		# Into the bed and out of it at once, like the game (no sliding view).
+		_eye_asleep = sleeping
+		_eye = target_eye
 	_eye = move_toward(_eye, target_eye, delta * 1.0)
 	var eye := _eye
 	var death_roll := 0.0
@@ -1014,6 +1024,11 @@ func _tick_sleep() -> void:
 		sleep_ticks = SLEEP_TICKS # (waiting for the others)
 		return
 	if sleep_ticks >= SLEEP_TICKS:
+		# A nightmare (single player): a monster comes to the bed, the
+		# night goes on.
+		if not Net.is_online() and Nightmares.haunt(world, self, _bed):
+			wake_up()
+			return
 		var day_time := world.clock.day_time
 		world.clock.add_day_time(WorldClock.TICKS_PER_DAY - fposmod(day_time, WorldClock.TICKS_PER_DAY))
 		wake_up()

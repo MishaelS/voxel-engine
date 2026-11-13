@@ -25,4 +25,12 @@ static func _create() -> CommandDispatcher:
 	SeedCommand.register(d)
 	SayCommand.register(d)
 	NetCommands.register(d)
+	GiveCommand.register(d)
+	KillCommand.register(d)
+	SummonCommand.register(d)
+	CloneCommand.register(d)
+	WorldSpawnCommand.register(d)
+	EffectsCommands.register(d)
+	ChatCommands.register(d)
+	ExecuteCommand.register(d)
 	return d

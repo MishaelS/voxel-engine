@@ -20,4 +20,4 @@ static func register(d: CommandDispatcher) -> void:
 static func _change(ctx: CommandContext, kind: String, seconds: int) -> int:
 	ctx.source.world.weather.set_weather(kind, seconds * 20)
 	var names := {"clear": "clear", "rain": "rain", "thunder": "rain & thunder"}
-	return ctx.feedback("Changing to %s" % names[kind])
+	return ctx.feedback(Lang.t("Changing to %s") % Lang.t(names[kind]))

@@ -14,6 +14,8 @@ const CELL := 12.0
 const THICKNESS := 4.0
 ## Above the sea like the classic game's clouds (y 108 with the sea at 64).
 const ABOVE_SEA := 44.0
+## Floating Islands have no sea: the clouds float over the highest islands.
+const FLOATING_HEIGHT := 192.0
 const GRID := 48            ## cells across the mesh (576 blocks)
 const PATTERN_SIZE := 256
 ## Blocks per game tick (the classic speed).
@@ -63,7 +65,10 @@ func _process(_delta: float) -> void:
 	var eye := camera.global_position
 	var base_x := floori((eye.x + scroll) / CELL) - GRID / 2
 	var base_z := floori(eye.z / CELL) - GRID / 2
-	global_position = Vector3(base_x * CELL - scroll, (world.sea_level if world else WorldGenerator.SEA_LEVEL) + ABOVE_SEA, base_z * CELL)
+	var height := (world.sea_level if world else WorldGenerator.SEA_LEVEL) + ABOVE_SEA
+	if world and world.generator == VoxelWorld.Generator.FLOATING_ISLANDS:
+		height = FLOATING_HEIGHT # (no sea: above the islands)
+	global_position = Vector3(base_x * CELL - scroll, height, base_z * CELL)
 	_material.set_shader_parameter("offset", Vector2i(base_x, base_z))
 	_material.set_shader_parameter("camera_position", eye)
 

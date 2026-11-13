@@ -18,6 +18,12 @@ var _icon: TextureRect
 var _count: Label
 var _bar_back: ColorRect
 var _bar: ColorRect
+## Drawn while the slot is empty (the armor slots' outlines of a helmet,
+## chestplate, leggings and boots, like Beta's).
+var empty_icon: Texture2D:
+	set(value):
+		empty_icon = value
+		refresh()
 
 
 func _init() -> void:
@@ -65,7 +71,7 @@ func set_item(item_id: int, item_count: int, show_count: bool = true, item_damag
 	id = item_id
 	count = item_count
 	damage = item_damage
-	_icon.texture = BlockIcons.get_icon(item_id)
+	_icon.texture = _texture_for(item_id)
 	_count.text = str(item_count) if show_count and item_count > 1 and item_id != Blocks.AIR else ""
 	var durability := Items.durability(item_id)
 	var worn := durability > 0 and item_damage > 0
@@ -79,4 +85,10 @@ func set_item(item_id: int, item_count: int, show_count: bool = true, item_damag
 
 ## Re-fetches the icon (after the GUI scale changed).
 func refresh() -> void:
-	_icon.texture = BlockIcons.get_icon(id)
+	_icon.texture = _texture_for(id)
+
+
+func _texture_for(item_id: int) -> Texture2D:
+	if item_id == Blocks.AIR and empty_icon:
+		return empty_icon
+	return BlockIcons.get_icon(item_id)

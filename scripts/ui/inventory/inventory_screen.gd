@@ -1,9 +1,10 @@
 class_name InventoryScreen
 extends Control
 ## Inventory windows like the classic game:
-## - Inventory (E): survival (container0.png) with armor slots and a 2x2
-##   crafting grid, creative (container5.png): a catalog of every block
-##   and item, 8 x 9, scrolled by the wheel or its scrollbar, and the
+## - Inventory (E): survival (container0.png) with armor slots, a 2x2
+##   crafting grid and the player turning toward the mouse
+##   (InventoryPlayerView), creative (container5.png): a catalog of every
+##   block and item, 8 x 9, scrolled by the wheel or its scrollbar, and the
 ##   hotbar;
 ## - Crafting table (container1.png): a 3x3 crafting grid;
 ## - Chest (container3.png): its 27 slots; large chest (container4.png): the
@@ -278,10 +279,19 @@ func _build() -> void:
 				_window.add_child(_thumb)
 				_scroll = clampi(_scroll, 0, _max_scroll())
 			else:
-				# Beta 1.7.3's inventory.png (ContainerPlayer's slots).
+				# Beta 1.7.3's inventory.png (ContainerPlayer's slots), the
+				# player standing in its black box under them.
+				var model := InventoryPlayerView.new()
+				model.player = player
+				_window.add_child(model)
 				_title("Crafting", Vector2(86, 16))
 				for i in 4:
 					_add_slot(Kind.ARMOR, i, Vector2i(8, 8 + i * 18))
+					# The empty slot's outline: items.png's last column, as in Beta.
+					var outline := AtlasTexture.new()
+					outline.atlas = TexturePacks.load_texture(Items.ICONS_PATH)
+					outline.region = Rect2(240, i * 16, 16, 16)
+					(_slots[-1].view as ItemSlotView).empty_icon = outline
 				for i in 4:
 					_add_slot(Kind.CRAFT, i, Vector2i(88 + (i % 2) * 18, 26 + (i / 2) * 18))
 				_add_slot(Kind.RESULT, 0, Vector2i(144, 36))
