@@ -1434,10 +1434,13 @@ static func fast_tables() -> Dictionary:
 
 ## 1 for blocks that look different with Fast graphics (leaves).
 static func fast_leaves_table() -> PackedByteArray:
-	if _fast_leaves.size() != types.size():
-		_fast_leaves.resize(types.size())
+	if _fast_leaves.size() != count():
+		# (filled apart and then put in place: generator threads ask too)
+		var table := PackedByteArray()
+		table.resize(count())
 		for block in types:
-			_fast_leaves[block.id] = 1 if block.fast_tile >= 0 else 0
+			table[block.id] = 1 if block.fast_tile >= 0 else 0
+		_fast_leaves = table
 	return _fast_leaves
 
 

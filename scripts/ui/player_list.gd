@@ -8,9 +8,10 @@ extends Control
 
 const P := UiTheme.PIXEL
 const ROW := 9 # GUI pixels a row
-## The signal bars are the game's own (Beta's icons.png has none).
-const ICONS := "res://assets/textures/gui/icons.png"
-const BARS_ORIGIN := Vector2(0, 176) # five bars, then four... then the cross
+## The signal bars are the game's own (Beta's icons.png has none):
+## five bars, then four... then the cross, 10 x 8 each.
+const ICONS := "res://assets/textures/extra/signal_bars.png"
+const BARS_ORIGIN := Vector2(0, 0)
 
 var _icons: Texture2D
 var _skin: Texture2D
@@ -19,7 +20,7 @@ var _skin: Texture2D
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_icons = TexturePacks.default_texture(ICONS)
+	_icons = load(ICONS)
 	_skin = MobModels.default_skin("player")
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	Net.players_changed.connect(queue_redraw)

@@ -195,7 +195,7 @@ const GUI_PARTS := {
 	"container/fuelProgress.png": ["gui/furnace.png", Rect2i(176, 0, 14, 14)],
 	"container/smeltingProgress.png": ["gui/furnace.png", Rect2i(176, 14, 24, 17)],
 	# A chest: container.png's three rows and its inventory part, like Beta.
-	"container/container3.png": ["gui/container.png", Vector2i(176, 166), [[Rect2i(0, 0, 176, 71), Vector2i(0, 0)], [Rect2i(0, 127, 176, 95), Vector2i(0, 71)]]],
+	"container/container3.png": ["gui/container.png", Vector2i(176, 167), [[Rect2i(0, 0, 176, 71), Vector2i(0, 0)], [Rect2i(0, 126, 176, 96), Vector2i(0, 71)]]],
 	"container/container4.png": ["gui/container.png", Rect2i(0, 0, 176, 222)],
 	"container/dispenser.png": ["gui/trap.png", Rect2i(0, 0, 176, 166)],
 	"container/container5.png": "res://assets/textures/extra/creative.png",

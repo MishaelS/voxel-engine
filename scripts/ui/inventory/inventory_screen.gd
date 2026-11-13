@@ -278,12 +278,13 @@ func _build() -> void:
 				_window.add_child(_thumb)
 				_scroll = clampi(_scroll, 0, _max_scroll())
 			else:
-				_title("Crafting", Vector2(97, 7))
+				# Beta 1.7.3's inventory.png (ContainerPlayer's slots).
+				_title("Crafting", Vector2(86, 16))
 				for i in 4:
 					_add_slot(Kind.ARMOR, i, Vector2i(8, 8 + i * 18))
 				for i in 4:
-					_add_slot(Kind.CRAFT, i, Vector2i(98 + (i % 2) * 18, 18 + (i / 2) * 18))
-				_add_slot(Kind.RESULT, 0, Vector2i(154, 28))
+					_add_slot(Kind.CRAFT, i, Vector2i(88 + (i % 2) * 18, 26 + (i / 2) * 18))
+				_add_slot(Kind.RESULT, 0, Vector2i(144, 36))
 		Mode.CRAFTING_TABLE:
 			_title("Crafting", Vector2(28, 6))
 			_title("Inventory", Vector2(8, 72))
@@ -294,19 +295,17 @@ func _build() -> void:
 			main_y = 85
 			hotbar_y = 143
 			_title("Chest", Vector2(8, 6))
-			_title("Inventory", Vector2(8, 73))
+			_title("Inventory", Vector2(8, 74))
 			for i in VoxelWorld.CHEST_SIZE:
 				_add_slot(Kind.CONTAINER, i, Vector2i(8 + (i % 9) * 18, 18 + (i / 9) * 18), _container)
 		Mode.DISPENSER:
-			main_y = 85 # drawn from the chest's window
-			hotbar_y = 143
 			_title("Dispenser", Vector2(60, 6))
-			_title("Inventory", Vector2(8, 73))
+			_title("Inventory", Vector2(8, 72))
 			for i in 9:
 				_add_slot(Kind.CONTAINER, i, Vector2i(62 + (i % 3) * 18, 17 + (i / 3) * 18), _container)
 		Mode.LARGE_CHEST:
-			main_y = 140
-			hotbar_y = 198
+			main_y = 139 # Beta: (rows - 4) * 18 + 103
+			hotbar_y = 197
 			_title("Large Chest", Vector2(8, 6))
 			_title("Inventory", Vector2(8, 128))
 			for i in VoxelWorld.CHEST_SIZE * 2:

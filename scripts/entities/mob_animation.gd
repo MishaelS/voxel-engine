@@ -99,6 +99,26 @@ static func pose_biped(parts: Dictionary, t: float, swing: float, amount: float,
 	left_arm.rotation.z += lift
 
 
+## The body's yaw following the head's like Beta's (renderYawOffset): it
+## turns toward where it goes (walking backward: away from it), and the
+## head turns alone up to HEAD_TURN before the body comes along. A frame of
+## `delta` seconds; `moved`: how far it went this frame (x, z). Yaws: 0
+## looking toward -z.
+const HEAD_TURN := deg_to_rad(75.0)
+
+
+static func body_yaw(body: float, head: float, moved: Vector2, delta: float) -> float:
+	if moved.length() > 0.05 * delta * 20.0:
+		var going := atan2(-moved.x, -moved.y)
+		if absf(angle_difference(head, going)) > PI / 2.0:
+			going += PI
+		body = lerp_angle(body, going, 1.0 - pow(0.7, delta * 20.0))
+	var turn := angle_difference(body, head)
+	if absf(turn) > HEAD_TURN:
+		body = head - signf(turn) * HEAD_TURN
+	return wrapf(body, -PI, PI)
+
+
 ## Poses a four-legged body's legs (ModelQuadruped) with the jump and fall.
 static func pose_quadruped_leg(node: Node3D, front: bool, a_side: bool, swing: float, amount: float,
 		jump: float, fall: float) -> void:

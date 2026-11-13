@@ -60,7 +60,8 @@ func _ready() -> void:
 
 	_name_label = Label.new()
 	_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_name_label.position = Vector2(0, -16 * P)
+	# Above the hearts and the air bubbles (the game's: 59 pixels above the bottom).
+	_name_label.position = Vector2(0, -37 * P)
 	_name_label.size = Vector2(182 * P, 10 * P)
 	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_name_label)

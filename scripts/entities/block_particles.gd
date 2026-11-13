@@ -146,7 +146,7 @@ func count() -> int:
 ## A block broken at `pos`: 4 x 4 x 4 bits flying out from its middle.
 func break_block(pos: Vector3i, block_id: int) -> void:
 	var tile := _tile_of(block_id)
-	var tint := _tint_of(block_id)
+	var tint := _tint_of(block_id, pos)
 	for x in 4:
 		for y in 4:
 			for z in 4:
@@ -166,7 +166,7 @@ func hit_block(pos: Vector3i, normal: Vector3i, block_id: int) -> void:
 		start.y = pos.y + Blocks.height_table[block_id] + 0.1
 	var velocity := _burst(Vector3.ZERO) * 0.2
 	velocity.y = (velocity.y - 0.1) * 0.2 + 0.02
-	_add_tile(start, velocity, _tile_of(block_id), _tint_of(block_id), 0.6)
+	_add_tile(start, velocity, _tile_of(block_id), _tint_of(block_id, pos), 0.6)
 
 
 ## Crumbs of an item (eating), from `origin` along `direction`.
@@ -524,10 +524,18 @@ static func _tile_of(block_id: int) -> int:
 	return Blocks.face_tiles[block_id * 6 + 1]
 
 
-## Leaves keep their color; grass gives plain dirt bits.
-static func _tint_of(block_id: int) -> Color:
+## The bits' color: the biome's grass or foliage color where the block is
+## for blocks tinted by it all over (tall grass, ferns, leaves: gray in
+## terrain.png, like Beta's), the block's own tint otherwise; grass blocks
+## give plain dirt bits (their bottom).
+func _tint_of(block_id: int, pos: Variant = null) -> Color:
 	var block := Blocks.get_type(block_id)
-	return block.tint.srgb_to_linear() if block.name.ends_with("_leaves") else Color.WHITE
+	var kind := Blocks.biome_tint_table[block_id]
+	if kind > 0 and block.overlays[2] < 0:
+		if pos is Vector3i and world:
+			return world.biome_color(pos, kind)
+		return (BetaGenerator.GRASS_DRY.lerp(BetaGenerator.GRASS_WET, 0.5) if kind == 1 else BetaGenerator.FOLIAGE_DRY.lerp(BetaGenerator.FOLIAGE_WET, 0.5)).srgb_to_linear()
+	return block.tint.srgb_to_linear() if block.overlays[2] < 0 else Color.WHITE
 
 
 ## Brightness of the light at a point, like the blocks (night darkness too;

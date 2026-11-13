@@ -1,25 +1,38 @@
 class_name MobSpawner
 extends RefCounted
-## Natural mob spawning like the classic game, once a second around each
-## player, the network game's too (24..64 blocks away, never closer):
-## - monsters (zombies, skeletons, creepers, spiders) in groups of 1..4
-##   where it is dark (combined light 7 or less, the night sky counts as
-##   dark), on solid ground with two free blocks above; slimes in slime
-##   chunks (1 in 10, from the seed) below y 40. Up to 40 at a time, none
-##   on Peaceful;
-## - animals (pigs, cows, sheep, chickens; wolves in forests and taiga)
-##   on lit grass, up to 15;
+## Natural mob spawning like Beta 1.7.3's (SpawnerAnimals), once a second
+## around each player, the network game's too (24..64 blocks away, never
+## closer). Each try picks a spot, then the group spreads from it by hops
+## of up to 5 blocks (3 times 4 hops, like Beta), every member where it
+## suits its kind; a group is at most 4 (wolves: 8).
+## - monsters by weight (Beta's biome lists: spider, zombie, skeleton,
+##   creeper, slime, 10 each) where it is dark: the sky light there not
+##   above a random 0..31 and the light (the night taken off) not above a
+##   random 0..7, on a solid block with room above; slimes only in slime
+##   chunks (1 in 10, from the seed) below y 16 (above the sea's level in
+##   taller worlds the same way), 1 try in 10. Up to 70 around a player,
+##   none on Peaceful;
+## - animals by weight (sheep 12, pig 10, chicken 10, cow 8; wolves 2 in
+##   forests and taiga, Beta's BiomeGenForest and BiomeGenTaiga) on grass
+##   (snowy grass too) in light above 8 (the night taken off: by day or by
+##   torches), up to 15 around a player;
 ## - squid in water, up to 5.
-## Mobs far away despawn on their own (Mob._despawn).
+## Monsters far away despawn on their own (Mob._despawn); animals stay.
 
 const INTERVAL := 20
 const MIN_DISTANCE := 24.0
 const MAX_DISTANCE := 64.0
 const TRIES := 12
-const CAPS := {"monster": 40, "animal": 15, "water": 5}
-const MONSTERS: Array[String] = ["zombie", "skeleton", "creeper", "spider"]
-const ANIMALS: Array[String] = ["pig", "cow", "sheep", "chicken"]
-const WOLF_BIOMES: Array[String] = ["forest", "taiga", "seasonal_forest", "rainforest"]
+## Counted within COUNT_RANGE of each player (Beta: in the loaded area).
+const CAPS := {"monster": 70, "animal": 15, "water": 5}
+const COUNT_RANGE := 128.0
+const MONSTERS := {"spider": 10, "zombie": 10, "skeleton": 10, "creeper": 10, "slime": 10}
+const ANIMALS := {"sheep": 12, "pig": 10, "chicken": 10, "cow": 8}
+const WOLF_BIOMES: Array[String] = ["forest", "taiga"]
+const WOLF_WEIGHT := 2
+## Most of a group (Beta's getMaxSpawnedInChunk).
+const GROUP := 4
+const WOLF_GROUP := 8
 
 var world: VoxelWorld
 var enabled := true
@@ -67,18 +80,17 @@ func tick() -> void:
 	var around := _player_positions()
 	if around.is_empty():
 		return
-	var counts := {"monster": 0, "animal": 0, "water": 0}
-	for entity in world.entities.all():
-		if entity is Mob:
-			counts[_category((entity as Mob).mob_type)] += 1
 	var peaceful: bool = Settings.get_value("difficulty") == 0
-	for category: String in CAPS:
-		if category == "monster" and peaceful:
-			continue
-		# Like the game's caps that grow with the loaded area: one share per player.
-		if counts[category] >= CAPS[category] * around.size():
-			continue
-		for at in around:
+	for at in around:
+		var counts := {"monster": 0, "animal": 0, "water": 0}
+		for entity in world.entities.near(at, COUNT_RANGE):
+			if entity is Mob and not entity.removed:
+				counts[_category((entity as Mob).mob_type)] += 1
+		for category: String in CAPS:
+			if category == "monster" and peaceful:
+				continue
+			if counts[category] >= CAPS[category]:
+				continue
 			for i in TRIES:
 				if _try_spawn(category, at):
 					break
@@ -105,8 +117,9 @@ static func _category(mob_type: String) -> String:
 	return "animal"
 
 
-## Picks a random spot around the player and spawns a group there if the
-## spot suits the category. Returns true if something spawned.
+## Picks a random spot around the player and spreads a group from it (Beta's
+## hops), each member where it suits its kind. Returns true if something
+## spawned.
 func _try_spawn(category: String, around: Vector3) -> bool:
 	var angle := randf() * TAU
 	var distance := randf_range(MIN_DISTANCE, MAX_DISTANCE)
@@ -118,32 +131,38 @@ func _try_spawn(category: String, around: Vector3) -> bool:
 		y = _surface(x, z)
 		if y < 0:
 			return false
-	var pos := Vector3i(x, y, z)
-	if not world.is_inside(pos):
+	var start := Vector3i(x, y, z)
+	if not world.is_inside(start):
 		return false
-	var mob_type := _choose(category, pos)
+	var mob_type := _choose(category, start)
 	if mob_type == "":
 		return false
-	var group := randi_range(1, 4) if category != "water" else randi_range(1, 2)
+	var most := WOLF_GROUP if mob_type == "wolf" else GROUP
 	var spawned := 0
-	for i in group:
-		var spot := pos + Vector3i(randi_range(-3, 3), 0, randi_range(-3, 3)) if i > 0 else pos
-		if i > 0:
-			# Look up and down a little for the group members' ground.
-			for dy in [0, 1, -1]:
-				if _suits(category, mob_type, spot + Vector3i(0, dy, 0)):
-					spot += Vector3i(0, dy, 0)
-					break
-		if not _suits(category, mob_type, spot):
-			continue
-		var mob := Mob.create(mob_type)
-		if mob_type == "slime":
-			mob.size = [1, 2, 4][randi_range(0, 2)]
-		if mob_type == "sheep":
-			mob.wool_color = Mob.natural_wool()
-		world.entities.spawn(mob, Vector3(spot) + Vector3(0.5, 0.0, 0.5))
-		mob.rotation.y = randf() * TAU
-		spawned += 1
+	for cluster in 3:
+		var spot := start
+		for hop in 4:
+			spot += Vector3i(randi_range(0, 5) - randi_range(0, 5), 0, randi_range(0, 5) - randi_range(0, 5))
+			if category != "monster":
+				# (on the ground there: hills go up and down)
+				var ground := _surface(spot.x, spot.z)
+				if ground < 0 or absi(ground - spot.y) > 4:
+					continue
+				spot.y = ground
+			if not _suits(category, mob_type, spot):
+				continue
+			var mob := Mob.create(mob_type)
+			if mob_type == "slime":
+				mob.size = [1, 2, 4][randi_range(0, 2)]
+			if mob_type == "sheep":
+				mob.wool_color = Mob.natural_wool()
+			world.entities.spawn(mob, Vector3(spot) + Vector3(0.5, 0.0, 0.5))
+			mob.rotation.y = randf() * TAU
+			mob.set("_yaw", mob.rotation.y)
+			mob.set("_prev_yaw", mob.rotation.y)
+			spawned += 1
+			if spawned >= most:
+				return true
 	return spawned > 0
 
 
@@ -168,15 +187,25 @@ func _choose(category: String, pos: Vector3i) -> String:
 		"water":
 			return "squid"
 		"animal":
-			var biome := world.biome_at(pos.x, pos.z)
-			if biome in WOLF_BIOMES and randi_range(0, 4) == 0:
-				return "wolf"
-			return ANIMALS[randi_range(0, ANIMALS.size() - 1)]
+			var weights: Dictionary = ANIMALS.duplicate()
+			if world.biome_at(pos.x, pos.z) in WOLF_BIOMES:
+				weights["wolf"] = WOLF_WEIGHT
+			return _weighted(weights)
 		_:
-			if pos.y < 40 + world.sea_level - WorldGenerator.SEA_LEVEL and is_slime_chunk(world.world_generator.world_seed if world.world_generator else 0, pos.x >> 4, pos.z >> 4) \
-					and randi_range(0, 4) == 0:
-				return "slime"
-			return MONSTERS[randi_range(0, MONSTERS.size() - 1)]
+			return _weighted(MONSTERS)
+
+
+## A name picked by weight ({name: weight}).
+static func _weighted(weights: Dictionary) -> String:
+	var total := 0
+	for name: String in weights:
+		total += int(weights[name])
+	var roll := randi_range(0, total - 1)
+	for name: String in weights:
+		roll -= int(weights[name])
+		if roll < 0:
+			return name
+	return ""
 
 
 ## Whether a mob of that kind may stand at pos (its feet's cell).
@@ -197,15 +226,29 @@ func _suits(category: String, mob_type: String, pos: Vector3i) -> bool:
 	for at in _player_positions():
 		if at.distance_to(Vector3(pos)) < MIN_DISTANCE:
 			return false
+	var darkness := sky_darkness(world)
 	if category == "animal":
-		return Blocks.get_type(below).name.begins_with("grass") and world.get_combined_light(pos, sky_darkness(world)) >= 9
+		var ground := Blocks.get_type(below).name
+		return (ground.begins_with("grass") or ground == "snowy_grass") and world.get_combined_light(pos, darkness) > 8
 	if mob_type == "slime":
-		return true
-	return world.get_combined_light(pos, sky_darkness(world)) <= 7 and randi_range(0, 31) >= world.get_light(pos) - roundi(sky_darkness(world))
+		# Beta's EntitySlime: a slime chunk, low down, 1 try in 10.
+		return is_slime_chunk(world.world_generator.world_seed if world.world_generator else 0, pos.x >> 4, pos.z >> 4) \
+			and pos.y < 16 + world.sea_level - WorldGenerator.SEA_LEVEL and randi_range(0, 9) == 0
+	# Beta's EntityMob: the sky light not above a random 0..31, then the
+	# light (the night taken off) not above a random 0..7.
+	if world.get_light(pos) > randi_range(0, 31):
+		return false
+	return world.get_combined_light(pos, darkness) <= randi_range(0, 7)
 
 
+## Room for a creature: air, or a block without a full cube (snow on the
+## ground, flowers, tall grass) and no liquid, like Beta's.
 static func _free(id: int) -> bool:
-	return id == Blocks.AIR or (Blocks.collides_table[id] == 0 and Blocks.liquid_table[id] == 0)
+	if id == Blocks.AIR:
+		return true
+	if Blocks.liquid_table[id] == 1:
+		return false
+	return Blocks.collides_table[id] == 0
 
 
 ## How many levels the night takes off the sky light (11 at midnight).

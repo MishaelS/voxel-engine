@@ -26,12 +26,14 @@ var _pumpkin: MeshInstance3D
 var _limb_swing := 0.0
 var _limb_amount := 0.0
 var _last := Vector3.INF
+var _last_step := Vector3.INF
 var _held: MeshInstance3D
 var _held_id := -1
 var _jump := 0.0
 var _fall := 0.0
 var _rest := {} # part name -> its pivot's place in the model
 var _scale := 1.0 / 16.0
+var _body_yaw := INF # (world yaw of the body; the head turns from it)
 
 
 func _ready() -> void:
@@ -127,6 +129,19 @@ func _process(delta: float) -> void:
 	var moved := 0.0 if _last == Vector3.INF else Vector2(here.x - _last.x, here.z - _last.z).length()
 	_last = here
 	var speed := moved / maxf(delta, 1e-4) / 20.0 # blocks per tick
+	var step := Vector2(here.x - _last_step.x, here.z - _last_step.z) if _last_step != Vector3.INF else Vector2.ZERO
+	_last_step = here
+	var yaw := player.rotation.y
+	if _body_yaw == INF or player.sleeping or player.dead:
+		_body_yaw = yaw
+	elif player.vehicle and player.vehicle.type_name() == "minecart":
+		_body_yaw = yaw # (turns round in the cart with the view)
+	else:
+		# The head turns first; the body (a boat, a pig under it) follows
+		# where it goes.
+		_body_yaw = MobAnimation.body_yaw(_body_yaw, yaw, step, delta)
+	if player.vehicle:
+		speed = 0.0 # sitting: the legs and arms keep still
 	_limb_amount = lerpf(_limb_amount, minf(speed * 4.0, 1.0), minf(delta * 10.0, 1.0))
 	_limb_swing += speed * 4.0 * delta * 20.0
 	var parts: Dictionary = _model.parts
@@ -140,7 +155,7 @@ func _process(delta: float) -> void:
 	_fall = lerpf(_fall, MobAnimation.fall_amount(player.velocity.y, player.on_ground or flying, swimming), smooth)
 	for part_name: String in _rest:
 		(parts[part_name] as Node3D).position = _rest[part_name]
-	_model.root.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3.ONE * _scale), Vector3.ZERO)
+	_model.root.transform = Transform3D(Basis(Vector3.UP, PI + angle_difference(yaw, _body_yaw)).scaled(Vector3.ONE * _scale), Vector3.ZERO)
 	if player.sleeping:
 		_pose_asleep(parts)
 	else:
@@ -157,7 +172,7 @@ func _process(delta: float) -> void:
 		if hit >= 0.0:
 			right_arm.rotation.x -= sin(sqrt(hit) * PI) * 1.6
 		var head := parts.head as Node3D
-		head.rotation = Vector3(-player.pitch(), 0, 0)
+		head.rotation = Vector3(-player.pitch(), angle_difference(_body_yaw, yaw), 0)
 		if player.bow_pull >= 0.0:
 			# Drawing the bow: both arms up along the view, the left one
 			# reaching across to the string (the game's bow pose).

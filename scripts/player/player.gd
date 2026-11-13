@@ -320,10 +320,11 @@ func wake_up() -> void:
 	_sleep_fade.color.a = 0.0
 
 
-## Arm swing (breaking, placing), shown by the block in hand.
-func swing() -> void:
-	held_item.swing()
-	Net.swung() # shown on the others' screens
+## Arm swing (breaking, placing), shown by the block in hand; `continuous`
+## while breaking (HeldItem.swing).
+func swing(continuous: bool = false) -> void:
+	if held_item.swing(continuous):
+		Net.swung() # shown on the others' screens (each swing once)
 
 
 func reach() -> float:
@@ -927,6 +928,10 @@ func eyes_in_water() -> bool:
 	var id := world.get_block(Vector3i(eye.floor())) if world else Blocks.AIR
 	if Blocks.liquid_table[id] == 0 or Blocks.family_of(id) != "water":
 		return false
+	# Water above: this block is full (Beta's BlockFluids), no surface in it.
+	var above := world.get_block(Vector3i(eye.floor()) + Vector3i.UP)
+	if Blocks.liquid_table[above] == 1 and Blocks.family_of(above) == "water":
+		return true
 	var level := Blocks.liquid_level_table[id]
 	var surface := floorf(eye.y) + (1.0 if level == 0 or level >= 8 else 1.0 - (level + 1) / 9.0)
 	return eye.y < surface - 1.0 / 9.0

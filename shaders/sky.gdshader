@@ -117,19 +117,17 @@ void sky() {
 			color += vec3(stars(dir, star_twinkle ? TIME : 0.0)) * night * smoothstep(0.0, 0.15, dir.y);
 		}
 
-		// Sun: textured billboard with its halo, added on top of the sky
-		// (hidden below the horizon), redder and dimmer when low.
+		// Sun: textured billboard added onto the sky like Beta's (GL_ONE,
+		// GL_ONE: its black background adds nothing; a picture with
+		// transparency adds by its alpha), hidden below the horizon, redder
+		// and dimmer when low.
 		if (show_sun_moon && dot(dir, sun) > 0.0 && dir.y > -0.02) {
 			vec2 uv = billboard_uv(dir, sun, sun_size);
 			if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
 				vec4 texel = texture(sun_texture, uv);
 				vec3 tint = mix(vec3(1.0), vec3(1.0, 0.45, 0.2), low_sun * 0.9);
-				float disc = step(0.99, texel.a);
 				float dim = 0.2 + 0.8 * smoothstep(0.0, 0.35, sun.y);
-				// The opaque disc covers the sky; the halo is added on top.
-				color = disc > 0.5
-					? texel.rgb * tint * sun_intensity * max(dim, 0.6)
-					: color + texel.rgb * texel.a * tint * sun_halo_intensity * dim;
+				color += texel.rgb * texel.a * tint * sun_intensity * max(dim, 0.6);
 			}
 		}
 
@@ -140,13 +138,9 @@ void sky() {
 			if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
 				vec4 texel = texture(moon_texture, uv);
 				float lit = moon_lit(uv);
-				// Unlit part stays faintly visible (earthshine); the halo
-				// follows how much of the disc is lit.
-				float disc = step(0.99, texel.a);
-				// The disc covers the sky (and the stars behind it); the halo is added.
-				color = disc > 0.5
-					? texel.rgb * mix(earthshine, 1.0, lit) * moon_intensity
-					: color + texel.rgb * texel.a * moon_illumination() * moon_halo_intensity;
+				// Added onto the sky like the sun (Beta's way); the unlit part
+				// stays faintly visible (earthshine).
+				color += texel.rgb * texel.a * mix(earthshine, 1.0, lit) * moon_intensity;
 			}
 		}
 	}

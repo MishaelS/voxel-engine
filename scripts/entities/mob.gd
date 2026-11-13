@@ -15,9 +15,15 @@ extends Entity
 ## you and split when they die. Zombies and skeletons burn in daylight;
 ## spiders are calm in the light unless hurt. Monsters far from the player
 ## disappear.
-## All of them walk with the entity physics, jump up blocks in the way and
-## swim; the model swings its legs while walking, turns its head toward
-## what it looks at, flashes red when hurt and falls over when it dies.
+## All of them find their way on the block grid (Pathfinder: around walls
+## and holes, up a block at a time, never into lava), walk with the entity
+## physics like Beta's (walking pushes them, friction slows them, so a hit
+## throws them back with a hop), turn smoothly, swim; the model swings its
+## legs while walking, turns its head toward what it looks at, is tinted red
+## like Beta's while hurt and falls over when it dies.
+## Wolves are neutral like Beta's: a wild one turns on whoever hits it (and
+## the pack around with it); a tame one follows its player, sits on a click
+## and goes after what hurts the player or what the player hits.
 
 ## type -> spec. speed: walking speed in blocks per tick; hostile: attacks
 ## the player; damage: per hit (Normal); drops: [item, min, max].
@@ -89,6 +95,29 @@ var _egg_timer := 0
 var _jump_timer := 0
 var _say_timer := 0
 var _model := {}
+## The body's heading: set by the AI each tick, drawn between ticks.
+var _yaw := 0.0
+var _prev_yaw := 0.0
+## Its path (Pathfinder) and where it leads.
+var _path: Array[Vector3i] = []
+var _path_goal := Vector3i.MAX
+var _path_age := 0
+var _stuck := 0
+## Who hurt it last (a creeper shot by a skeleton drops a disc) and from
+## where (animals run away from there).
+var _last_attacker: Node3D
+var _flee_from := Vector3.INF
+
+## Ticks between new paths to a moving goal.
+const PATH_REFRESH := 30
+## Paths are used beyond this distance; closer, it walks straight at it.
+const PATH_FROM := 2.5
+## Wolves: following the owner from this far, waiting closer than STAY.
+const FOLLOW := 5.0
+const STAY := 2.5
+const TELEPORT := 12.0
+## Wild wolves join a fight of their pack within this distance.
+const PACK := 16.0
 
 
 static func create(type: String) -> Mob:
@@ -140,6 +169,8 @@ func _ready() -> void:
 		(_model.parts.right_arm as Node3D).add_child(_held)
 	_apply_size()
 	health = max_health
+	_yaw = rotation.y
+	_prev_yaw = _yaw
 	_egg_timer = randi_range(6000, 12000)
 	_say_timer = randi_range(80, 400)
 	_update_wool()
@@ -167,6 +198,8 @@ func _apply_size() -> void:
 
 
 func _ai_tick() -> void:
+	_prev_yaw = _yaw
+	_path_age += 1
 	_attack_cooldown = maxi(_attack_cooldown - 1, 0)
 	_look_ticks -= 1
 	if _look_ticks <= 0:
@@ -262,10 +295,18 @@ func _despawn(_player_near) -> bool:
 
 func _animal_tick(player) -> void:
 	if _panic > 0:
-		if _wander == Vector3.INF or randi_range(0, 9) == 0:
-			_wander = feet() + Vector3(randf_range(-8, 8), 0, randf_range(-8, 8))
-		_walk_toward(_wander, spec.speed * 1.6)
+		# Runs away: from what hurt it (else anywhere), a new spot now and then.
+		if _wander == Vector3.INF or _path.is_empty() or randi_range(0, 19) == 0:
+			var away := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
+			if _flee_from != Vector3.INF:
+				away = (feet() - _flee_from) * Vector3(1, 0, 1)
+				away = away.normalized() * 8.0 + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3))
+			else:
+				away = away.normalized() * 8.0
+			_wander = feet() + away
+		_navigate(_wander, spec.speed * 1.6, false, 150)
 		return
+	_flee_from = Vector3.INF
 	if player and randi_range(0, 49) == 0 and player.global_position.distance_to(feet()) < 6.0:
 		_look_at = player.eye_position()
 		_look_ticks = randi_range(20, 60) # like the game: looks for a while
@@ -274,8 +315,9 @@ func _animal_tick(player) -> void:
 	if _wander != Vector3.INF:
 		if Vector2(_wander.x - _x, _wander.z - _z).length() < 1.0 or randi_range(0, 199) == 0:
 			_wander = Vector3.INF
+			_path.clear()
 		else:
-			_walk_toward(_wander, spec.speed)
+			_navigate(_wander, spec.speed, false, 150)
 
 
 func _sees(player) -> bool:
@@ -294,8 +336,8 @@ func _sees(player) -> bool:
 func _monster_tick(player) -> void:
 	if mob_type == "spider" and not angry and world.get_combined_light(Vector3i(center().floor())) > 7:
 		target = null
-	elif _sees(player):
-		target = player
+	elif player and player.global_position.distance_to(feet()) < SIGHT:
+		target = player # (like Beta's monsters: within 16 blocks, seen or not; the path goes around)
 	elif target and _is_player(target) and target.dead:
 		target = null
 	if target == null:
@@ -311,11 +353,13 @@ func _monster_tick(player) -> void:
 		var leap := Vector3(goal.x - _x, 0, goal.z - _z).normalized()
 		velocity = Vector3(leap.x * 0.4, 0.4, leap.z * 0.4)
 		return
-	_walk_toward(goal, spec.speed)
+	_navigate(goal, spec.speed)
 	if mob_type != "creeper" and flat < half_width + 0.9 and absf(goal.y - _y) < height and _attack_cooldown == 0:
 		_attack_cooldown = ATTACK_COOLDOWN
 		target.damage(_scaled_damage(spec.damage))
 		target.knockback(center())
+		if _is_player(target):
+			guard_owner(self)
 
 
 ## Damage by difficulty like Beta: easy half + 1, hard x1.5.
@@ -351,7 +395,7 @@ func _skeleton_tick(player) -> void:
 	_look_ticks = 5
 	var distance: float = player.global_position.distance_to(feet())
 	if distance > 10.0:
-		_walk_toward(player.global_position, spec.speed)
+		_navigate(player.global_position, spec.speed)
 	else:
 		_face(player.global_position)
 	if _attack_cooldown == 0 and distance < 16.0:
@@ -379,33 +423,81 @@ func _slime_tick(player) -> void:
 		player.damage(_scaled_damage(size))
 
 
-## Wolves: wild ones wander (and turn on what hurts them); tame ones follow
-## their player, sit when told and go after what hurts the player.
+## Wolves like Beta's, neutral: a wild one wanders and only turns on
+## whoever hurts it (hurt_by: its pack around joins in); a tame one follows
+## its player along a path (teleporting when far behind), sits when told,
+## and fights what hurts the player or what the player hits (guard_owner).
 func _wolf_tick(player) -> void:
 	if sitting:
 		return
-	if angry and target and target is Entity and not (target as Entity).is_dead():
-		var goal := (target as Entity).feet()
-		_walk_toward(goal, spec.speed * 1.2)
-		if (target as Entity).center().distance_to(center()) < 1.5 and _attack_cooldown == 0:
+	if angry and not _target_alive():
+		angry = false # the fight is over
+		target = null
+	if angry and target:
+		var goal: Vector3 = target.global_position if not (target is Entity) else (target as Entity).feet()
+		var reach: float = (target as Entity).center().distance_to(center()) if target is Entity else goal.distance_to(feet())
+		if reach > 32.0:
+			angry = false
+			target = null
+			return
+		_look_at = goal + Vector3(0, 1, 0)
+		_look_ticks = 5
+		_navigate(goal, spec.speed * 1.2)
+		if reach < 1.5 and _attack_cooldown == 0:
 			_attack_cooldown = ATTACK_COOLDOWN
-			(target as Entity).damage(4 if tamed else 2, center())
+			if target is Entity:
+				if (target as Entity).damage(4 if tamed else 2, center()) and target is Mob:
+					(target as Mob).hurt_by(self)
+			else:
+				target.damage(_scaled_damage(4 if tamed else 2))
+				target.knockback(center())
 		return
-	if angry and _is_player(target) and player:
-		_walk_toward(player.global_position, spec.speed * 1.2)
-		if player.global_position.distance_to(feet()) < 1.4 and _attack_cooldown == 0:
-			_attack_cooldown = ATTACK_COOLDOWN
-			player.damage(_scaled_damage(2))
-		return
-	if tamed and world.player:
-		var owner := world.player.global_position
+	if tamed and world.player and not world.player.dead:
+		var owner: Vector3 = world.player.global_position
 		var distance := owner.distance_to(feet())
-		if distance > 12.0:
-			teleport(owner + Vector3(randf_range(-2, 2), 0.5, randf_range(-2, 2)))
-		elif distance > 4.0:
-			_walk_toward(owner, spec.speed * 1.3)
+		if distance > TELEPORT:
+			_teleport_near(owner)
+		elif distance > FOLLOW or (distance > STAY and not _path.is_empty()):
+			_navigate(owner, spec.speed * 1.3)
+		else:
+			_path.clear()
+			if randi_range(0, 39) == 0:
+				_look_at = world.player.eye_position()
+				_look_ticks = randi_range(20, 60)
 		return
 	_animal_tick(player)
+
+
+## Whether what it fights is still there to fight.
+func _target_alive() -> bool:
+	if target == null or not is_instance_valid(target):
+		return false
+	if target is Entity:
+		return not (target as Entity).removed and not (target as Entity).is_dead()
+	return not bool(target.get("dead"))
+
+
+## A tame wolf left far behind: next to its player, on a free spot (like
+## Beta's wolves catching up).
+func _teleport_near(owner: Vector3) -> void:
+	var base := Vector3i(owner.floor())
+	for attempt in 12:
+		var cell := base + Vector3i(randi_range(-2, 2), randi_range(-1, 1), randi_range(-2, 2))
+		if Vector2(cell.x - base.x, cell.z - base.z).length() >= 1.0 and Pathfinder.standable(world, cell, _tall()):
+			teleport(Vector3(cell) + Vector3(0.5, 0.0, 0.5))
+			_path.clear()
+			return
+
+
+## A tame wolf's player was hurt by `attacker`, or hit it: the tame wolves
+## around go after it (not after their own player, not after each other).
+static func guard_owner(attacker: Node3D) -> void:
+	if not (attacker is Mob):
+		return
+	var mob := attacker as Mob
+	if mob.mob_type == "wolf" and mob.tamed:
+		return
+	guard_owner_against(mob)
 
 
 ## Squid like Beta's: under water they swim in pushes (a new, mostly level
@@ -427,7 +519,7 @@ func _squid_tick() -> void:
 		if Blocks.liquid_table[world.get_block(Vector3i(floori(_x), floori(_y + height + 0.1), floori(_z)))] == 0:
 			velocity.y = minf(velocity.y, -0.02)
 		if Vector2(velocity.x, velocity.z).length_squared() > 1e-5:
-			rotation.y = atan2(velocity.x, velocity.z)
+			_yaw = atan2(velocity.x, velocity.z)
 	else:
 		velocity.x *= 0.5
 		velocity.z *= 0.5
@@ -440,17 +532,27 @@ func _burn_in_daylight() -> void:
 		fire_ticks = maxi(fire_ticks, 160)
 
 
-## Walks toward a point: turns to it, sets the horizontal speed, jumps up
-## a block in the way.
+## Walks toward a point like Beta's creatures: turns to it and pushes
+## itself that way (friction gives it its speed: `speed` blocks a tick on
+## the ground; less control in the air, slower in water), so a hit's
+## knockback is not cancelled; jumps up a block in the way.
 func _walk_toward(point: Vector3, speed: float) -> void:
 	var dir := Vector3(point.x - _x, 0, point.z - _z)
 	if dir.length_squared() < 0.01:
 		return
 	dir = dir.normalized()
 	_face(point)
-	var control := 1.0 if on_ground or in_water else 0.3
-	velocity.x = lerpf(velocity.x, dir.x * speed, control)
-	velocity.z = lerpf(velocity.z, dir.z * speed, control)
+	var accel: float
+	if in_water or in_lava:
+		accel = speed * 0.2 * 0.6
+	elif on_ground:
+		var below := world.get_block(Vector3i(floori(_x), floori(_y - 0.5), floori(_z)))
+		var friction := (Blocks.get_type(below).slipperiness if below != Blocks.AIR else 0.6) * 0.91
+		accel = speed * (1.0 - friction)
+	else:
+		accel = speed * 0.03
+	velocity.x += dir.x * accel
+	velocity.z += dir.z * accel
 	if horizontal_collision and on_ground:
 		velocity.y = 0.42
 
@@ -460,7 +562,55 @@ func _face(point: Vector3) -> void:
 	if dir.length_squared() < 0.0001:
 		return
 	var wanted := atan2(dir.x, dir.z)
-	rotation.y = lerp_angle(rotation.y, wanted, 0.35)
+	_yaw = lerp_angle(_yaw, wanted, 0.35)
+
+
+## How many cells high it is for paths.
+func _tall() -> int:
+	return clampi(ceili(height - 0.01), 1, 3)
+
+
+func _feet_cell() -> Vector3i:
+	return Vector3i(floori(_x), floori(_y + 0.01), floori(_z))
+
+
+## Goes to a point along a path (Pathfinder), found again when the goal
+## moves away (`moving` goals also now and then) or when it got stuck;
+## straight at it when close, or while no path is known yet (searches wait
+## their turn: Pathfinder.NODE_BUDGET). `reach`: how many cells a search
+## may look at (short walks need few).
+func _navigate(goal: Vector3, speed: float, moving: bool = true, reach: int = Pathfinder.MAX_NODES) -> void:
+	if goal.distance_to(feet()) < PATH_FROM and absf(goal.y - _y) < 1.5:
+		_path.clear()
+		_walk_toward(goal, speed)
+		return
+	var goal_cell := Vector3i(goal.floor())
+	_stuck = _stuck + 1 if horizontal_collision and on_ground else 0
+	var stale := _path_goal == Vector3i.MAX or (_path.is_empty() and _path_goal != goal_cell) or _stuck > 10 \
+		or Vector2(goal_cell.x - _path_goal.x, goal_cell.z - _path_goal.z).length_squared() > 4.0 \
+		or (moving and _path_age >= PATH_REFRESH)
+	var allowed := Pathfinder.budget(world.clock.game_time, reach) if stale else 0
+	if allowed > 0:
+		_path = Pathfinder.find(world, _feet_cell(), goal_cell, _tall(), allowed)
+		_path_goal = goal_cell
+		_path_age = 0
+		_stuck = 0
+	if _path.is_empty():
+		_walk_toward(goal, speed)
+		return
+	var next := _path[0]
+	var point := Vector3(next.x + 0.5, next.y, next.z + 0.5)
+	var flat := Vector2(point.x - _x, point.z - _z).length()
+	if flat < 0.35 and absf(_y - next.y) < 1.0:
+		_path.remove_at(0)
+		if _path.is_empty():
+			return
+		next = _path[0]
+		point = Vector3(next.x + 0.5, next.y, next.z + 0.5)
+		flat = Vector2(point.x - _x, point.z - _z).length()
+	_walk_toward(point, speed)
+	if next.y > floori(_y + 0.01) and on_ground and flat < 1.4:
+		velocity.y = 0.42 # up a block
 
 
 func _eat_grass() -> void:
@@ -587,29 +737,65 @@ func _update_wolf_skin() -> void:
 
 # --- Health ---------------------------------------------------------------------------
 
+## Hurt by anything (a hit, a fall, fire): the sound, and animals run;
+## who did it is hurt_by's (a fall makes no wolf angry at anyone).
 func damage(amount: int, from: Variant = null) -> bool:
 	var hurt := super(amount, from)
 	if hurt and not is_dead():
 		_sound("hurt", 1.0)
-		_panic = 60
-		_wander = Vector3.INF
-		if mob_type == "spider" or mob_type == "wolf":
-			angry = true
-			target = world.player
+		if not is_hostile():
+			_panic = 60 # (monsters don't run, like Beta's)
+			_wander = Vector3.INF
+		if from is Vector3:
+			_flee_from = from
 	return hurt
 
 
-## Hit by the player (or something else): monsters and wolves fight back,
-## tamed wolves forgive their owner.
+## Hit by a player or a creature: animals run from it; monsters and wolves
+## fight back (a wild wolf's pack with it), a tame wolf forgives its player;
+## the player's tame wolves go after what the player hits.
 func hurt_by(attacker: Node3D) -> void:
-	if is_dead() or (mob_type == "wolf" and tamed and attacker is Player):
-		if mob_type == "wolf":
-			angry = false
+	if attacker == null or not is_instance_valid(attacker) or attacker == self:
 		return
-	var spec: Dictionary = TYPES[mob_type]
-	if spec.get("hostile", false) or mob_type == "wolf":
+	_last_attacker = attacker
+	_flee_from = attacker.global_position
+	# Beta: a creeper killed by a skeleton's arrow drops a music disc.
+	if mob_type == "creeper" and is_dead() and death_ticks == 0 and attacker is Mob and (attacker as Mob).mob_type == "skeleton":
+		var disc := "music_disc_13" if randi_range(0, 1) == 0 else "music_disc_cat"
+		world.items.spawn(Items.id_of(disc), 1, center(), Vector3(randf_range(-0.1, 0.1), 0.2, randf_range(-0.1, 0.1)))
+	if _is_player(attacker) and not (mob_type == "wolf" and tamed):
+		guard_owner_against(self)
+	if is_dead():
+		return
+	if mob_type == "wolf":
+		if tamed and _is_player(attacker):
+			return
+		sitting = false
+		_anger(attacker)
+		if not tamed:
+			for entity in world.entities.near(center(), PACK):
+				if entity is Mob and entity != self and (entity as Mob).mob_type == "wolf" and not (entity as Mob).tamed:
+					(entity as Mob)._anger(attacker)
+		return
+	if spec.get("hostile", false):
 		target = attacker
-		angry = mob_type == "wolf" or mob_type == "spider" or angry
+		angry = mob_type == "spider" or angry
+
+
+func _anger(attacker: Node3D) -> void:
+	target = attacker
+	angry = true
+	_path.clear()
+
+
+## The tame wolves around a player go after `mob` (the player hit it).
+static func guard_owner_against(mob: Mob) -> void:
+	if mob.world == null:
+		return
+	for entity in mob.world.entities.near(mob.center(), 24.0):
+		if entity is Mob and entity != mob and (entity as Mob).mob_type == "wolf" and (entity as Mob).tamed and not (entity as Mob).sitting:
+			(entity as Mob).target = mob
+			(entity as Mob).angry = true
 
 
 func _on_death() -> void:
@@ -631,6 +817,7 @@ func _on_death() -> void:
 		world.items.spawn(Blocks.id_of(wool_color + "_wool"), 1, center(), Vector3(0, 0.2, 0))
 
 
+
 func _sound(kind: String, volume: float) -> void:
 	var group: String = spec.get("sound", "")
 	if group != "":
@@ -646,6 +833,8 @@ func _process(delta: float) -> void:
 	if mob_type == "wolf":
 		_update_wolf_skin()
 	var alpha := TickLoop.alpha
+	# The heading between the last two ticks (no jumps 20 times a second).
+	rotation.y = lerp_angle(_prev_yaw, _yaw, alpha)
 	var moved := Vector2(_x - _prev.x, _z - _prev.z).length() if vehicle == null else 0.0 # carried, not walking
 	_limb_amount = lerpf(_limb_amount, minf(moved * 4.0, 1.0), minf(delta * 10.0, 1.0))
 	_limb_swing += moved * 4.0 * delta * 20.0
@@ -706,9 +895,6 @@ func _process(delta: float) -> void:
 		_was_on_ground = on_ground
 		_squish *= pow(0.6, delta * 20.0)
 		_model.root.scale = MobAnimation.slime_scale(_squish, size) * _base_scale
-	if mob_type != "squid" and not is_dead():
-		# A short flinch back when hurt (red too, below).
-		_model.root.rotation.x = -0.18 * MobAnimation.flinch(hurt_ticks, alpha, Entity.INVULNERABLE_TICKS)
 	if mob_type == "squid":
 		# Leans into the way it swims (level when still), around its middle.
 		var moving := Vector2(velocity.x, velocity.z).length()
@@ -788,8 +974,16 @@ func save_state() -> Dictionary:
 	return state
 
 
+## A client's copy: the heading drawn between snapshots too.
+func puppet_tick() -> void:
+	_prev_yaw = _yaw
+	super()
+
+
 func load_state(saved: Dictionary) -> void:
 	super(saved)
+	_yaw = rotation.y
+	_prev_yaw = _yaw
 	sheared = saved.get("sheared", false)
 	wool_color = saved.get("wool", "white")
 	size = saved.get("size", 1)

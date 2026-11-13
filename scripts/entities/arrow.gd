@@ -114,6 +114,7 @@ func tick() -> void:
 		var point: Variant = box.intersects_segment(start, end)
 		if point != null and start.distance_to(point) < (hit[1] if not hit.is_empty() else block_distance):
 			player.damage(Mob._scaled_damage(DAMAGE) if shooter is Mob else DAMAGE)
+			Mob.guard_owner(shooter) # (the player's tame wolves go after the shooter)
 			player.knockback(start)
 			removed = true
 			return
@@ -132,10 +133,10 @@ func tick() -> void:
 	if not hit.is_empty():
 		var target: Entity = hit[0]
 		target.damage(maxi(ceili(DAMAGE * power), 1), start)
-		if target is Mob and shooter == player:
-			(target as Mob).angry = true
-			if target.is_dead():
-				Stats.killed(target, player.global_position)
+		if target is Mob and shooter and is_instance_valid(shooter):
+			(target as Mob).hurt_by(shooter)
+		if target is Mob and shooter == player and target.is_dead():
+			Stats.killed(target, player.global_position)
 		removed = true
 		return
 	if block_hit.get("hit", false):

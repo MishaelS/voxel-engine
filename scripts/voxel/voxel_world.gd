@@ -587,6 +587,18 @@ func _update_streaming() -> void:
 				_unload_column(column)
 
 
+## The biome's grass (kind 1) or foliage (kind 2) color at a block column
+## (linear; white where the column has none).
+func biome_color(pos: Vector3i, kind: int) -> Color:
+	var colors: Array = _column_colors.get(Vector2i(pos.x >> 4, pos.z >> 4), [])
+	if kind < 1 or colors.size() < kind:
+		return Color.WHITE
+	var list: PackedColorArray = colors[kind - 1]
+	if list.size() != 256:
+		return Color.WHITE
+	return list[(pos.x & 15) + 16 * (pos.z & 15)]
+
+
 ## No column near the player waits to be generated (far work may start).
 func is_streaming_idle() -> bool:
 	return _wanted_columns.is_empty() and _gen_jobs.is_empty() and _remote_waiting.is_empty()

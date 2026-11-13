@@ -13,9 +13,29 @@ Sections:
 
 ## [Unreleased]
 
+### Fixed
+- The inventory's slots stand where Beta 1.7.3's inventory.png has them (crafting grid at 88, 26, its result at 144, 36, the title at 86, 16); the small chest is put together from container.png like Beta's (its inventory part from row 126) and the dispenser's and large chest's inventories are at Beta's rows.
+- The sun and the moon are added onto the sky like Beta's (GL_ONE, GL_ONE): Beta's pictures have a black background, which drew a black square.
+- Bits of broken tall grass, ferns and leaves take the biome's color where they were (terrain.png draws them gray, like Beta's).
+- The Tab list's signal bars come from their own picture (`extra/signal_bars.png`): Beta's icons.png has none.
+- The held item's name shows above the hearts (and the air bubbles) instead of on them.
+- Mobs no longer jerk while walking: they speed up and slow down like Beta's (acceleration and friction instead of a set speed each tick), and their turning is smoothed between ticks.
+- A hit mob is thrown back and hops up (Beta's knockback, 0.4 back and 0.4 up) instead of sliding along the ground.
+- A creeper killed by a skeleton's arrow drops a music disc (13 or cat), like Beta's.
+- The air bubbles no longer blink while swimming deep under water: the top of a water block with water above it counted as out of the water (Beta's water fills such a block).
+- No arm and leg swinging while sitting in a boat, a minecart or on a pig.
+- Items held in another player's (and the third-person view's) hand stand like Beta 1.7.3's (RenderPlayer / RenderBiped): blocks small in front of the fist, tools and swords pointing ahead, other items a picture turned like Beta's, the bow held up by its grip.
+- The leaves table (`Blocks.fast_leaves_table`) is filled apart and then put in place: a generator thread asking for it at the same moment could write past its end.
+
 ### Changed
+- The arm swings faster (6 ticks, the game's); a click starts a new swing once the current one is past its middle, while breaking swings follow each other whole, and each swing is sent to the other players once (not every frame).
 - Mob textures are the classic game's (Beta 1.7.3's mob/*.png, 64 x 32); every model fits them as they are.
 - The wolf's model is Beta's (ModelWolf) exactly: its mane around the neck in front of the body (it sat inside the body), every part 1 pixel to the side like Beta's, so the head turns about its own middle; no collar (Beta's tame wolves had none: their skin is wolf_tame.png).
+- The body follows the head like Beta's: the head turns alone up to 75 degrees, the body turns toward where the player goes (in a boat or on a pig: where it goes), so turning the view in a boat no longer turns the whole body at once; in a minecart the body turns round with the view. Other players' bodies too.
+- Mob spawning like Beta 1.7.3's (SpawnerAnimals): kinds by weight (sheep 12, pig 10, chicken 10, cow 8; wolves 2 in forests and taiga; spider, zombie, skeleton, creeper and slime 10 each), groups spreading by hops of up to 5 blocks (at most 4, wolves 8), animals on grass (snowy too) in light above 8, monsters where the sky light is under a random 0..31 and the light under a random 0..7, slimes in slime chunks below y 16 (1 try in 10); up to 70 monsters, 15 animals and 5 squid counted within 128 blocks of each player.
+- Hurt mobs turn red like Beta's: their colors mixed 40% with red at the light they stand in (no turning aside when hit).
+- Wolves are neutral like Beta's: a wild wolf only attacks a player who hit it, and then its pack within 16 blocks with it; tame wolves follow their owner along paths (closer than 5 blocks they stop, farther than 12 they come to the owner's side), attack what hits their owner or what the owner hits, and calm down when the target is dead or far.
+- Peaceful animals run away from what hurt them (along a path, faster), wander along short paths, and monsters notice the player within 16 blocks even without seeing them and go around walls to them.
 - Spiders' eyes glow like Beta's: mob/spider_eyes.png drawn over the head at full brightness, also in the dark (model parts may be "glow").
 
 - terrain.png is the classic game's (the textures of Beta 1.7.3). Its tiles stand where ours stood; fire, water and lava are drawn by their animations as before (the atlas only has placeholders there, like Beta's).
@@ -23,6 +43,7 @@ Sections:
 - Spruce and birch planks (blocks Beta did not have) keep their own tiles in `extra/terrain_extra.png`, used where a terrain.png has nothing in those places (`TexturePacks.GAME_TILES`).
 
 ### Added
+- Paths for creatures (`Pathfinder`): A* on the block grid, a bit smarter than Beta's: around walls and holes, up one block (a jump), down at most 3, through water, never into lava, fire, cactus or onto fences. The cells searched are shared out among all creatures each tick (`Pathfinder.NODE_BUDGET`), so many of them don't slow the game; a path is found again when the goal moves away or the creature gets stuck.
 - Music for the time of day: the tracks still come now and then (every 10 to 20 minutes, like the game), now one for the part of the day (`Sounds.MUSIC_TIMES`): at dawn (about 04:30 to 08:00) "the_dawn", by day "empty_pixel_world" and "early_exploration", in the evening and at night "the_forest_glitches" and "deep_cavern_silence"; the calm tracks play any time, and the menus play as by day.
 
 ## [0.0.6] - 2026-11-13

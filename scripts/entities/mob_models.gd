@@ -85,7 +85,7 @@ static func build(mob: String) -> Dictionary:
 
 ## Items held like the game's (tools, sticks, bones, rods): pointing
 ## forward from the fist rather than held up as a picture.
-const HELD_LIKE_TOOLS := ["_sword", "_pickaxe", "_axe", "_shovel", "_hoe", "stick", "bone", "fishing_rod", "reed"]
+const HELD_LIKE_TOOLS := ["_sword", "_pickaxe", "_axe", "_shovel", "_hoe", "stick", "bone", "fishing_rod"]
 
 
 ## An item in a creature's (or the player's) right hand, to be added to the
@@ -96,50 +96,57 @@ const HELD_LIKE_TOOLS := ["_sword", "_pickaxe", "_axe", "_shovel", "_hoe", "stic
 static func held_item(mob: String, item_id: int) -> MeshInstance3D:
 	if item_id == Blocks.AIR or item_id < 0:
 		return null
-	var arm: Dictionary = {}
+	var has_arm := false
 	for part: Dictionary in model(mob).parts:
-		if part.name == "right_arm":
-			arm = part
-	if arm.is_empty():
+		has_arm = has_arm or part.name == "right_arm"
+	if not has_arm:
 		return null
-	var from := _v(arm.from)
-	var size := _v(arm.size)
-	var hand := Vector3(from.x + size.x * 0.5, from.y, from.z + size.z * 0.5) - _v(arm.pivot) + Vector3(0, 1.5, 0)
 	var mesh := MeshInstance3D.new()
 	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var basis: Basis
-	var grip: Vector3 # the held point of the mesh (its own units)
-	var scale := 10.0
+	# Beta's RenderPlayer / RenderBiped.renderEquippedItems, step by step
+	# (OpenGL's order: each step applies to what follows), in its model's
+	# axes (y down, the front toward -z) and blocks.
+	var gl := _gl_move(-0.0625, 0.4375, 0.0625) # (the hand, from the arm's pivot)
+	var picture: Transform3D # the mesh's own place in what Beta draws
 	if not ItemMeshes.is_flat(item_id):
 		mesh.mesh = FallingBlocks.block_mesh(item_id)
 		mesh.set_meta("block", true) # lit through entity_light (FallingBlocks.light)
-		scale = 6.0
-		basis = Basis(Vector3.UP, PI / 4.0) * Basis(Vector3.RIGHT, deg_to_rad(20.0))
-		grip = Vector3(0.5, 0.5, 0.5)
+		gl = gl * _gl_move(0, 0.1875, -0.3125) * _gl_turn(20, Vector3.RIGHT) * _gl_turn(45, Vector3.UP) \
+			* Transform3D(Basis.from_scale(Vector3(0.375, -0.375, 0.375)), Vector3.ZERO)
+		picture = _gl_move(-0.5, -0.5, -0.5) # (renderBlockOnInventory: a cube around its middle)
 	else:
 		mesh.mesh = ItemMeshes.extruded(item_id, ItemEntities._flat_material(item_id))
 		var name := Items.name_of(item_id)
-		# The picture stands upright along the arm's forward direction.
-		var upright := Basis(Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0))
-		if name == "bow":
-			# The limb (the picture's diagonal) along the forward direction, the
-			# arc outward and the string toward the body: held up like this
-			# when the arm points ahead (skeletons aiming).
-			var r := sqrt(0.5)
-			basis = Basis(Vector3(0, r, r), Vector3(0, -r, r), Vector3(1, 0, 0))
-			grip = Vector3(0.45, 0.45, 1.0 / 32.0)
+		if name == "bow" and mob == "player":
+			gl = gl * _gl_move(0, 0.125, 0.3125) * _gl_turn(-20, Vector3.UP) \
+				* Transform3D(Basis.from_scale(Vector3(0.625, -0.625, 0.625)), Vector3.ZERO) \
+				* _gl_turn(-100, Vector3.RIGHT) * _gl_turn(45, Vector3.UP)
 		elif HELD_LIKE_TOOLS.any(func(suffix: String) -> bool: return name.ends_with(suffix)):
-			basis = Basis(Vector3.RIGHT, deg_to_rad(25.0)) * upright
-			grip = Vector3(0.22, 0.22, 1.0 / 32.0)
-			hand.z += 1.0
+			if name == "fishing_rod":
+				gl = gl * _gl_turn(180, Vector3.BACK) * _gl_move(0, -0.125, 0)
+			gl = gl * _gl_move(0, 0.1875, 0) * Transform3D(Basis.from_scale(Vector3(0.625, -0.625, 0.625)), Vector3.ZERO) \
+				* _gl_turn(-100, Vector3.RIGHT) * _gl_turn(45, Vector3.UP)
 		else:
-			scale = 6.0
-			basis = upright
-			grip = Vector3(0.5, 0.5, 1.0 / 32.0)
-			hand.z += 2.0
-	basis = basis.scaled(Vector3.ONE * scale)
-	mesh.transform = Transform3D(basis, hand - basis * grip)
+			gl = gl * _gl_move(0.25, 0.1875, -0.1875) * Transform3D(Basis.from_scale(Vector3.ONE * 0.375), Vector3.ZERO) \
+				* _gl_turn(60, Vector3.BACK) * _gl_turn(-90, Vector3.RIGHT) * _gl_turn(20, Vector3.BACK)
+		# ItemRenderer.renderItem's flat picture: 1.5 blocks, turned, then a
+		# square 0..1 seen right from -z (the mesh: from +z, its back at 0).
+		gl = gl * _gl_move(0, -0.3, 0) * Transform3D(Basis.from_scale(Vector3.ONE * 1.5), Vector3.ZERO) \
+			* _gl_turn(50, Vector3.UP) * _gl_turn(335, Vector3.BACK) * _gl_move(-0.9375, -0.0625, 0)
+		picture = Transform3D(Basis(Vector3(-1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, -1)), Vector3(1, 0, 0))
+	# Beta's axes -> the model's (y up, the front toward +z: turned half
+	# around x), blocks -> pixels.
+	var axes := Transform3D(Basis(Vector3(1, 0, 0), Vector3(0, -1, 0), Vector3(0, 0, -1)).scaled(Vector3.ONE * 16.0), Vector3.ZERO)
+	mesh.transform = axes * gl * picture
 	return mesh
+
+
+static func _gl_move(x: float, y: float, z: float) -> Transform3D:
+	return Transform3D(Basis.IDENTITY, Vector3(x, y, z))
+
+
+static func _gl_turn(degrees: float, axis: Vector3) -> Transform3D:
+	return Transform3D(Basis(axis, deg_to_rad(degrees)), Vector3.ZERO)
 
 
 static func _v(a: Array) -> Vector3:

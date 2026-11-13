@@ -20,7 +20,8 @@ void vertex() {
 void fragment() {
 	vec4 texel = texture(skin, UV);
 	vec3 color = texel.rgb * tint.rgb * shade * brightness;
-	color = mix(color, vec3(1.0, 0.1, 0.1), hurt * 0.6);
+	// Hurt (and dying): Beta's red overlay, (brightness, 0, 0) at 40%.
+	color = mix(color, vec3(brightness * shade, 0.0, 0.0), hurt * 0.4);
 	color = mix(color, vec3(1.0), flash * 0.7);
 	ALBEDO = color;
 	ALPHA = texel.a;

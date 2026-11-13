@@ -14,8 +14,8 @@ extends Node3D
 ##   coordinates written small across its top (F3 is only in debug builds).
 ## It is a child of the camera and is drawn over the world.
 
-## Ticks of one swing (a bit slower than the classic 6, smoother).
-const SWING_TICKS := 8.0
+## Ticks of one swing (the game's 6).
+const SWING_TICKS := 6.0
 ## Equip speed: share of the motion per tick (the classic 0.4).
 const EQUIP_STEP := 0.4
 ## Position in front of the camera (camera space) and size.
@@ -81,11 +81,15 @@ func swing_progress() -> float:
 	return _swing
 
 
-## Starts a swing; while one is playing it finishes first, so holding the
-## button gives one smooth swing after another instead of a twitch.
-func swing() -> void:
-	if _swing < 0.0:
+## Starts a swing, like the game's: a new one once the current swing is
+## past its middle (quick clicks each get theirs). `continuous` (breaking,
+## asked every frame): only after the current one ends, so holding the
+## button gives one whole swing after another instead of a twitch.
+func swing(continuous: bool = false) -> bool:
+	if _swing < 0.0 or (not continuous and _swing >= 0.5):
 		_swing = 0.0
+		return true
+	return false
 
 
 func _process(delta: float) -> void:

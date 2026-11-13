@@ -188,7 +188,7 @@ func _throw_held(whole_stack: bool) -> void:
 func _continue_breaking(pos: Vector3i, ticks: float) -> void:
 	if _break_delay > 0.0:
 		return
-	player.swing()
+	player.swing(true)
 	if player.is_creative():
 		world.destroy_block(pos, false)
 		_break_delay = BREAK_DELAY_TICKS

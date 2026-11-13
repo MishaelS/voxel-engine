@@ -30,6 +30,8 @@ var _swing := -1.0 # 0..1 while swinging
 var _limb_swing := 0.0
 var _limb_amount := 0.0
 var _last := Vector3.INF
+var _last_here := Vector3.ZERO
+var _body_yaw := INF # (the head turns from it, MobAnimation.body_yaw)
 var _name_color := 0
 
 
@@ -116,10 +118,17 @@ func _process(delta: float) -> void:
 	var moved := 0.0 if _last == Vector3.INF else Vector2(here.x - _last.x, here.z - _last.z).length()
 	_last = here
 	var speed := moved / maxf(delta, 1e-4) / 20.0
+	if _body_yaw == INF or dead:
+		_body_yaw = rotation.y
+	else:
+		_body_yaw = MobAnimation.body_yaw(_body_yaw, rotation.y, Vector2(here.x - _last_here.x, here.z - _last_here.z), delta)
+	_last_here = here
+	if _flags & 2:
+		speed = 0.0 # sitting: the legs and arms keep still
 	_limb_amount = lerpf(_limb_amount, minf(speed * 4.0, 1.0), minf(delta * 10.0, 1.0))
 	_limb_swing += speed * 4.0 * delta * 20.0
 	if _swing >= 0.0:
-		_swing += delta * 20.0 / 8.0
+		_swing += delta * 20.0 / HeldItem.SWING_TICKS
 		if _swing >= 1.0:
 			_swing = -1.0
 	_pose()
@@ -137,7 +146,8 @@ func _pose() -> void:
 	var parts: Dictionary = _model.parts
 	for part_name: String in _rest:
 		(parts[part_name] as Node3D).position = _rest[part_name]
-	_model.root.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3.ONE * _scale), Vector3.ZERO)
+	var turn := angle_difference(rotation.y, _body_yaw) if _body_yaw != INF else 0.0
+	_model.root.transform = Transform3D(Basis(Vector3.UP, PI + turn).scaled(Vector3.ONE * _scale), Vector3.ZERO)
 	var t := Time.get_ticks_msec() / 50.0
 	MobAnimation.pose_biped(parts, t, _limb_swing, _limb_amount, _held != null, false, 0.0, 0.0)
 	var right_arm := parts.right_arm as Node3D
@@ -150,7 +160,7 @@ func _pose() -> void:
 		left_arm.rotation.x += -PI / 5.0
 	if _swing >= 0.0:
 		right_arm.rotation.x -= sin(sqrt(_swing) * PI) * 1.6
-	(parts.head as Node3D).rotation = Vector3(-_pitch, 0, 0)
+	(parts.head as Node3D).rotation = Vector3(-_pitch, -turn, 0)
 	(parts.body as Node3D).rotation.x = 0.0
 	if _flags & 1:
 		(parts.body as Node3D).rotation.x = 0.5
