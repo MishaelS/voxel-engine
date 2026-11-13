@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-11-13
+
 ### Changed
 - Trees exactly like Beta 1.7.3's generators (`TreeShapes`; `NativeBetaGenerator` the same, block for block): oaks and birches with Beta's room check (the whole tree's volume, not only the trunk); spruces (WorldGenTaiga2) with rings growing from the top and starting over, the trunk 0..2 shorter than the leaves; pines (WorldGenTaiga1) with a long bare trunk and a cone of leaves 1..5 wide; big oaks (WorldGenBigTree, 5..16 high) with leaf clusters at the ends of sloping branches. Kinds and numbers by biome like Beta: big oaks 1 in 10 everywhere, 1 in 3 in rainforests and in forests' oaks; only forests, rainforests, seasonal forests and taiga get many trees (savannas, shrublands and swamps one now and then). Each tree stays in its column (bigger kinds further from its edges). Saplings grow the same trees (an oak sometimes a big one).
 - Far chunks (more than 8 columns away) draw leaves opaque like Fast graphics; nearer ones as before (Fancy). Switching Fast / Fancy in the game updates the native mesher's tables too.
@@ -460,7 +462,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.5...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.6...HEAD
+[0.0.6]: https://github.com/MishaelS/voxel-engine/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/MishaelS/voxel-engine/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/MishaelS/voxel-engine/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/MishaelS/voxel-engine/compare/v0.0.2...v0.0.3
