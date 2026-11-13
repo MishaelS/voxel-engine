@@ -130,7 +130,7 @@ Without the library (`bin/libvoxel_native.framework`) the game uses the GDScript
 * `scripts/save/world_save.gd` - saved worlds: level.cfg (world, time, rules, player) and changed columns
 * `scripts/ui/title/` - title screen and its live world panorama
 * `scripts/ui/loading_screen.gd` - loading screen with the island that builds itself as the world loads
-* `assets/textures/` - the game's textures laid out exactly like a Minecraft Beta 1.7.3 texture pack (`terrain.png`, `gui/`, `mob/`, `armor/`, `item/`, `misc/`, `environment/`, `terrain/sun.png`...), so they are the "Default" pack; `extra/` holds the game's own pictures Beta has no file for (the creative inventory, the particle and chest atlases, the title logo). See `scripts/render/texture_packs.gd`
+* `assets/textures/` - the game's textures laid out exactly like a Minecraft Beta 1.7.3 texture pack (`terrain.png`, `gui/`, `mob/`, `armor/`, `item/`, `misc/`, `environment/`, `terrain/sun.png`...), so they are the "Default" pack; `extra/` holds the game's own pictures Beta has no file for (the creative inventory, the particle atlas, the title logo, tiles of blocks Beta had not). See `scripts/render/texture_packs.gd`
 * `shaders/` - block shaders (opaque, cutout, translucent with animated water, icon, held block, cracks), sky, clouds, screen overlay
 * `scripts/voxel/blocks.gd` - block registry: all block types and their atlas tiles (with facings, flowing water levels, bed halves)
 * `scripts/items/` - item registry (tools, ingots, food, buckets, the bed) and the 3D shapes of flat items in hand
@@ -138,7 +138,7 @@ Without the library (`bin/libvoxel_native.framework`) the game uses the GDScript
 * `scripts/voxel/block_model.gd` - block models made of boxes; `scripts/voxel/block_light.gd` - light from glowing blocks
 * `scripts/entities/entity.gd`, `entity_manager.gd`, `entity_physics.gd` - entities (base for mobs) and box collision
 * `scripts/core/sounds.gd` - sound effects and music; `tools/make_sounds.py` - the placeholder sounds
-* `scripts/voxel/chest_model.gd` - the chest model (single and large) from `assets/textures/extra/chest-atlas.png`
+* `scripts/voxel/chest_model.gd` - chest parts (single, a large chest's halves); chests are blocks drawn with terrain.png's chest tiles like Beta's
 * `scripts/entities/item_entities.gd`, `scripts/entities/block_particles.gd` - dropped items and particles
 * `scripts/voxel/behaviors/` - block behaviors: flowing water and lava, falling sand, grass, plants, leaf decay
 * `scripts/voxel/block_type.gd` - block type description (faces, overlay, tint, render layer)

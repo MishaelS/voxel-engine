@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ciwo0kpwnrcwo"
-path="res://.godot/imported/chest-atlas.png-4b942357a3bb8524744f045dae94f4f3.ctex"
+uid="uid://qwrynmktrhlp"
+path="res://.godot/imported/char6.png-4d0bfc198133fa64ca0f66f4a21fee75.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/extra/chest-atlas.png"
-dest_files=["res://.godot/imported/chest-atlas.png-4b942357a3bb8524744f045dae94f4f3.ctex"]
+source_file="res://assets/textures/mob/char6.png"
+dest_files=["res://.godot/imported/char6.png-4d0bfc198133fa64ca0f66f4a21fee75.ctex"]
 
 [params]
 

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c0hquw5pivm2k"
-path="res://.godot/imported/moon.png-276988076bece2baf7789acff75b84c5.ctex"
+uid="uid://d3ri6gplfx4fd"
+path="res://.godot/imported/pigzombie.png-9f2c641fbe2e4e17baa31bc671948eba.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/terrain/moon.png"
-dest_files=["res://.godot/imported/moon.png-276988076bece2baf7789acff75b84c5.ctex"]
+source_file="res://assets/textures/mob/pigzombie.png"
+dest_files=["res://.godot/imported/pigzombie.png-9f2c641fbe2e4e17baa31bc671948eba.ctex"]
 
 [params]
 

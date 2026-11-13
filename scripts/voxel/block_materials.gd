@@ -103,8 +103,6 @@ static func build_tile_array(atlas_path: String) -> Texture2DArray:
 			var tile := atlas.get_region(Rect2i(column * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE))
 			tile.generate_mipmaps()
 			images.append(tile)
-	if atlas_path == Blocks.ATLAS_PATH:
-		images.append_array(ChestModel.tile_images()) # layers from 256
 
 	var array := Texture2DArray.new()
 	array.create_from_images(images)

@@ -728,7 +728,7 @@ func _process(delta: float) -> void:
 	if _held:
 		FallingBlocks.light(_held, brightness)
 	for mesh: MeshInstance3D in _model.meshes:
-		mesh.set_instance_shader_parameter("brightness", brightness)
+		mesh.set_instance_shader_parameter("brightness", 1.0 if mesh.has_meta("glow") else brightness)
 		mesh.set_instance_shader_parameter("hurt", 1.0 if hurt_ticks > 0 or is_dead() else 0.0)
 		mesh.set_instance_shader_parameter("flash", flash)
 	if is_dead():

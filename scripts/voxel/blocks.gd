@@ -1145,16 +1145,24 @@ static func _furnace(family: String, front: int, facing: int) -> BlockType:
 	return block
 
 
-## A chest (the chest model, 14/16 high) or one half of a large chest
-## ("chest_left" / "chest_right" families, ChestModel.Part).
+## A chest or one half of a large chest ("chest_left" / "chest_right"
+## families, ChestModel.Part), a full block like Beta 1.7.3's: terrain.png's
+## chest tiles (top and bottom 25, sides 26; the front 27, or a large
+## chest's halves 41 / 42, their backs 58 / 57: seen from behind the left
+## half is on the right).
+const CHEST_TOP := 25
+const CHEST_SIDE := 26
+const CHEST_FRONT := {ChestModel.Part.SINGLE: 27, ChestModel.Part.LEFT: 41, ChestModel.Part.RIGHT: 42}
+const CHEST_BACK := {ChestModel.Part.SINGLE: 26, ChestModel.Part.LEFT: 58, ChestModel.Part.RIGHT: 57}
+
+
 static func _chest(facing: int, family: String = "chest") -> BlockType:
-	var planks := ChestModel.particle_layer()
-	var block := _oriented(family, facing, planks, planks, planks, planks).set_hardness(2.5).set_tool("axe") \
-		.set_height(0.875).set_on_update(Callable(ChestBehavior, "on_update"))
-	block.chest_part = {"chest": ChestModel.Part.SINGLE, "chest_left": ChestModel.Part.LEFT,
+	var part: int = {"chest": ChestModel.Part.SINGLE, "chest_left": ChestModel.Part.LEFT,
 		"chest_right": ChestModel.Part.RIGHT}[family]
-	block.shape = BlockType.Shape.MODEL
-	block.model = ChestModel.model_index(block.chest_part, facing)
+	var block := _oriented(family, facing, CHEST_TOP, CHEST_TOP, CHEST_FRONT[part], CHEST_SIDE).set_hardness(2.5) \
+		.set_tool("axe").set_on_update(Callable(ChestBehavior, "on_update"))
+	block.tiles[BACK_FACE[facing]] = CHEST_BACK[part]
+	block.chest_part = part
 	if family != "chest":
 		block.item = "chest"
 		block.in_catalog = false

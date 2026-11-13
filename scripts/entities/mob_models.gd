@@ -15,7 +15,9 @@ extends RefCounted
 ##   give it the same pivot);
 ## - "texture": another skin than the mob's own;
 ## - "translucent": drawn see-through by the skin's alpha (the slime's
-##   outer jelly).
+##   outer jelly);
+## - "glow": always fully lit, whatever the light (the spider's eyes, like
+##   Beta's spider_eyes.png layer); its mesh has the "glow" meta.
 
 const MODELS_PATH := "res://assets/models/mobs.json"
 const SKINS := "res://assets/textures/"
@@ -23,7 +25,7 @@ const SKINS := "res://assets/textures/"
 ## unless named here.
 const SKIN_FILES := {
 	"player": "mob/char.png", "pale_wolf": "mob/wolf.png", "saddle_pig": "mob/saddle.png",
-	"boat": "item/boat.png", "minecart": "item/cart.png", "wolf_collar": "extra/wolf_collar.png",
+	"boat": "item/boat.png", "minecart": "item/cart.png",
 }
 
 
@@ -74,6 +76,8 @@ static func build(mob: String) -> Dictionary:
 			pivot.add_child(instance)
 			root.add_child(pivot)
 			parts[part.name] = pivot
+		if part.get("glow", false):
+			instance.set_meta("glow", true)
 		instances[part.name] = instance
 		meshes.append(instance)
 	return {"root": root, "parts": parts, "meshes": meshes, "instances": instances, "spec": spec}

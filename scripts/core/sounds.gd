@@ -7,8 +7,10 @@ extends Node
 ## - volume and pitch per call, like the game's (pitch varies a little);
 ## - two buses: Sound and Music, with the Sound and Music settings;
 ## - every menu button clicks;
-## - music: a random track from assets/music now and then (every 10-20
-##   minutes, like the game), when there are tracks.
+## - music: a track from assets/music now and then (every 10-20 minutes,
+##   like the game), one for the time of day (MUSIC_TIMES: at dawn, by day,
+##   in the evening and at night; tracks not listed play any time; in the
+##   menus, as by day).
 ## Sounds are found by listing the folders (also in exported games, where
 ## the files are imported).
 
@@ -21,6 +23,19 @@ const UNIT_SIZE := 4.0
 const MAX_DISTANCE := 24.0
 ## Seconds between music tracks (random in this range).
 const MUSIC_PAUSE := Vector2(600.0, 1200.0)
+## When tracks play (file name without the extension -> part of the day);
+## the others any time.
+const MUSIC_TIMES := {
+	"the_dawn": "dawn",
+	"empty_pixel_world": "day", "early_exploration": "day",
+	"the_forest_glitches": "night", "deep_cavern_silence": "night",
+}
+## Parts of the day in the world clock's ticks (0 = sunrise at 06:00, 6000
+## noon, 12000 sunset, 18000 midnight): dawn from about 04:30 to 08:00, day
+## to 17:30, then evening and night.
+const DAWN_START := 22500.0
+const DAY_START := 2000.0
+const NIGHT_START := 11500.0
 
 var _groups := {} # "dig/stone" -> Array[AudioStream]
 var _players_3d: Array[AudioStreamPlayer3D] = []
@@ -29,6 +44,7 @@ var _next_3d := 0
 var _next_2d := 0
 var _music: AudioStreamPlayer
 var _tracks: Array[AudioStream] = []
+var _track_times: Array[String] = [] # part of the day each track is for ("" = any)
 var _music_wait := 0.0
 
 
@@ -41,6 +57,7 @@ func _ready() -> void:
 		var stream := load(MUSIC_DIR.path_join(path)) as AudioStream
 		if stream:
 			_tracks.append(stream)
+			_track_times.append(MUSIC_TIMES.get(path.get_file().get_basename(), ""))
 	for i in VOICES_3D:
 		var player := AudioStreamPlayer3D.new()
 		player.bus = "Sound"
@@ -117,9 +134,32 @@ func _process(delta: float) -> void:
 		return
 	_music_wait -= delta
 	if _music_wait <= 0.0:
-		_music.stream = _tracks[randi() % _tracks.size()]
+		_music.stream = _pick_track()
 		_music.play()
 		_music_wait = randf_range(MUSIC_PAUSE.x, MUSIC_PAUSE.y)
+
+
+## The part of the day now: "dawn", "day" or "night" (menus: "day").
+func part_of_day() -> String:
+	var game := Game.find(get_tree())
+	if game == null or game.world == null or game.world.clock == null:
+		return "day"
+	var time := game.world.clock.time_of_day()
+	if time >= DAWN_START or time < DAY_START:
+		return "dawn"
+	return "day" if time < NIGHT_START else "night"
+
+
+## A random track for now: one for this part of the day or for any time.
+func _pick_track() -> AudioStream:
+	var part := part_of_day()
+	var fitting: Array[AudioStream] = []
+	for i in _tracks.size():
+		if _track_times[i] == "" or _track_times[i] == part:
+			fitting.append(_tracks[i])
+	if fitting.is_empty():
+		fitting = _tracks
+	return fitting[randi() % fitting.size()]
 
 
 func _on_setting(key: String, value: Variant) -> void:

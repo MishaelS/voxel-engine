@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d288ee41jftll"
-path="res://.godot/imported/sun.png-79a75fb2991cf9d7def2cb397e5bed90.ctex"
+uid="uid://cw3kabeklncla"
+path="res://.godot/imported/ghast_fire.png-33ced81671b4121344f3a51892c8107f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/terrain/sun.png"
-dest_files=["res://.godot/imported/sun.png-79a75fb2991cf9d7def2cb397e5bed90.ctex"]
+source_file="res://assets/textures/mob/ghast_fire.png"
+dest_files=["res://.godot/imported/ghast_fire.png-33ced81671b4121344f3a51892c8107f.ctex"]
 
 [params]
 

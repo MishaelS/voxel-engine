@@ -13,6 +13,18 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- Mob textures are the classic game's (Beta 1.7.3's mob/*.png, 64 x 32); every model fits them as they are.
+- The wolf's model is Beta's (ModelWolf) exactly: its mane around the neck in front of the body (it sat inside the body), every part 1 pixel to the side like Beta's, so the head turns about its own middle; no collar (Beta's tame wolves had none: their skin is wolf_tame.png).
+- Spiders' eyes glow like Beta's: mob/spider_eyes.png drawn over the head at full brightness, also in the dark (model parts may be "glow").
+
+- terrain.png is the classic game's (the textures of Beta 1.7.3). Its tiles stand where ours stood; fire, water and lava are drawn by their animations as before (the atlas only has placeholders there, like Beta's).
+- Chests are blocks like Beta 1.7.3's instead of the modern lidded model: a full cube with terrain.png's chest tiles (top and bottom 25, sides 26, a single chest's front 27; a large chest's halves 41 / 42 in front and 58 / 57 behind), so a texture pack's terrain.png draws them too. The chest atlas is no longer used (`extra/unused/chest-atlas.png`).
+- Spruce and birch planks (blocks Beta did not have) keep their own tiles in `extra/terrain_extra.png`, used where a terrain.png has nothing in those places (`TexturePacks.GAME_TILES`).
+
+### Added
+- Music for the time of day: the tracks still come now and then (every 10 to 20 minutes, like the game), now one for the part of the day (`Sounds.MUSIC_TIMES`): at dawn (about 04:30 to 08:00) "the_dawn", by day "empty_pixel_world" and "early_exploration", in the evening and at night "the_forest_glitches" and "deep_cavern_silence"; the calm tracks play any time, and the menus play as by day.
+
 ## [0.0.6] - 2026-11-13
 
 ### Changed

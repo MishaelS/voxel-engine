@@ -175,18 +175,67 @@ static func icon(pack: String) -> Texture2D:
 
 # --- Textures the game uses ---------------------------------------------------------------
 
+## Tiles of terrain.png the game has blocks for and Beta 1.7.3 had not
+## (spruce and birch planks): where a terrain.png has nothing there (empty,
+## or the "missing" checkers), the game's own from extra/terrain_extra.png.
+const GAME_TILES: Array[int] = [198, 214]
+const TERRAIN_EXTRA := "res://assets/textures/extra/terrain_extra.png"
+
+
 ## A texture: the pack's if it has the file, else the game's.
 ## `path`: res://assets/textures/<Beta file>, or extra/... (the game's own).
 static func load_texture(path: String) -> Texture2D:
 	var file := path.trim_prefix(GAME_TEXTURES)
 	if not path.begins_with(GAME_TEXTURES) or file.begins_with("extra/"):
 		return load(path) as Texture2D
+	if file == "terrain.png":
+		if not _cache.has(file):
+			_cache[file] = ImageTexture.create_from_image(_terrain_with_game_tiles())
+		return _cache[file]
 	var image := pack_image(file)
 	if image == null:
 		return load(path) as Texture2D
 	if not _cache.has(file):
 		_cache[file] = ImageTexture.create_from_image(image)
 	return _cache[file]
+
+
+## terrain.png (the pack's or the game's) with GAME_TILES filled in where
+## it has nothing.
+static func _terrain_with_game_tiles() -> Image:
+	var image := pack_image("terrain.png")
+	if image == null:
+		image = (load(GAME_TEXTURES + "terrain.png") as Texture2D).get_image()
+		if image.is_compressed():
+			image.decompress()
+		image.convert(Image.FORMAT_RGBA8)
+	else:
+		image = image.duplicate()
+	var extra := (load(TERRAIN_EXTRA) as Texture2D).get_image()
+	if extra.is_compressed():
+		extra.decompress()
+	extra.convert(Image.FORMAT_RGBA8)
+	var size := image.get_width() / 16
+	if extra.get_width() != image.get_width():
+		extra.resize(image.get_width(), image.get_height(), Image.INTERPOLATE_NEAREST)
+	for tile in GAME_TILES:
+		var rect := Rect2i((tile % 16) * size, (tile / 16) * size, size, size)
+		if _is_missing(image.get_region(rect)):
+			image.blit_rect(extra, rect, rect.position)
+	return image
+
+
+## Nothing drawn: all transparent, or two colors only (the "missing" checkers).
+static func _is_missing(tile: Image) -> bool:
+	if tile.is_invisible():
+		return true
+	var colors := {}
+	for y in tile.get_height():
+		for x in tile.get_width():
+			colors[tile.get_pixel(x, y)] = true
+			if colors.size() > 2:
+				return false
+	return true
 
 
 ## The game's own texture, whatever the pack (the player list's signal bars
