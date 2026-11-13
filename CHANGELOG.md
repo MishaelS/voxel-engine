@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-11-13
+
 ### Fixed
 - The inventory's slots stand where Beta 1.7.3's inventory.png has them (crafting grid at 88, 26, its result at 144, 36, the title at 86, 16); the small chest is put together from container.png like Beta's (its inventory part from row 126) and the dispenser's and large chest's inventories are at Beta's rows.
 - The sun and the moon are added onto the sky like Beta's (GL_ONE, GL_ONE): Beta's pictures have a black background, which drew a black square.
@@ -495,7 +497,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.7...HEAD
+[0.0.7]: https://github.com/MishaelS/voxel-engine/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/MishaelS/voxel-engine/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/MishaelS/voxel-engine/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/MishaelS/voxel-engine/compare/v0.0.3...v0.0.4
