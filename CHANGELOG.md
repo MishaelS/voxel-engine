@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.15] - 2026-11-14
+
 ### Added
 - Stairs take corner shapes like the modern game's (inner and outer corners from the stairs around them, both halves), updated as neighbors change.
 
@@ -589,7 +591,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.14...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.15...HEAD
+[0.0.15]: https://github.com/MishaelS/voxel-engine/compare/v0.0.14...v0.0.15
 [0.0.14]: https://github.com/MishaelS/voxel-engine/compare/v0.0.13...v0.0.14
 [0.0.13]: https://github.com/MishaelS/voxel-engine/compare/v0.0.12...v0.0.13
 [0.0.12]: https://github.com/MishaelS/voxel-engine/compare/v0.0.11...v0.0.12
