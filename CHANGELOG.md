@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.21] - 2026-11-14
+
 ### Added
 - Playing over the internet without setup: Open to LAN -> Allow Internet Access asks the router (UPnP) to open the game port and shows an invite code (VE-XXXX-XXXX: the address and a checksum) with a Copy button; the friend pastes it in Direct Connect or Add Server. The ports are closed again when hosting stops. If the router doesn't do UPnP or the provider shares one address (CGNAT), it says so and suggests a VPN (Radmin VPN, ZeroTier). The pause menu's Invite Friends and the /invite command show the code and the LAN addresses again.
 - Help & News on the title screen (top left): What's New (from this changelog), Features, Play Together (LAN, internet, VPN, port forwarding), Controls (the current keys) and Game Folder.
@@ -651,7 +653,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.20...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.21...HEAD
+[0.0.21]: https://github.com/MishaelS/voxel-engine/compare/v0.0.20...v0.0.21
 [0.0.20]: https://github.com/MishaelS/voxel-engine/compare/v0.0.19...v0.0.20
 [0.0.19]: https://github.com/MishaelS/voxel-engine/compare/v0.0.18...v0.0.19
 [0.0.18]: https://github.com/MishaelS/voxel-engine/compare/v0.0.17...v0.0.18
