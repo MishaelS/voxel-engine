@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.20] - 2026-11-14
+
 ### Added
 - Breeding like the modern game: feed two cows, sheep or pigs wheat (chickens seeds) and they fall in love (hearts), find each other and have a baby - half size with a big head, following the adults, grown up after 20 minutes (feeding it speeds that up); parents rest 5 minutes before the next one. Babies drop nothing and can't be sheared, milked or saddled; a lamb takes a parent's wool color.
 - Animals follow a player holding their food (wheat, chickens seeds) from 10 blocks and stop 2.5 blocks away, looking at them.
@@ -641,7 +643,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.19...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.20...HEAD
+[0.0.20]: https://github.com/MishaelS/voxel-engine/compare/v0.0.19...v0.0.20
 [0.0.19]: https://github.com/MishaelS/voxel-engine/compare/v0.0.18...v0.0.19
 [0.0.18]: https://github.com/MishaelS/voxel-engine/compare/v0.0.17...v0.0.18
 [0.0.17]: https://github.com/MishaelS/voxel-engine/compare/v0.0.16...v0.0.17
