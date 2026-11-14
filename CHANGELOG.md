@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.16] - 2026-11-14
+
 ### Added
 - The recipe for wool from 4 string (the only Beta 1.7.3 recipe that was missing).
 - Lapis ore smelts into lapis lazuli (like coal and redstone ore already do).
@@ -599,7 +601,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.15...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.16...HEAD
+[0.0.16]: https://github.com/MishaelS/voxel-engine/compare/v0.0.15...v0.0.16
 [0.0.15]: https://github.com/MishaelS/voxel-engine/compare/v0.0.14...v0.0.15
 [0.0.14]: https://github.com/MishaelS/voxel-engine/compare/v0.0.13...v0.0.14
 [0.0.13]: https://github.com/MishaelS/voxel-engine/compare/v0.0.12...v0.0.13
