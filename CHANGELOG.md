@@ -13,6 +13,10 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Caves and closed rooms echo: four times a second rays from the eyes in 14 directions find how closed in the player is and how big the space is; with no sky light at the eyes a reverb comes in over a second or so - short and dull in a tunnel, longer and ringing in a big hall - and fades out again outside. The walls' material counts: stone and glass throw the sound back, wood, earth and snow soak some of it up, wool almost all (a wooden house echoes softly, a stone cave rings). The music stays dry.
+- Sounds are muffled under water like the modern game's: with the eyes in water a low-pass filter takes the highs away (down to 700 Hz) and they get 5 dB quieter, fading in and out in a quarter of a second; the music stays as it is.
+
 ## [0.0.16] - 2026-11-14
 
 ### Added

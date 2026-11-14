@@ -6,6 +6,15 @@ extends Node
 ##   position, straight to the ears (menus, picking up items);
 ## - volume and pitch per call, like the game's (pitch varies a little);
 ## - two buses: Sound and Music, with the Sound and Music settings;
+## - under water (the player's eyes, keep_underwater() every frame) the
+##   Sound bus is muffled like the modern game's: a low-pass filter takes
+##   the highs away and it gets a little quieter, fading in and out; the
+##   music stays as it is;
+## - in caves and closed rooms (set_space(), from the player a few times a
+##   second) a reverb echoes the sounds: stronger the more closed in, longer
+##   and hollower the bigger the room, duller where the walls soak sound up
+##   (wood, earth, wool) than where they throw it back (stone, glass); the
+##   music stays dry;
 ## - every menu button clicks;
 ## - music: a track from assets/music now and then (every 10-20 minutes,
 ##   like the game), one for the time of day (MUSIC_TIMES: at dawn, by day,
@@ -46,12 +55,46 @@ var _music: AudioStreamPlayer
 var _tracks: Array[AudioStream] = []
 var _track_times: Array[String] = [] # part of the day each track is for ("" = any)
 var _music_wait := 0.0
+## Under water: the filter's cutoff and the quieting, eased toward the
+## target each frame (`_underwater_until`: keep_underwater() has to be
+## called again before then, so leaving the game lets it go).
+const OPEN_CUTOFF := 20500.0
+const UNDERWATER_CUTOFF := 700.0
+const UNDERWATER_QUIETER_DB := -5.0
+var _muffle := 0.0 # 0 open .. 1 under water
+var _underwater_until := 0
+var _low_pass: AudioEffectLowPassFilter
+var _quieter: AudioEffectAmplify
+## The reverb's strength (0 open air .. 1 deep in a cave) and room size
+## (0 a narrow tunnel .. 1 a big hall), eased toward the targets.
+const REVERB_WET := 0.32
+var _reverb: AudioEffectReverb
+var _space := 0.0
+var _room := 0.3
+var _space_target := 0.0
+var _room_target := 0.3
+var _space_until := 0
+var _absorb := 0.0 # (0 hard walls .. 1 soft ones)
+var _absorb_target := 0.0
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_make_bus("Sound")
 	_make_bus("Music")
+	_low_pass = AudioEffectLowPassFilter.new()
+	_low_pass.cutoff_hz = OPEN_CUTOFF
+	_quieter = AudioEffectAmplify.new()
+	var sound_bus := AudioServer.get_bus_index("Sound")
+	AudioServer.add_bus_effect(sound_bus, _low_pass)
+	AudioServer.add_bus_effect(sound_bus, _quieter)
+	_reverb = AudioEffectReverb.new()
+	_reverb.dry = 1.0
+	_reverb.spread = 1.0
+	_reverb.hipass = 0.1
+	AudioServer.add_bus_effect(sound_bus, _reverb)
+	_set_muffle(0.0)
+	_apply_space()
 	_scan(SOUNDS_DIR, "")
 	for path in _files(MUSIC_DIR):
 		var stream := load(MUSIC_DIR.path_join(path)) as AudioStream
@@ -129,7 +172,52 @@ func play_block(kind: String, block_id: int, position: Vector3) -> void:
 			play("step/" + (material if material != "glass" else "stone"), position, 0.25, 0.5)
 
 
+## The player's eyes are under water this frame (Player calls it every
+## frame while they are).
+func keep_underwater() -> void:
+	_underwater_until = Time.get_ticks_msec() + 200
+
+
+## How closed in the player is (0..1) and how big the space is (0..1);
+## to be called again within a second, else it fades back to open air.
+## `absorb`: how much the walls soak up (0 stone .. 1 wool): duller echoes.
+func set_space(amount: float, room: float, absorb: float = 0.0) -> void:
+	_space_target = clampf(amount, 0.0, 1.0)
+	_room_target = clampf(room, 0.0, 1.0)
+	_absorb_target = clampf(absorb, 0.0, 1.0)
+	_space_until = Time.get_ticks_msec() + 1000
+
+
+func _apply_space() -> void:
+	_reverb.wet = REVERB_WET * _space
+	_reverb.room_size = lerpf(0.25, 0.9, _room)
+	# Small rooms and soft walls sound dull, big stone halls ring.
+	_reverb.damping = clampf(lerpf(0.75, 0.35, _room) + _absorb * 0.5, 0.0, 1.0)
+	_reverb.predelay_msec = lerpf(15.0, 90.0, _room)
+	AudioServer.set_bus_effect_enabled(AudioServer.get_bus_index("Sound"), 2, _space > 0.01)
+
+
+func _set_muffle(amount: float) -> void:
+	_muffle = amount
+	# Cutoff eased on a log scale (an even sweep to the ear).
+	_low_pass.cutoff_hz = exp(lerpf(log(OPEN_CUTOFF), log(UNDERWATER_CUTOFF), amount))
+	_quieter.volume_db = UNDERWATER_QUIETER_DB * amount
+	var sound_bus := AudioServer.get_bus_index("Sound")
+	AudioServer.set_bus_effect_enabled(sound_bus, 0, amount > 0.001)
+	AudioServer.set_bus_effect_enabled(sound_bus, 1, amount > 0.001)
+
+
 func _process(delta: float) -> void:
+	var target := 1.0 if Time.get_ticks_msec() < _underwater_until else 0.0
+	if not is_equal_approx(_muffle, target):
+		_set_muffle(move_toward(_muffle, target, delta * 4.0)) # (a quarter second in or out)
+	var space_target := _space_target if Time.get_ticks_msec() < _space_until else 0.0
+	if not is_equal_approx(_space, space_target) or not is_equal_approx(_room, _room_target) \
+			or not is_equal_approx(_absorb, _absorb_target):
+		_space = move_toward(_space, space_target, delta * 0.8) # (walking in: the echo grows over a second or so)
+		_room = move_toward(_room, _room_target, delta * 0.8)
+		_absorb = move_toward(_absorb, _absorb_target, delta * 0.8)
+		_apply_space()
 	if _tracks.is_empty() or _music.playing:
 		return
 	_music_wait -= delta

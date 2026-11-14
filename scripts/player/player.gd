@@ -424,6 +424,12 @@ func _process(delta: float) -> void:
 	_last_rendered = global_position
 	rotation = Vector3(0, _yaw, 0)
 	_update_camera(alpha, delta)
+	if world and eyes_in_water():
+		Sounds.keep_underwater() # (heard through the water: muffled)
+	_acoustics_timer -= delta
+	if world and _acoustics_timer <= 0.0:
+		_acoustics_timer = 0.25
+		_update_acoustics()
 	_pumpkin_view.visible = not third_person and not dead and armor.count_at(0) > 0 \
 		and Items.is_block(armor.id_at(0)) and Items.armor_slot_of(armor.id_at(0)) == 0
 	_fire.visible = fire_ticks > 0 and not dead
@@ -948,6 +954,63 @@ func _update_air() -> void:
 
 
 ## Whether the eyes are under water (below its surface in the eye's block).
+## Caves and rooms echo (Sounds.set_space): rays from the eyes in 14
+## directions find how closed in the player is (the share that meet a block
+## within 24) and how big the space is (their mean length); no sky light at
+## the eyes (whatever the time of day) makes it a cave or a room, so a wall
+## or a tree outside doesn't echo. The walls the rays meet soak up some of
+## the sound (REFLECTION): a stone cave rings, a wooden house echoes softly,
+## a room of wool hardly at all. Not under water (muffled instead).
+const ACOUSTIC_RANGE := 24.0
+const ACOUSTIC_DIRECTIONS: Array[Vector3] = [Vector3.UP, Vector3.DOWN, Vector3.LEFT, Vector3.RIGHT,
+	Vector3.FORWARD, Vector3.BACK, Vector3(1, 1, 1), Vector3(-1, 1, 1), Vector3(1, 1, -1), Vector3(-1, 1, -1),
+	Vector3(1, -1, 1), Vector3(-1, -1, 1), Vector3(1, -1, -1), Vector3(-1, -1, -1)]
+var _acoustics_timer := 0.0
+## How much of the sound a block's surface throws back (by its sound
+## material; wooden blocks that sound like stone count as wood).
+const REFLECTION := {"stone": 1.0, "glass": 0.95, "wood": 0.6, "gravel": 0.55, "sand": 0.5, "grass": 0.45,
+	"snow": 0.3, "cloth": 0.12}
+static var _reflection := PackedFloat32Array()
+
+
+static func reflection(id: int) -> float:
+	if _reflection.size() != Blocks.count():
+		_reflection.resize(Blocks.count())
+		for block_id in Blocks.count():
+			var block := Blocks.get_type(block_id)
+			var n := block.name
+			var material := block.sound
+			if n.begins_with("oak_") or n.begins_with("birch_") or n.begins_with("spruce_") or n.begins_with("wooden") \
+					or n.begins_with("fence") or n.begins_with("bookshelf") or n.begins_with("ladder") \
+					or n.contains("sign") or n.begins_with("trapdoor") or n == "note_block" or n == "jukebox":
+				material = "wood"
+			_reflection[block_id] = REFLECTION.get(material, 1.0)
+	return _reflection[id]
+
+
+func _update_acoustics() -> void:
+	if eyes_in_water() or dead:
+		Sounds.set_space(0.0, 0.3)
+		return
+	var eye := eye_position()
+	var hits := 0
+	var total := 0.0
+	var reflected := 0.0
+	for direction in ACOUSTIC_DIRECTIONS:
+		var hit := world.raycast(eye, direction, ACOUSTIC_RANGE)
+		if hit.get("hit", false):
+			hits += 1
+			total += float(hit.distance)
+			reflected += reflection(int(hit.block))
+		else:
+			total += ACOUSTIC_RANGE
+	var closed := clampf((hits / float(ACOUSTIC_DIRECTIONS.size()) - 0.5) / 0.4, 0.0, 1.0)
+	var sky := world.get_light(Vector3i(eye.floor())) / 15.0
+	var room := clampf(total / ACOUSTIC_DIRECTIONS.size() / 16.0, 0.0, 1.0)
+	var walls := reflected / hits if hits > 0 else 1.0 # (what the walls are made of)
+	Sounds.set_space(closed * (1.0 - sky) * lerpf(0.2, 1.0, walls), room, 1.0 - walls)
+
+
 func eyes_in_water() -> bool:
 	var eye := eye_position()
 	var id := world.get_block(Vector3i(eye.floor())) if world else Blocks.AIR
