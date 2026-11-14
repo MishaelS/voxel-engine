@@ -1,12 +1,19 @@
 class_name DedicatedServer
 extends Node
 ## A dedicated server: the game started with --server (SERVER.md):
-##   godot --headless --path <project> -- --server [--port N] [--world NAME] [--config FILE]
-## Net makes this node at startup. It reads server.properties (ServerConfig,
-## made with the defaults the first time: --config, else
-## user://server.properties), loads or creates the world, starts the server
-## scene (scenes/server.tscn: the world without a player, a camera or the
-## UI) and hosts it with Net; clients join as they join anyone.
+##   "<game>" --headless --server [--port N] [--world NAME] [--config FILE]
+##   godot --headless --path <project> -- --server [...]
+## or the start-server files next to an exported game (tools/server/).
+## Net makes this node at startup. It reads server.properties (ServerConfig;
+## where: config_path(), made with the defaults the first time), loads or
+## creates the world, starts the server scene (scenes/server.tscn: the world
+## without a player, a camera or the UI) and hosts it with Net; clients
+## join as they join anyone.
+##
+## Create Server in the game (LocalServer) starts one too, in the
+## background, with its own settings in user://server/ and a secret token
+## next to them (ADMIN_TOKEN_FILE): that game may then ask it for its
+## addresses and stop it cleanly over the admin channel (ServerStatus).
 ##
 ## The console: lines typed on stdin (read on a thread, so the game never
 ## waits) run as commands of the server, with every right: /say, /list,
@@ -15,12 +22,14 @@ extends Node
 ## written to stdout and to logs/latest.log next to the config (the one
 ## before is kept with its date).
 ##
-## Godot can't catch SIGINT / SIGTERM itself: tools/run_server.sh turns
+## Godot can't catch SIGINT / SIGTERM itself: tools/run.sh --server and the start-server files turn
 ## them into "stop" on the console, which saves the world and the players,
 ## closes the router's ports and exits.
 
 const SERVER_SCENE := "res://scenes/server.tscn"
 const KEEP_LOGS := 20
+const CONFIG_FILE := "server.properties"
+const ADMIN_TOKEN_FILE := "admin.token"
 
 var config: ServerConfig
 var port := Net.PORT
@@ -29,6 +38,8 @@ var _console: Thread
 var _console_done := false
 var _hosted := false
 var _stopping := false
+## The admin channel's token (ADMIN_TOKEN_FILE next to the settings; "": none).
+var admin_token := ""
 
 
 ## Whether the game was started as a dedicated server.
@@ -47,17 +58,15 @@ static func _argument(key: String) -> String:
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	TranslationServer.set_locale("en") # (the console and what players are told: English, like the game's servers)
-	var config_path := _argument("--config")
-	if config_path == "":
-		config_path = "user://server.properties"
-	elif config_path.is_relative_path() and not config_path.begins_with("user://") and not config_path.begins_with("res://"):
-		config_path = OS.get_environment("PWD").path_join(config_path) if OS.get_environment("PWD") != "" else config_path
-	var first_start := not FileAccess.file_exists(config_path)
-	config = ServerConfig.load_or_create(config_path)
-	_open_log(config_path.get_base_dir().path_join("logs"))
+	var path := config_path()
+	var first_start := not FileAccess.file_exists(path)
+	config = ServerConfig.load_or_create(path)
+	_open_log(path.get_base_dir().path_join("logs"))
 	log_line("Starting Voxel Engine server version %s" % ProjectSettings.get_setting("application/config/version", "dev"))
-	if first_start:
-		log_line("Made %s with the default settings" % ProjectSettings.globalize_path(config_path))
+	log_line(("Made %s with the default settings" if first_start else "Settings: %s") % ProjectSettings.globalize_path(path))
+	var token_path := path.get_base_dir().path_join(ADMIN_TOKEN_FILE)
+	if FileAccess.file_exists(token_path):
+		admin_token = FileAccess.get_file_as_string(token_path).strip_edges()
 	if DisplayServer.get_name() != "headless":
 		log_line("Tip: start the server with --headless (no window, no sound)")
 	port = int(_argument("--port")) if _argument("--port").is_valid_int() else config.get_int("server-port", 1, 65534)
@@ -90,7 +99,67 @@ func _process(_delta: float) -> void:
 		get_tree().quit(1)
 		return
 	log_line("Server started on port %d (status ping on %d) with the world '%s'" % [port, port + ServerStatus.PORT_OFFSET, game.world.save.name])
+	for ip in InviteCode.lan_addresses():
+		log_line("On the local network: %s" % ("%s:%d" % [ip, port] if port != Net.PORT else ip))
+	if Net.public_address != "":
+		log_line("Players connect to: %s" % Net.public_address)
+	elif Net.internet:
+		log_line("Opening the ports on the router (UPnP)...")
+	else:
+		log_line("Over the internet: forward UDP ports %d and %d to this computer, or set upnp=true; a domain name goes in public-address" % [port, port + 1])
 	log_line("Type help for the commands, stop to save and stop")
+
+
+## Where server.properties is: --config; else next to the game (an
+## exported game: the executable's folder, on macOS the folder holding the
+## .app, so a server folder is portable); else the folder the server was
+## started in; else user://. The first time it is made next to the game when
+## that folder can be written to, else in user:// (running from the project
+## too: never in the project's folder).
+static func config_path() -> String:
+	var given := _argument("--config")
+	if given != "":
+		if given.is_relative_path() and not given.begins_with("user://") and not given.begins_with("res://"):
+			return working_folder().path_join(given) if working_folder() != "" else given
+		return given
+	var game := game_folder()
+	var here := working_folder()
+	for folder: String in [game, here]:
+		if folder != "" and FileAccess.file_exists(folder.path_join(CONFIG_FILE)):
+			return folder.path_join(CONFIG_FILE)
+	if game != "" and _writable(game):
+		return game.path_join(CONFIG_FILE)
+	return "user://" + CONFIG_FILE
+
+
+## The folder of an exported game (the .app's folder on macOS); "" when
+## running from the editor or the project (the executable is Godot's).
+static func game_folder() -> String:
+	if not OS.has_feature("template"):
+		return ""
+	var folder := OS.get_executable_path().get_base_dir()
+	if folder.ends_with(".app/Contents/MacOS"):
+		folder = folder.get_base_dir().get_base_dir().get_base_dir()
+	return folder
+
+
+## The folder the game was started in.
+static func working_folder() -> String:
+	var pwd := OS.get_environment("PWD")
+	if pwd != "":
+		return pwd
+	var dir := DirAccess.open(".")
+	return dir.get_current_dir() if dir else ""
+
+
+static func _writable(folder: String) -> bool:
+	var probe := folder.path_join(".write-test")
+	var file := FileAccess.open(probe, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.close()
+	DirAccess.remove_absolute(probe)
+	return true
 
 
 ## The world `world_name` (a folder in saves/), made with the settings
@@ -152,7 +221,9 @@ func log_line(text: String) -> void:
 # --- Console -----------------------------------------------------------------------------------
 
 func _start_console() -> void:
-	if OS.get_stdin_type() == OS.STD_HANDLE_INVALID:
+	# (--no-console: started by the game, LocalServer; its input isn't ours.)
+	if OS.get_stdin_type() == OS.STD_HANDLE_INVALID or "--no-console" in OS.get_cmdline_user_args() \
+			or "--no-console" in OS.get_cmdline_args():
 		return
 	_console = Thread.new()
 	_console.start(_read_console)
@@ -201,6 +272,36 @@ func run_command(text: String) -> void:
 	Commands.dispatcher.execute(text, source)
 
 
+# --- The admin channel ---------------------------------------------------------------------------
+
+## A command from the game that started this server (ServerStatus, with the
+## token): "info" (JSON: port, addresses, players), "stop", "cmd <line>".
+func admin_command(text: String) -> String:
+	var command := text.get_slice(" ", 0)
+	match command:
+		"info":
+			var lan := PackedStringArray()
+			for ip in InviteCode.lan_addresses():
+				lan.append("%s:%d" % [ip, port] if port != Net.PORT else ip)
+			var forward := Net.port_forward
+			return JSON.stringify({"port": port, "lan": lan, "internet": Net.internet_address(), "code": Net.invite_code(),
+				"upnp": ["off", "working", "open", "failed"][forward.state] if Net.internet else "off",
+				"upnp_error": forward.error, "players": Net.player_count(), "world": config.get_string("world-name")})
+		"stop":
+			log_line("Stop asked by the game that started this server")
+			stop.call_deferred()
+			return "ok"
+		"upnp":
+			Net.allow_internet()
+			return "ok"
+		"cmd":
+			var line := NetGuard.clean_text(text.substr(4), 1024)
+			log_line("> " + line + " (from the game)")
+			run_command.call_deferred(line)
+			return "ok"
+	return "unknown"
+
+
 # --- Stopping ------------------------------------------------------------------------------------
 
 ## Saves the world and everyone's player, sends the players away, closes the
@@ -210,7 +311,7 @@ func stop() -> void:
 		return
 	_stopping = true
 	log_line("Stopping the server")
-	await Net.shutdown_server("Server closed")
+	await Net.shutdown_server(NetErrors.SERVER_CLOSED)
 	var game := Game.find(get_tree())
 	if game:
 		log_line("Saving the world")

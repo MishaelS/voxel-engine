@@ -97,6 +97,7 @@ tools/build.sh              # release build: build/macos/Voxel Engine Bedrock Ed
 tools/build.sh --debug      # debug build (full F3 screen)
 tools/build.sh --app        # a .app instead of the zip
 tools/build.sh --native     # rebuild the C++ library first
+tools/build.sh all          # macOS, Windows, Linux, Linux ARM64 (the Windows/Linux C++ libraries in Docker)
 tools/run.sh                # run the game from the sources
 tools/run.sh --release      # ... with the release build's short F3 screen
 ```
@@ -120,7 +121,8 @@ The host's creatures, boats, minecarts, arrows and dropped items are shared; cli
 Heavy loops are moved to C++ (GDExtension) step by step; the column light (`native/src/native_light.cpp`), chunk meshes (`native/src/native_mesher.cpp`) and world generation (`native/src/native_beta_generator.cpp`, block for block the same as `BetaGenerator`; `generate_blocks_script` keeps the GDScript one to compare) the light after block changes (`NativeLight.relight_edit`, and `relight_edits` for many at once: network packets, /fill, explosions) and particles (`native/src/native_particles.cpp`). The built library is in `bin/` (macOS, universal), so the project runs as is. After changing `native/src/` rebuild it (clang and cmake; the first build compiles godot-cpp, a few minutes):
 ```
 git submodule update --init
-native/build.sh
+tools/build.sh --native-only            # this OS's library
+tools/build.sh --native-only --docker   # and Windows / Linux ones in Docker (BUILDING.md)
 ```
 Without the library (`bin/libvoxel_native.framework`) the game uses the GDScript versions.
 

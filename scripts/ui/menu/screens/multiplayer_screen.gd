@@ -5,7 +5,10 @@ extends MenuScreen
 ## reached, address; the signal bars and players on the right, from a
 ## ServerStatus ping that doesn't join), then the games found on the local
 ## network. Click selects, double click joins. Buttons: Join Server, Direct
-## Connect, Add Server; Edit, Delete (asks first), Refresh, Cancel.
+## Connect, Add Server, Create Server (a server in the background for
+## friends; while it runs: My Server, its addresses); Edit, Delete (asks
+## first), Refresh, Cancel. A refused join shows why (DisconnectedScreen),
+## or asks for the password.
 ## The servers are kept in user://servers.cfg; Net does the connecting and
 ## the game starts when the host answers.
 
@@ -29,6 +32,7 @@ var _lan_rows: VBoxContainer
 var _scanning: Label
 var _status: Label
 var _join: Button
+var _create: Button
 var _edit: Button
 var _delete: Button
 
@@ -56,13 +60,14 @@ func build() -> void:
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status.add_theme_color_override("font_color", Color("a0a0a0"))
 	_bottom.add_child(_status)
-	var width := (UiTheme.WIDE_BUTTON * 1.5 - 2 * COLUMN_GAP) / 3.0
+	var width := (UiTheme.WIDE_BUTTON * 2.0 - 3 * COLUMN_GAP) / 4.0
 	var top := add_bottom_row([
 		["Join Server", func() -> void: _join_selected()],
 		["Direct Connect", func() -> void: menu.push(DirectConnectScreen.new(_join_address))],
 		["Add Server", func() -> void: menu.push(EditServerScreen.new(Lang.t("Minecraft Server"), "", _add))],
+		["Create Server", func() -> void: _open_server()],
 	], width)
-	var bottom_width := (UiTheme.WIDE_BUTTON * 1.5 - 3 * COLUMN_GAP) / 4.0
+	var bottom_width := width
 	var bottom := add_bottom_row([
 		["Edit", func() -> void: _edit_selected()],
 		["Delete", func() -> void: _ask_delete()],
@@ -70,6 +75,8 @@ func build() -> void:
 		["Cancel", func() -> void: menu.back()],
 	], bottom_width)
 	_join = top[0]
+	_create = top[3]
+	_create.tooltip_text = Lang.t("A server for friends that runs in the background while you play")
 	_edit = bottom[0]
 	_delete = bottom[1]
 
@@ -78,6 +85,8 @@ func build() -> void:
 	Net.listen_lan()
 	Net.lan_games_changed.connect(_show_lan_games)
 	Net.players_changed.connect(_show_status)
+	Net.local_server.changed.connect(_show_server_button)
+	_show_server_button()
 	_show_lan_games()
 	_show_status()
 	_select(-1)
@@ -89,6 +98,8 @@ func _exit_tree() -> void:
 		Net.lan_games_changed.disconnect(_show_lan_games)
 	if Net.players_changed.is_connected(_show_status):
 		Net.players_changed.disconnect(_show_status)
+	if Net.local_server.changed.is_connected(_show_server_button):
+		Net.local_server.changed.disconnect(_show_server_button)
 
 
 func _process(_delta: float) -> void:
@@ -192,12 +203,41 @@ func _join_selected() -> void:
 		_join_address(_lan_keys[_selected - _servers.size()])
 
 
+## Whether a join started here is still waiting for its answer (a refusal
+## is shown once).
+var _waiting := false
+
+
 func _join_address(address: String) -> void:
 	if address != _joining:
 		Net.join_password = "" # (a password is for the server it was typed for)
 	_joining = address
 	var error := Net.join(address)
-	_status.text = Lang.t(error) if error != "" else Lang.t("Connecting to the server...")
+	_waiting = error == 0
+	if error != 0:
+		menu.push(DisconnectedScreen.new(error, Net.last_args, true))
+	_status.text = "" if error != 0 else Lang.t("Connecting to the server...")
+
+
+## Joins with a password known already (Create Server's own).
+func join_with_password(address: String, secret: String) -> void:
+	_joining = address
+	Net.join_password = secret
+	_join_address(address)
+
+
+## Create Server, or (while it runs) its addresses, Join and Stop.
+func _open_server() -> void:
+	if Net.local_server.is_running():
+		menu.push(InviteScreen.new(true, func() -> void:
+			join_with_password(Net.local_server.address(), Net.local_server.password)))
+	else:
+		menu.push(CreateServerScreen.new(join_with_password))
+
+
+func _show_server_button() -> void:
+	if _create:
+		_create.text = Lang.t("My Server" if Net.local_server.is_running() else "Create Server")
 
 
 func _add(server_name: String, address: String) -> void:
@@ -232,12 +272,16 @@ func _ask_delete() -> void:
 
 
 func _show_status() -> void:
-	if Net.last_error != "" and _status:
-		_status.text = Lang.t(Net.last_error)
-	if Net.password_wanted and not Net.is_online() and is_inside_tree() and menu:
+	if not _waiting or Net.is_online() or Net.last_code == 0 or not is_inside_tree() or menu == null:
+		return
+	_waiting = false
+	_status.text = ""
+	if Net.password_wanted:
 		# The server wants a password: asked for, then joined again.
 		Net.password_wanted = false
 		menu.push(PasswordScreen.new(_joining, _join_address))
+	else:
+		menu.push(DisconnectedScreen.new(Net.last_code, Net.last_args, true))
 
 
 # --- Saving --------------------------------------------------------------------------

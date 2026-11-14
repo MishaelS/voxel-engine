@@ -1026,3 +1026,65 @@ Server commands (typed in its console, or by operators in the chat): /op, /white
 Your server's operators, whitelist and banned addresses.=Операторы, белый список и забаненные адреса вашего сервера.
 Copied!=Скопировано!
 Friends on the same Wi-Fi or a VPN connect to one of these addresses=Друзья в той же сети Wi-Fi или в VPN подключаются по одному из этих адресов
+
+# --- Network errors (NetErrors: the code, the message)
+Disconnected=Отключено
+Connection lost=Соединение потеряно
+Timed out: the server stopped answering=Время ожидания истекло: сервер перестал отвечать
+The server was stopped=Сервер остановлен
+Version mismatch: the server has %s, you have %s=Версии не совпадают: у сервера %s, у вас %s
+Could not join: the server didn't understand the game=Не удалось войти: сервер не понял игру
+Kicked by an operator: %s=Выгнан оператором: %s
+Can't resolve the address %s=Не удаётся найти адрес %s
+Can't connect to %s=Не удаётся подключиться к %s
+The server didn't start: %s=Сервер не запустился: %s
+Port %s is taken by another program=Порт %s занят другой программой
+Failed to connect to the server=Не удалось подключиться к серверу
+Connection Lost=Соединение потеряно
+Back to Server List=К списку серверов
+Back to Title Screen=В главное меню
+Error code: %s=Код ошибки: %s
+Tell this code when you report the problem=Назовите этот код, когда сообщаете о проблеме
+Your connection is unstable=Ваше соединение нестабильно
+Bad connection=Плохое соединение
+Players connect to: %s=Игроки подключаются к: %s
+# --- Create Server
+Create Server=Создать сервер
+My Server=Мой сервер
+A server for friends that runs in the background while you play=Сервер для друзей, который работает в фоне, пока вы играете
+Click to choose another world (or a new one)=Нажмите, чтобы выбрать другой мир (или новый)
+Don't open this world in Singleplayer while the server runs=Не открывайте этот мир в одиночной игре, пока работает сервер
+World: %s=Мир: %s
+Password=Пароль
+None=Нет
+Friends type it once when joining=Друзья вводят его один раз при входе
+Empty: anyone who knows the address can join=Пусто: войти может любой, кто знает адрес
+Starting the server=Запуск сервера
+Start Server=Запустить сервер
+The server keeps running while you play; friends join it like any server=Сервер работает, пока вы играете; друзья заходят на него как на любой сервер
+More settings: server.properties in the game folder's server folder=Остальные настройки — в server.properties в папке server папки игры
+Stop Server=Остановить сервер
+Stop the server too?=Остановить и сервер?
+Friends playing on it are sent away; the world is saved=Друзья на нём будут отключены; мир сохранится
+Keep Running=Оставить работать
+# --- Help: Play Together (three ways)
+Three ways, from the quickest to the biggest:=Три способа, от самого быстрого до самого большого:
+1. Open to LAN=1. Открыть для сети
+In your world press Esc, click Open to LAN, then Start LAN World.=В своём мире нажмите Esc, затем «Открыть для сети» и «Открыть мир для сети».
+Friends on the same network see it in Multiplayer. Over the internet: turn on Allow Internet Access and send them the invite code (Invite Friends, or /invite).=Друзья в той же сети видят его в «Сетевой игре». Через интернет: включите «Доступ из интернета» и отправьте им код приглашения («Позвать друзей» или /invite).
+The world is open while you play in it.=Мир открыт, пока вы в нём играете.
+2. Create Server=2. Создать сервер
+Multiplayer > Create Server: choose a world, a password if you like, Start Server.=Сетевая игра > «Создать сервер»: выберите мир, при желании пароль, «Запустить сервер».
+The game starts a server in the background and joins it. Friends join it the same way (My Server shows the code and the addresses).=Игра запускает сервер в фоне и заходит на него. Друзья заходят так же («Мой сервер» показывает код и адреса).
+When you leave, the game asks whether to stop the server (the world is saved).=При выходе игра спросит, остановить ли сервер (мир сохранится).
+3. A dedicated server=3. Выделенный сервер
+Next to the game are start-server files: start-server.bat (Windows), start-server.command (macOS), start-server.sh (Linux). Start it: no window, the world runs on its own. Type stop in it to save and stop.=Рядом с игрой лежат файлы запуска сервера: start-server.bat (Windows), start-server.command (macOS), start-server.sh (Linux). Запустите нужный: окна игры нет, мир живёт сам. Введите в нём stop, чтобы сохранить и остановить.
+Its settings are in server.properties next to the game (made on the first start): the world, the port, a password, the whitelist, the most players.=Его настройки — в server.properties рядом с игрой (создаётся при первом запуске): мир, порт, пароль, белый список, наибольшее число игроков.
+For the internet: open UDP ports 25565 and 25566 on the router (or upnp=true). A domain name (your own, or a free one from DuckDNS) goes in public-address: friends then connect to the name.=Для интернета: откройте на роутере UDP-порты 25565 и 25566 (или upnp=true). Доменное имя (своё или бесплатное от DuckDNS) пишется в public-address: друзья подключаются по имени.
+Everything is explained in SERVER.md next to the game.=Всё подробно описано в SERVER.md рядом с игрой.
+If friends can't connect=Если друзья не могут подключиться
+The Disconnected screen shows why and a code (like E402): tell it when asking for help. If the router can't open the port, install Radmin VPN or ZeroTier on both computers, join one network in it and play as on LAN.=Экран отключения показывает причину и код (например, E402): назовите его, когда просите помощи. Если роутер не открывает порт, установите Radmin VPN или ZeroTier на оба компьютера, войдите в одну сеть и играйте как по локальной сети.
+A slow connection only shows Bad connection in the corner: the game waits for it, nobody is kicked for lag.=Медленное соединение лишь показывает «Плохое соединение» в углу: игра ждёт его, за лаги никого не выгоняют.
+Create Server: a server for friends in the background, started from Multiplayer; or a dedicated server with the start-server files next to the game.=«Создать сервер»: сервер для друзей в фоне, запускается из «Сетевой игры»; или выделенный сервер через файлы start-server рядом с игрой.
+The settings and the log of the server Create Server starts.=Настройки и журнал сервера, который запускает «Создать сервер».
+Internet access: forward the ports, or upnp / public-address in server.properties=Доступ из интернета: пробросьте порты или задайте upnp / public-address в server.properties

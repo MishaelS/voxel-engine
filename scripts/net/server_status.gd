@@ -17,6 +17,15 @@ extends RefCounted
 ## ANSWERS_PER_ADDRESS answers per ANSWER_SECONDS to one address and
 ## ANSWERS_PER_SECOND in all, so it can't be used to flood anyone.
 ##
+## The admin channel (Create Server, LocalServer): a game that started a
+## server on this computer runs its commands ("info", "stop", "cmd <line>")
+## through the same port. Only from this computer (127.0.0.1 / ::1) and
+## only with the secret token the game wrote next to the server's
+## settings (DedicatedServer.ADMIN_TOKEN_FILE); a server without that file
+## has no admin channel at all.
+## Ask:    "VEBE#;<token>;<id>;<command>" (at most ADMIN_ASK_MAX bytes).
+## Answer: "VEBE#!;<id>;<answer>" (at most ADMIN_ANSWER_MAX bytes).
+##
 ## The asker (this class): start(), then poll() every frame until done.
 ## It asks again each RETRY_SECONDS (UDP may lose a packet) and gives up
 ## after TIMEOUT_SECONDS.
@@ -33,6 +42,10 @@ const TIMEOUT_SECONDS := 3.0
 const ANSWERS_PER_ADDRESS := 4
 const ANSWER_SECONDS := 5.0
 const ANSWERS_PER_SECOND := 40
+const ADMIN_ASK := "VEBE#"
+const ADMIN_ANSWER := "VEBE#!"
+const ADMIN_ASK_MAX := 512
+const ADMIN_ANSWER_MAX := 1200
 
 var state := State.RESOLVING
 ## The answer (when DONE): round trip in ms, the host's name, its message
@@ -160,6 +173,16 @@ static func _now() -> float:
 	return Time.get_ticks_msec() / 1000.0
 
 
+## Whether two secrets are the same, in the same time whatever differs.
+static func same_secret(a: String, b: String) -> bool:
+	if a.length() != b.length() or b == "":
+		return false
+	var diff := 0
+	for i in a.length():
+		diff |= a.unicode_at(i) ^ b.unicode_at(i)
+	return diff == 0
+
+
 ## The host's side: answers asks on the game port + 1 while hosting.
 class Responder:
 	var _socket: PacketPeerUDP
@@ -167,6 +190,10 @@ class Responder:
 	var _answered := {}
 	var _second := 0
 	var _this_second := 0
+	## The admin channel: its token ("": off) and what runs a command
+	## (String -> String, the answer).
+	var admin_token := ""
+	var admin: Callable
 
 	## Starts answering; false if the port is taken (pings then fail, the
 	## game itself works).
@@ -193,6 +220,9 @@ class Responder:
 			var packet := _socket.get_packet()
 			var address := _socket.get_packet_ip()
 			var port := _socket.get_packet_port()
+			if admin_token != "" and packet.size() <= ADMIN_ASK_MAX and address in ["127.0.0.1", "::1", "::ffff:127.0.0.1"]:
+				if _admin(packet, address, port):
+					continue
 			if packet.size() != ASK_SIZE:
 				continue
 			var parts := packet.get_string_from_utf8().strip_edges().split(";")
@@ -211,6 +241,21 @@ class Responder:
 				reply = ";".join(fields).to_utf8_buffer()
 			_socket.set_dest_address(address, port)
 			_socket.put_packet(reply)
+
+	## An admin ask from this computer: answered when the token is right.
+	func _admin(packet: PackedByteArray, address: String, port: int) -> bool:
+		var text := packet.get_string_from_utf8()
+		if not text.begins_with(ADMIN_ASK + ";"):
+			return false
+		var parts := text.split(";", true, 3)
+		if parts.size() != 4 or not ServerStatus.same_secret(parts[1], admin_token) or not admin.is_valid():
+			return true
+		var answer := str(admin.call(parts[3])).to_utf8_buffer()
+		var reply := ("%s;%s;" % [ADMIN_ANSWER, parts[2].left(16)]).to_utf8_buffer()
+		reply.append_array(answer.slice(0, ADMIN_ANSWER_MAX - reply.size()))
+		_socket.set_dest_address(address, port)
+		_socket.put_packet(reply)
+		return true
 
 	func _allowed(address: String, now: float) -> bool:
 		if int(now) != _second:

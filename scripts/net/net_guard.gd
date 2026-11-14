@@ -203,13 +203,19 @@ static func clean_entity_state(state: Dictionary, defaults: Dictionary) -> Dicti
 	return result
 
 
-## A client's movement as the host sees it: how far it may go each second
-## (by what it does) with a little saved up for bursts (a knockback, a jump
-## off a slime), corrected back to the last good place when it goes
-## further. Ops are checked too: teleports go through the host.
+## A client's movement as the host sees it: how far it may go (by what it
+## does) in the real time since its last state, with a little saved up for
+## bursts (a knockback, a jump off a slime). Lag is allowed for: after a
+## gap of up to GAP_SECONDS the whole gap's movement may come at once (the
+## states held back arrive together, or only the last one does). Further
+## than that is sent back to the last good place; only a long run of large
+## ones (a speed hack does it all the time, lag a few times) is a kick.
+## Ops are checked too: teleports go through the host.
 class Mover:
 	extends RefCounted
 	## Blocks per second, horizontally and up; falling is free up to FALL.
+	## (Walking is 4.3, flying in creative 11: room for the host seeing the
+	## player late.)
 	const WALK := 9.0
 	const FLY := 26.0
 	const RIDE := 30.0
@@ -218,19 +224,32 @@ class Mover:
 	const FALL := 90.0
 	## Movement saved up for a burst (blocks).
 	const BURST := 10.0
-	## Violations in VIOLATION_SECONDS before a kick.
-	const VIOLATIONS := 25
-	const VIOLATION_SECONDS := 30.0
+	## The longest silence whose movement may arrive at once.
+	const GAP_SECONDS := 5.0
+	## A kick: more than VIOLATIONS counted corrections in VIOLATION_SECONDS,
+	## the first at least SUSTAINED_SECONDS ago (one lag spike can't do it).
+	const VIOLATIONS := 30
+	const VIOLATION_SECONDS := 60.0
+	const SUSTAINED_SECONDS := 15.0
+	## After a correction or a teleport: how long states sent before the
+	## client knew are ignored (the correction may arrive late).
+	const CORRECTION_SECONDS := 5.0
 
 	var position := Vector3.ZERO
 	var time := 0.0
 	var budget := BURST
 	var budget_up := BURST
+	## How far the last refused move went beyond what was allowed.
+	var excess := 0.0
 	## After a correction or a teleport: states until the client is there
 	## again are ignored (they were sent before it knew).
 	var waiting_for := Vector3.INF
 	var waiting_until := 0.0
 	var violations: Array[float] = []
+	## The client never came back after the last correction (a changed
+	## client ignoring it): its next violation counts IGNORED_WEIGHT times.
+	var ignored_correction := false
+	const IGNORED_WEIGHT := 5
 	var dead := false
 
 	func _init(at: Vector3, now: float) -> void:
@@ -244,7 +263,7 @@ class Mover:
 		budget = BURST
 		budget_up = BURST
 		waiting_for = at
-		waiting_until = now + 5.0
+		waiting_until = now + CORRECTION_SECONDS
 
 	enum { ACCEPT, IGNORE, REJECT }
 
@@ -252,8 +271,14 @@ class Mover:
 	## a boat or minecart): ACCEPT, IGNORE (a state sent before the client
 	## knew of a correction) or REJECT (sent back to `position`).
 	func check(at: Vector3, now: float, creative: bool, riding: bool) -> int:
-		var dt := clampf(now - time, 0.0, 2.0)
+		var gap := clampf(now - time, 0.0, GAP_SECONDS)
 		time = now
+		var speed := RIDE if riding else (FLY if creative else WALK)
+		var up_speed := FLY_UP if creative or riding else UP
+		# The allowance grows with the time gone by; what a long gap saved up
+		# isn't cut by the quick states after it (they're the held-back ones).
+		budget = minf(budget + speed * gap, maxf(budget, BURST + speed * maxf(gap, 1.0)))
+		budget_up = minf(budget_up + up_speed * gap, maxf(budget_up, BURST + up_speed * maxf(gap, 1.0)))
 		if waiting_for != Vector3.INF:
 			if at.distance_to(waiting_for) < 3.0:
 				waiting_for = Vector3.INF
@@ -262,24 +287,27 @@ class Mover:
 			if now < waiting_until:
 				return IGNORE
 			waiting_for = Vector3.INF
-		var speed := RIDE if riding else (FLY if creative else WALK)
-		var up_speed := FLY_UP if creative or riding else UP
-		budget = minf(budget + speed * dt, BURST + speed)
-		budget_up = minf(budget_up + up_speed * dt, BURST + up_speed)
+			ignored_correction = true
 		var horizontal := Vector2(at.x - position.x, at.z - position.z).length()
 		var up := at.y - position.y
-		if horizontal > budget or up > budget_up or -up > FALL * maxf(dt, 0.05) + BURST:
+		var fall_allowed := FALL * maxf(gap, 0.05) + BURST
+		if horizontal > budget or up > budget_up or -up > fall_allowed:
+			excess = maxf(maxf(horizontal - budget, up - budget_up), -up - fall_allowed)
 			return REJECT
 		budget -= horizontal
 		budget_up -= maxf(up, 0.0)
 		position = at
+		ignored_correction = false
 		return ACCEPT
 
-	## Counts a violation; true when there were too many lately (kick).
+	## After a REJECT: the client is sent back and its states ignored until
+	## it is there. Counts the violation; true when there were too many for
+	## too long (a kick).
 	func violated(now: float) -> bool:
-		violations.append(now)
+		waiting_for = position
+		waiting_until = now + CORRECTION_SECONDS
+		for i in IGNORED_WEIGHT if ignored_correction else 1:
+			violations.append(now)
 		while not violations.is_empty() and now - violations[0] > VIOLATION_SECONDS:
 			violations.pop_front()
-		waiting_for = position
-		waiting_until = now + 2.0
-		return violations.size() > VIOLATIONS
+		return violations.size() > VIOLATIONS and now - violations[0] >= SUSTAINED_SECONDS

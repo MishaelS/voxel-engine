@@ -1,6 +1,6 @@
 class_name LanguageScreen
 extends MenuScreen
-## "Language", like the classic game: the languages (Lang.LANGUAGES), the
+## "Language", like the classic game: the languages (Lang.all()), the
 ## current one marked; click to switch at once.
 
 var _buttons: Array[Button] = []
@@ -12,7 +12,7 @@ func _init() -> void:
 
 
 func build() -> void:
-	for i in Lang.LANGUAGES.size():
+	for i in Lang.all().size():
 		var button := add_list_wide_button("", func() -> void:
 			Settings.set_value("language", i)
 			# Rebuild in the new language.
@@ -27,5 +27,5 @@ func build() -> void:
 func _update() -> void:
 	var current: int = Settings.get_value("language")
 	for i in _buttons.size():
-		var language_name: String = Lang.LANGUAGES[i][1]
+		var language_name: String = Lang.all()[i][1]
 		_buttons[i].text = ("> %s <" % language_name) if i == current else language_name

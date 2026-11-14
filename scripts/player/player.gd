@@ -191,6 +191,7 @@ func _ready() -> void:
 	map_view.player = self
 	layer.add_child(map_view)
 	layer.add_child(PlayerList.new()) # Tab in a network game
+	layer.add_child(ConnectionIndicator.new()) # "Bad connection" in a network game
 	layer.add_child(AchievementToast.new())
 	# The view's own overlays (flames, the pumpkin) under the HUD and the
 	# menus (the UI layer is 1): they used to cover the pause menu.

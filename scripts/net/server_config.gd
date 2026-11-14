@@ -27,6 +27,7 @@ const KEYS := [
 	["pvp", true, "Players can hurt each other"],
 	["autosave-minutes", 5, "Minutes between saves of the world (1-60)"],
 	["upnp", false, "Open the ports on the router by UPnP (a home server; a VPS doesn't need it)"],
+	["public-address", "", "The address players connect to from the internet: this server's IP or a domain name (like myserver.duckdns.org), with :port when not 25565. Shown on start and by /invite instead of the router's address"],
 	["lan-broadcast", false, "Show the server in the Multiplayer list of players on the same network"],
 	["max-connections-per-ip", 3, "Connections at most from one address"],
 	["spawn-radius", 3, "Columns kept loaded around the spawn while nobody plays"],

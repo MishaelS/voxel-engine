@@ -53,7 +53,7 @@ func _exit_tree() -> void:
 func _register_all() -> void:
 	# Language (Language screen)
 	define("language", Setting.choice("language", "Language",
-		PackedStringArray(Lang.LANGUAGES.map(func(entry: Array) -> String: return entry[1])), 0))
+		PackedStringArray(Lang.all().map(func(entry: Array) -> String: return entry[1])), 0))
 	# General (shown on the main options screen)
 	define("general", Setting.range_of("music_volume", "Music", 0, 100, 100, 5) \
 		.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0.0 else "%d%%" % int(v)))

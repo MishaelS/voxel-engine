@@ -1,46 +1,80 @@
-# Running a dedicated server
+# Running a server
 
-A dedicated server is the game without a window, a camera or sound: it keeps
-one world running for everyone who joins, day and night, whether you play
-or not. Players join it like any other game: **Multiplayer > Direct Connect**
-(or Add Server) with its address, `address:port`, or an invite code.
+There are three ways to play with friends, from the quickest to the biggest:
+
+1. **Open to LAN** (pause menu): your world is open while you play in it.
+   *Allow Internet Access* opens the port on the router (UPnP) and gives an
+   invite code.
+2. **Create Server** (Multiplayer screen): choose a world, maybe a password
+   and internet access; the game starts a server in the background on your
+   computer and joins it. Friends join it like any server (*My Server* /
+   *Invite Friends* show its code and addresses). Leaving asks whether to
+   stop it (the world is saved); quitting the game stops it. Its settings
+   are in `server/server.properties` in the game folder (the world, the
+   password and internet access are set by the screen; the rest can be
+   changed there).
+3. **A dedicated server** (this page): the game without a window, a camera
+   or sound, keeping one world running for everyone, day and night,
+   whether you play or not.
+
+Players join a server with **Multiplayer > Direct Connect** (or Add Server):
+its address, `address:port`, a domain name (`myserver.duckdns.org`) or an
+invite code.
 
 ## Starting
 
-From the project's folder (Godot 4.5 installed):
+**A released game** (the zip from the releases): next to the game are
+
+| File | System | How |
+| --- | --- | --- |
+| `start-server.bat` | Windows | double-click |
+| `start-server.command` | macOS | double-click (the first time: right-click > Open) |
+| `start-server.sh` | Linux | `./start-server.sh` |
+| `server.properties.example` | all | every setting explained |
+
+The server's window is its console: type commands there, `stop` saves and
+stops (on macOS and Linux also Ctrl+C or closing the window). Copy the
+whole folder anywhere: the server is portable.
+
+**Where the settings are:** `server.properties` next to the game (on macOS:
+next to the `.app`), else in the folder the server was started from, else
+in the game folder (`user://`). The first start makes it next to the game
+(or in the game folder when that folder can't be written to), with every
+setting and what it does. `--config FILE` names another one.
+
+**From the project** (Godot 4.5 installed):
 
 ```sh
-mkdir ~/voxel-server && cd ~/voxel-server
-/path/to/voxel-engine/tools/run_server.sh               # server.properties here
-/path/to/voxel-engine/tools/run_server.sh --port 25570 --world survival2
+tools/run.sh --server                                 # server.properties of the current folder, or the game folder's
+tools/run.sh --server --port 25570 --world survival2
+cd ~/voxel-server && /path/to/voxel-engine/tools/run.sh --server
 ```
 
-On Windows: `tools\run_server.bat` (type `stop` to save and stop).
-
-Directly with Godot, or with an exported game:
+Directly:
 
 ```sh
 godot --headless --path /path/to/voxel-engine -- --server [--port N] [--world NAME] [--config FILE]
-"./Voxel Engine" --headless --server --config /srv/voxel/server.properties
+"./Voxel Engine Bedrock Edition.x86_64" --headless --server [--port N] [--world NAME] [--config FILE]
 ```
 
-- `--config` - the settings file (default: `server.properties` in the folder
-  `run_server.sh` was started from; without the script `user://server.properties`).
-  It is made with every setting and its explanation on the first start.
 - `--port`, `--world` - override `server-port` and `world-name`.
-- Godot is found as `$GODOT`, else `godot` on the PATH.
-- The game's native library is built for macOS only; on Linux and Windows
-  the server works without it (world generation is slower), or build
-  `native/` for that system (`native/build.sh`, CMake).
+- `tools/run.sh` finds Godot as `$GODOT`, else the editor in /Applications,
+  else `godot` on the PATH.
+- The game's native library (faster world generation) is built for macOS,
+  Windows and Linux (see BUILDING.md); without it the server still works,
+  only slower.
 
 Worlds are kept where the game keeps them (`saves/` in the game folder:
 `~/.local/share/Godot/app_userdata/Voxel Engine` on Linux,
 `~/Library/Application Support/Godot/app_userdata/Voxel Engine` on macOS,
 `%APPDATA%\Godot\app_userdata\Voxel Engine` on Windows). A world made in the
-game can be copied there and named in `world-name`.
+game can be named in `world-name` (its folder's name).
 
 The log is written to the console and to `logs/latest.log` next to
 `server.properties` (the one before is kept with its date, the last 20).
+On start it says where players connect: the LAN addresses, and
+`Players connect to: <address>` when `public-address` is set (or when UPnP
+opened the router's ports).
 
 ## The console
 
@@ -62,8 +96,11 @@ right:
 | `tp`, `gamemode`, `give`, `time`, `weather`, `gamerule`, `kill`, `summon`, `setblock`, `fill`... | the game's commands, on any player (`@a`, names) |
 
 **Ctrl+C**, `kill <pid>` or `systemctl stop` stop the server cleanly through
-`run_server.sh` (it turns the signal into `stop`). Godot can't catch signals
-itself, so a server started without the script only stops cleanly with `stop`.
+`tools/run.sh --server`, `start-server.sh` or `start-server.command` (they
+turn the signal into `stop`). Godot can't catch signals itself, so a server
+started without them only stops cleanly with `stop` (on Windows: type `stop`;
+closing the window loses the last minutes).
+`invite` shows the address players connect to.
 
 ## server.properties
 
@@ -89,6 +126,7 @@ itself, so a server started without the script only stops cleanly with `stop`.
 | `pvp` | true | players can hurt each other |
 | `autosave-minutes` | 5 | minutes between saves |
 | `upnp` | false | open the ports on a home router by UPnP |
+| `public-address` | (none) | the address players connect to from the internet: an IP or a domain name (`myserver.duckdns.org`, with `:port` when not 25565); printed on start, given by `/invite` instead of the router's address |
 | `lan-broadcast` | false | show the server in the Multiplayer list on the same network |
 | `max-connections-per-ip` | 3 | connections at most from one address |
 | `spawn-radius` | 3 | columns kept loaded around the spawn while nobody plays |
@@ -113,13 +151,20 @@ players' tags depend on it, keep it to keep the bans).
    (or `upnp=true`). Behind CGNAT (the router has no public address) this
    can't work: use a VPS, or a VPN like ZeroTier / Radmin VPN.
 4. Players connect to the public address (`203.0.113.5` or `play.example.com:25570`).
+5. **A name instead of the number:** a home address changes now and then.
+   A free dynamic DNS name (e.g. [DuckDNS](https://www.duckdns.org): make a
+   name, run its updater on the server's computer) always points at it, or
+   use your own domain (an A record). Put the name in `public-address`; the
+   server prints `Players connect to: myserver.duckdns.org` and `/invite`
+   gives it. The game looks names up itself (Direct Connect, the server
+   list).
 
 ## Keeping it running
 
 **screen / tmux:**
 
 ```sh
-tmux new -s voxel 'cd ~/voxel-server && /path/to/voxel-engine/tools/run_server.sh'
+tmux new -s voxel 'cd ~/voxel-server && ./start-server.sh'
 # later: tmux attach -t voxel   (detach: Ctrl+B then D)
 ```
 
@@ -133,9 +178,9 @@ After=network-online.target
 [Service]
 User=voxel
 WorkingDirectory=/home/voxel/server
-Environment=GODOT=/usr/local/bin/godot
-ExecStart=/home/voxel/voxel-engine/tools/run_server.sh
+ExecStart=/home/voxel/server/start-server.sh
 # SIGTERM to the script only: it says "stop" to the server, which saves.
+# (From the project instead: ExecStart=/path/to/voxel-engine/tools/run.sh --server)
 KillMode=mixed
 TimeoutStopSec=60
 Restart=on-failure
@@ -160,10 +205,10 @@ directly, and what a client sends is checked before the world sees it.
 - Joining: the version, a name of 3-16 letters (A-Z), digits and `_` (the
   game spells other letters that way by itself), bans by computer and by
   address, the password, the whitelist, max players; at most 8 joins waiting
-  at once, 3 connections and 5 tries in 30 seconds from one address;
-  silent connections are dropped after 15 seconds.
+  at once, 3 connections and 8 tries in 30 seconds from one address; a join
+  that doesn't introduce itself in 10 seconds is dropped.
 - Movement: faster than walking, flying (creative) or riding allows is sent
-  back; teleports and respawns go through the server.
+  back to the last good place; teleports and respawns go through the server.
 - Building and using: within reach (6 blocks, 8 in creative) of where the
   server sees the player, in loaded land only, outside the spawn protection;
   survival can't place or break what only the world makes (bedrock,
@@ -171,8 +216,73 @@ directly, and what a client sends is checked before the world sees it.
 - Game modes and cheats are the server's: `/gamemode` and `/tp` run there,
   cheat commands only for ops.
 - Chests and furnaces: two players can't take the same stack.
-- Floods (chat, edits, column requests...) are refused, and too many or too
-  much bad data is a kick.
+- Floods (chat, edits, column requests...) are refused; impossible data
+  (unknown blocks and items, absurd sizes, positions outside the world)
+  adds up to a kick quickly.
+
+### Lag is not cheating
+
+A bad connection is never punished like a cheat:
+
+- Movement may arrive late and in bursts: what a player may cover grows
+  with the time since its last message (up to 5 seconds of it at once), so
+  the messages a lag spike held back pass. Going further than that only
+  sends the player back (and is logged as `[movement]`); a kick (E302)
+  needs more than 30 such corrections in a minute, over at least 15
+  seconds: a speed hack does that, lag doesn't. Nobody is banned
+  automatically.
+- Flood limits are token buckets with three times the limit saved up, so a
+  burst after a stall isn't spam; refused messages are logged as `[flood]`,
+  and only sending about three times the limit for ten seconds is a kick
+  (E303).
+- Out of reach (the server sees the player a moment late) is refused and
+  logged, never counted towards a kick.
+- A connection is dropped only after ENet's timeout: no answer for 10 to
+  30 seconds (both sides). A player the server hasn't heard from for 3
+  seconds (or that loses many packets) is told "Your connection is
+  unstable" and the log says `[net] ... connection problems`. The player
+  sees *Bad connection* in the top right corner while nothing comes from
+  the server for 1.5 seconds or the round trip is over 500 ms.
+
+### Error codes
+
+When a join is refused or a game ends, the player sees why and a code
+(the Disconnected screen), in their own language; the server's log shows
+the same code with the English text. Tell the code when asking for help.
+
+| Code | Meaning |
+| --- | --- |
+| E101 | Connection lost |
+| E102 | Timed out: the server stopped answering |
+| E103 | The server was stopped |
+| E104 | The host left the game (Open to LAN) |
+| E201 | Wrong password |
+| E202 | Not on the whitelist |
+| E203 | Banned (the computer or the address) |
+| E204 | The server is full |
+| E205 | Version mismatch: the server has X, you have Y |
+| E206 | The name isn't 3-16 of A-Z, 0-9, _ |
+| E207 | The server needs a password (the game asks for it) |
+| E208 | Too many connections from one address |
+| E209 | The server is busy (too many joins at once) |
+| E210 | The host is not in a world |
+| E211 | The join didn't introduce itself (a different or broken game) |
+| E300 | Kicked by an operator |
+| E301 | Kicked by an operator, with the reason |
+| E302 | Kicked for moving too fast (a long run of corrections) |
+| E303 | Kicked for spamming |
+| E304 | Kicked for sending bad data |
+| E305 | Idle for too long (`idle-timeout`) |
+| E401 | Can't resolve the address (the name doesn't exist) |
+| E402 | Can't reach the server (nothing answers at that address and port) |
+| E403 | The invite code has a typo |
+| E404 | No address |
+| E405 | Can't connect to the address |
+| E501 | Create Server: the server didn't start |
+| E502 | Create Server: the port is taken by another program |
+
+The codes and their texts are in `scripts/net/net_errors.gd`; translations
+are lines in `assets/lang/*.lang` like every other text of the game.
 
 Limits: inventories are still each player's own, so a modified game can give
 itself items in survival (the server refuses only impossible ones); falling

@@ -4,6 +4,8 @@ extends MenuScreen
 ## Achievements and Statistics side by side; a gap, then Options... and
 ## Open to LAN side by side; Save and Quit to Title. The buttons start a
 ## quarter of the screen down, like the game's (not in the middle).
+## Playing on one's own server (Create Server): Invite Friends shows its
+## addresses, and leaving asks whether it should stop too.
 
 const P := UiTheme.PIXEL
 ## Half of a row: two of them and the gap are a wide button.
@@ -33,8 +35,9 @@ func build() -> void:
 	column.add_child(gap)
 	var game := Game.find(menu.get_tree())
 	var lan: Button
-	if Net.is_host(): # then how to invite (the code, the addresses)
-		lan = _half("Invite Friends", func() -> void: menu.push(InviteScreen.new()))
+	var own_server := Net.local_server.is_ours()
+	if Net.is_host() or own_server: # then how to invite (the code, the addresses)
+		lan = _half("Invite Friends", func() -> void: menu.push(InviteScreen.new(own_server)))
 	else:
 		# Like the classic game's "Open to LAN": others can join this world.
 		lan = _half("Open to LAN", func() -> void: menu.push(OpenToLanScreen.new()))
@@ -42,9 +45,21 @@ func build() -> void:
 	column.add_child(_row([_half("Options...", func() -> void: menu.push(OptionsScreen.new())), lan]))
 	if game:
 		column.add_child(_wide("Save and Quit to Title" if game.is_saved() else "Quit to Title",
-			func() -> void: game.quit_to_title()))
+			func() -> void: _quit(game)))
 	resized.connect(_place)
 	_place.call_deferred()
+
+
+func _quit(game: Game) -> void:
+	if not Net.local_server.is_ours():
+		game.quit_to_title()
+		return
+	var server := Net.local_server
+	var stop_text := Lang.t("Friends playing on it are sent away; the world is saved")
+	menu.push(ConfirmScreen.new("Stop the server too?", stop_text, "Stop Server", func() -> void:
+		game.quit_to_title() # (this player's state goes first)
+		server.stop(),
+		"Keep Running", func() -> void: game.quit_to_title()))
 
 
 ## The buttons a quarter of the screen down (from the top of the window).

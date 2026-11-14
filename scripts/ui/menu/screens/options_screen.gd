@@ -590,8 +590,8 @@ func _language_list() -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 2 * P)
 	var current: int = Settings.get_value("language")
-	for i in Lang.LANGUAGES.size():
-		var language_name: String = Lang.LANGUAGES[i][1]
+	for i in Lang.all().size():
+		var language_name: String = Lang.all()[i][1]
 		var button := _wide_button(("> %s <" % language_name) if i == current else language_name, func() -> void:
 			Settings.set_value("language", i)
 			menu.replace(OptionsScreen.new("language"))) # rebuilt in the new language

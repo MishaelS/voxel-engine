@@ -13,6 +13,17 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Release builds for Windows, Linux (x86_64 and ARM64) and macOS with one command, `tools/build.sh all`; the native library for Linux and Windows is built in Docker (native/docker/), the macOS one locally; an optional GitHub Actions workflow does the same. How: BUILDING.md.
+- Create Server in Multiplayer: pick a world, a password and internet access; the game starts a server in the background, joins it and makes you its operator, and asks whether to stop it when you leave.
+- A server next to the game: start-server.bat / start-server.command / start-server.sh and server.properties (made next to the game on the first start, with `public-address` for a domain like DuckDNS); `tools/run.sh --server` from the project.
+- Error codes for every disconnect and refusal (E101 connection lost ... E502), shown translated on a Disconnected screen with the code; another language is just another .lang file.
+- A "Bad connection" mark at the top right when nothing comes from the server for a moment or the ping is high.
+
+### Changed
+- Lag isn't taken for cheating: late or bunched-up movement is accepted (up to 5 s at once), moving too fast only sends the player back, a kick needs long and obvious cheating, nothing bans by itself; floods are measured with room for bursts; connections wait up to 30 s before timing out, and the server warns an unstable player first.
+- tools/run_server.sh/.bat and native/build.sh are folded into tools/build.sh and tools/run.sh.
+
 ## [0.0.22] - 2026-11-14
 
 ### Added

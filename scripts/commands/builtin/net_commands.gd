@@ -102,7 +102,9 @@ static func register(d: CommandDispatcher) -> void:
 		.executes(func(ctx: CommandContext) -> int:
 			if not Net.is_host():
 				return ctx.error(Lang.t("Only the host of a network game can do this"))
-			return ctx.feedback(invite_text(true))))
+			# (A player asking a server: the answer goes to them, the server's
+			# clipboard stays as it is.)
+			return ctx.feedback(invite_text(ctx.source.name == Net.player_name and not Net.dedicated))))
 
 
 ## The invite code (or why there's none) and the LAN addresses, for the chat.
@@ -110,18 +112,25 @@ static func register(d: CommandDispatcher) -> void:
 static func invite_text(copy: bool) -> String:
 	var lines := PackedStringArray()
 	var code := Net.invite_code()
-	match Net.port_forward.state:
+	var state := Net.port_forward.state if Net.public_address == "" else PortForward.State.OPEN
+	match state:
 		PortForward.State.OPEN:
 			if copy:
 				DisplayServer.clipboard_set(code)
-			lines.append(Lang.t("Invite code: %s (copied)" if copy else "Invite code: %s") % code)
-			lines.append(Lang.t("Only share the code with people you trust"))
+			if Net.public_address != "":
+				lines.append(Lang.t("Players connect to: %s") % code)
+			else:
+				lines.append(Lang.t("Invite code: %s (copied)" if copy else "Invite code: %s") % code)
+				lines.append(Lang.t("Only share the code with people you trust"))
 		PortForward.State.WORKING:
 			lines.append(Lang.t("Opening the world to the internet..."))
 		PortForward.State.FAILED:
 			lines.append(Lang.t("Can't open the world to the internet: %s") % Lang.t(Net.port_forward.error))
 		_:
-			lines.append(Lang.t("Internet access is off (Game Menu > Invite Friends)"))
+			if Net.dedicated:
+				lines.append(Lang.t("Internet access: forward the ports, or upnp / public-address in server.properties"))
+			else:
+				lines.append(Lang.t("Internet access is off (Game Menu > Invite Friends)"))
 	for ip in InviteCode.lan_addresses():
 		lines.append(Lang.t("LAN address: %s") % ("%s:%d" % [ip, Net.host_port]))
 	return "\n".join(lines)

@@ -75,6 +75,10 @@ func _ready() -> void:
 	_ui.add_child(_menu)
 	_menu.opened.connect(func() -> void: _main.visible = false)
 	_menu.closed.connect(func() -> void: _main.visible = true)
+	if Net.show_disconnected:
+		# Back from a network game that ended on its own: why (and its code).
+		Net.show_disconnected = false
+		_menu.push(DisconnectedScreen.new(Net.last_code, Net.last_args, false))
 
 	_curtain = ColorRect.new()
 	_curtain.color = Color.BLACK

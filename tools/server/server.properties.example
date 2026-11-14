@@ -1,0 +1,51 @@
+# Voxel Engine dedicated server settings (see SERVER.md).
+# Restart the server after changing them.
+
+# UDP port of the game; the server list's ping uses this port + 1 (open both)
+server-port=25565
+# Address to listen on (empty: all of this computer's addresses)
+server-ip=
+# The world's folder under saves/ (made when missing)
+world-name=world
+# Seed of a new world (empty: random; text is hashed)
+seed=
+# A new world's type: default, tall, floating, island
+world-type=default
+# A chest of starting things by the spawn of a new world
+bonus-chest=false
+# Game mode of players: survival or creative
+gamemode=survival
+# peaceful, easy, normal or hard
+difficulty=normal
+# Players at most (1-100)
+max-players=20
+# The message shown in the server list
+motd=A Voxel Engine Server
+# Joining needs this password (empty: none); it is never sent over the network
+password=
+# Only players on the whitelist may join (/whitelist add <name>)
+white-list=false
+# Ties names on the whitelist and the ops list to the computer of whoever joined with them first
+enforce-tags=true
+# Columns around a player the server sends changed land for (4-32)
+view-distance=12
+# Columns around each player kept loaded and ticking (2-10)
+simulation-distance=5
+# Blocks around the world spawn only ops may change (0: off)
+spawn-protection=16
+# Minutes a player may stand idle before being kicked (0: never)
+idle-timeout=0
+# Players can hurt each other
+pvp=true
+# Minutes between saves of the world (1-60)
+autosave-minutes=5
+# Open the ports on the router by UPnP (a home server; a VPS doesn't need it)
+upnp=false
+# The address players connect to from the internet: this server's IP or a domain name (like myserver.duckdns.org), with :port when not 25565. Shown on start and by /invite instead of the router's address
+public-address=
+# Show the server in the Multiplayer list of players on the same network
+lan-broadcast=false
+# Connections at most from one address
+max-connections-per-ip=3
+# Columns kept loaded around the spawn while nobody plays
+spawn-radius=3

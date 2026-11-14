@@ -19,7 +19,11 @@ func _init(address: String, on_join: Callable) -> void:
 
 
 func build() -> void:
-	add_list_item(EditServerScreen.caption(Lang.t(Net.last_error) if Net.last_error != "" else "This server needs a password"))
+	var why := EditServerScreen.caption("")
+	var code := Net.last_code if NetErrors.wants_password(Net.last_code) else NetErrors.PASSWORD_NEEDED
+	why.text = "%s (%s)" % [NetErrors.text(code), NetErrors.label(code)]
+	why.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	add_list_item(why)
 	_password = EditServerScreen.field("")
 	_password.secret = true
 	_password.max_length = 128

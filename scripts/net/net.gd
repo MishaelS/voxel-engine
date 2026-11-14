@@ -3,8 +3,10 @@ extends Node
 ## their world to the network from the pause menu ("Open to LAN") and is the
 ## host; others join by address or from the list of games on the local
 ## network. Or a dedicated server (DedicatedServer, `--server`, SERVER.md)
-## hosts a world with no player of its own. Godot's high-level multiplayer
-## over ENet.
+## hosts a world with no player of its own: started by hand (the
+## start-server files, tools/run.sh --server) or by the game in the
+## background (Create Server: LocalServer, which this one joins). Godot's
+## high-level multiplayer over ENet.
 ##
 ## The host runs the world: liquids, growth, redstone, ticks and saving. A
 ## client draws it and moves its own player:
@@ -65,7 +67,21 @@ extends Node
 ## HELLO_SECONDS), max_per_address connections and MAX_TRIES tries in
 ## TRIES_SECONDS from one address; idle players can be kicked. Floods (chat,
 ## edits, columns...) are refused and bad data counted (strikes): too much
-## of either is a kick. Ops (ServerLists: ops.cfg, names tied to tags) run
+## of either is a kick.
+##
+## Lag is not cheating: movement may come late and in bursts (NetGuard.Mover
+## allows what the time gone by allows), flood limits are token buckets with
+## room for a burst, being out of reach only refuses, and too far only sends
+## the player back; kicks are for long runs of it or for impossible data.
+## ENet's timeouts are long (PEER_TIMEOUT_*); a client shows "Bad connection"
+## (ConnectionIndicator) while the host is silent or slow, and the host tells
+## a client it hears badly.
+##
+## Why a join was refused or a game ended goes as a code and its arguments
+## (NetErrors, _refused), never as English text: each client shows it in its
+## own language (the Disconnected screen, with the code); the log shows the
+## code with the English text. Clients name the host by address, a domain
+## name (looked up without waiting) or an invite code. Ops (ServerLists: ops.cfg, names tied to tags) run
 ## the cheat and admin commands; the host of an Open to LAN game always is
 ## one, and its Allow Cheats lets everyone cheat. Commands: /players,
 ## /kick, /ban, /pardon, /ban-ip, /pardon-ip, /op, /deop, /whitelist,
@@ -81,7 +97,8 @@ extends Node
 ## Playing over the internet: "Allow Internet Access" in Open to LAN opens
 ## the ports on the home router (PortForward, UPnP) and gives an invite code
 ## (InviteCode: the router's address, short and typo-proof) that joining
-## takes wherever an address goes.
+## takes wherever an address goes. A server with a public-address (an IP or
+## a domain name) gives that instead (invite_code, /invite).
 
 signal players_changed
 signal lan_games_changed
@@ -102,15 +119,23 @@ const SYNC_SECONDS := 1.0
 const STATE_RATE := 20.0
 const SERVER_CONFIG := "user://server.cfg"
 ## Joining limits per address, the time to introduce oneself, joins waiting
-## at once, how long a silent connection lasts.
+## at once.
 const MAX_PER_ADDRESS := 3
-const MAX_TRIES := 5
+const MAX_TRIES := 8
 const TRIES_SECONDS := 30.0
-const HELLO_SECONDS := 5.0
+const HELLO_SECONDS := 10.0
 const MAX_PENDING := 8
-const PEER_TIMEOUT_MS := 15000
-## Flood limits: [count, seconds] per kind; more is refused (and counted
-## as a strike), four times more is a kick.
+## ENet's timeouts (both sides): a peer that stops answering is dropped
+## after PEER_TIMEOUT_MIN_MS at the soonest (when even its slow resends go
+## unanswered) and PEER_TIMEOUT_MAX_MS at the latest, so a short drop of
+## Wi-Fi or a stall of the other side doesn't end the game.
+const PEER_TIMEOUT_LIMIT := 32
+const PEER_TIMEOUT_MIN_MS := 10000
+const PEER_TIMEOUT_MAX_MS := 30000
+## Flood limits: [count, seconds] per kind, as a token bucket (FLOOD_BURST
+## times the count saved up: what a lag spike delivers at once is no flood).
+## More is refused; refusing at twice the rate for about FLOOD_SECONDS
+## (a client sending three times what it may) is a kick.
 const CHAT_LIMIT := 8      # lines per 5 seconds
 const EDIT_LIMIT := 60     # edits and uses per second
 const COLUMN_LIMIT := 400  # column requests per second
@@ -118,7 +143,20 @@ const ATTACK_LIMIT := 30   # hits per second (a sword's sweep hits several)
 const SPAWN_LIMIT := 8     # entities made per second
 const DROP_LIMIT := 64     # items dropped per second (a death drops 40 stacks)
 const STATE_LIMIT := 60    # movement messages per second (20 are sent)
-## Strikes (bad data, floods, out of reach...) in STRIKE_SECONDS before a kick.
+const FLOOD_BURST := 3.0
+const FLOOD_SECONDS := 10.0
+## Client: a stall (no word from the host) this long, or a round trip this
+## slow, shows the connection warning (ConnectionIndicator).
+const STALL_SECONDS := 1.5
+const SLOW_PING_MS := 500
+## Host: a client silent this long (or losing this share of packets) is
+## told its connection is unstable, at most every WARN_SECONDS.
+const CLIENT_SILENT_SECONDS := 3.0
+const CLIENT_LOSS := 0.15
+const WARN_SECONDS := 30.0
+## Strikes (bad data: impossible ids, sizes, positions) in STRIKE_SECONDS
+## before a kick. What lag explains (out of reach, a game mode changing
+## meanwhile) weighs nothing or little: it is refused and logged only.
 const STRIKE_LIMIT := 30
 const STRIKE_SECONDS := 60.0
 ## Reach from the eyes to the block (a little more than the game's 4.5 / 5:
@@ -132,9 +170,6 @@ const SNAPSHOT_ITEMS := 200
 ## Entities a client may make (arrows it shoots, boats and carts it puts
 ## down, paintings it hangs, TNT it lights).
 const CLIENT_SPAWNS: Array[String] = ["arrow", "boat", "minecart", "chest_minecart", "furnace_minecart", "painting", "tnt"]
-## Refusals a client shows a password screen for.
-const PASSWORD_NEEDED := "This server needs a password"
-const WRONG_PASSWORD := "Wrong password"
 ## Seconds everyone must sleep before a dedicated server skips the night.
 const SLEEP_SECONDS := 5.0
 
@@ -154,6 +189,8 @@ var host_port := PORT
 ## A dedicated server (DedicatedServer, its settings from server.properties).
 var dedicated := false
 var server: DedicatedServer
+## Create Server: the server this game started in the background.
+var local_server: LocalServer
 ## The host's settings (Open to LAN: these defaults).
 var max_players := MAX_PLAYERS
 var motd := ""
@@ -175,7 +212,8 @@ var lists := ServerLists.new()
 ## on the host (Commands not listed here run on the player's own side).
 const HOST_COMMANDS: Array[String] = ["time", "weather", "gamerule", "tick", "setblock", "fill", "clone", "summon",
 	"kill", "damage", "execute", "setworldspawn", "difficulty", "msg", "tell", "w", "gamemode", "tp", "teleport",
-	"say", "kick", "ban", "pardon", "ban-ip", "pardon-ip", "op", "deop", "whitelist", "players", "save-all", "stop"]
+	"say", "kick", "ban", "pardon", "ban-ip", "pardon-ip", "op", "deop", "whitelist", "players", "save-all", "stop",
+	"invite"]
 ## Commands always allowed (no cheats needed); the host decides on the ones
 ## in OP_COMMANDS.
 const FREE_COMMANDS: Array[String] = ["help", "seed", "say", "players", "kick", "ban", "pardon", "list", "me",
@@ -204,8 +242,22 @@ var looks := {}
 var lan_games := {}
 ## The host's world, as a client got it (WorldSave-like values).
 var world_info := {}
-## Why the last connection ended ("" if it did not fail).
-var last_error := ""
+## Why the last connection ended or failed (NetErrors: a code, 0 if it
+## didn't, and its arguments); `show_disconnected`: a game in progress
+## ended so (the title screen shows the Disconnected screen).
+var last_code := 0
+var last_args := PackedStringArray()
+var show_disconnected := false
+## The address players reach this server at (server.properties'
+## public-address, e.g. "myserver.duckdns.org"): shown and given instead of
+## the invite code when set.
+var public_address := ""
+## Client: when the host was last heard from (s), its round trip (ms).
+var _last_heard := 0.0
+## Client: a hostname being looked up before connecting (IP resolver id).
+var _resolve_id := -1
+var _resolve_host := ""
+var _resolve_port := 0
 
 var _peer: ENetMultiplayerPeer
 var _lan_out: PacketPeerUDP
@@ -236,6 +288,11 @@ var _tries := {}
 var _counters := {}
 var _strikes := {}
 var _dropping := {}
+## Host: the names joins introduced themselves with (for the log), when
+## each client was last heard from and last warned about its connection.
+var _hello_names := {}
+var _heard := {}
+var _warned := {}
 var _server_salt := ""
 ## Host: each client's movement (NetGuard.Mover), game mode, op or not, last
 ## activity (idle kick), when it was last told its game mode.
@@ -273,6 +330,9 @@ func _ready() -> void:
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 	port_forward.changed.connect(_on_forward_changed)
+	local_server = LocalServer.new()
+	local_server.name = "LocalServer"
+	add_child(local_server)
 	if DedicatedServer.requested():
 		var node := DedicatedServer.new()
 		node.name = "DedicatedServer"
@@ -280,8 +340,11 @@ func _ready() -> void:
 
 
 func _notification(what: int) -> void:
-	# Quitting: nothing stays open on the router.
+	# Quitting: nothing stays open on the router; a client's player goes to
+	# the host first.
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
+		if is_client() and what == NOTIFICATION_WM_CLOSE_REQUEST:
+			leave()
 		port_forward.close_now()
 
 
@@ -335,6 +398,7 @@ func configure_dedicated(node: DedicatedServer) -> void:
 	max_per_address = config.get_int("max-connections-per-ip", 1, 100)
 	lan_broadcast = config.get_bool("lan-broadcast")
 	internet = config.get_bool("upnp")
+	public_address = NetGuard.clean_text(config.get_string("public-address"), 128).replace(" ", "")
 	lists.enforce_tags = config.get_bool("enforce-tags")
 	lan_game_mode = 1 if config.get_string("gamemode").to_lower() in ["creative", "c", "1"] else 0
 	server_difficulty = {"peaceful": 0, "easy": 1, "normal": 2, "hard": 3, "0": 0, "1": 1, "2": 2, "3": 3}.get(
@@ -396,6 +460,9 @@ func host(port: int = PORT) -> String:
 	looks = {} if dedicated else {1: _own_look()}
 	_status_responder = ServerStatus.Responder.new()
 	_status_responder.open(port)
+	if server and server.admin_token != "":
+		_status_responder.admin_token = server.admin_token
+		_status_responder.admin = server.admin_command
 	if lan_broadcast:
 		_lan_out = PacketPeerUDP.new()
 		_lan_out.set_broadcast_enabled(true)
@@ -414,11 +481,28 @@ func allow_internet() -> void:
 		port_forward.open(host_port)
 
 
-## The invite code while the router's ports are open, else "".
+## What friends type to join over the internet: the public address when
+## the server has one (public-address), else the invite code while the
+## router's ports are open, else "".
 func invite_code() -> String:
-	if not is_host() or port_forward.state != PortForward.State.OPEN:
+	if not is_host():
+		return ""
+	if public_address != "":
+		return public_address
+	if port_forward.state != PortForward.State.OPEN:
 		return ""
 	return InviteCode.encode(port_forward.external_ip, port_forward.port)
+
+
+## The address players connect to over the internet, for the log and the
+## console: the public address, else the router's address while its ports
+## are open, else "".
+func internet_address() -> String:
+	if public_address != "":
+		return public_address
+	if is_host() and port_forward.state == PortForward.State.OPEN:
+		return "%s:%d" % [port_forward.external_ip, port_forward.port] if port_forward.port != PORT else port_forward.external_ip
+	return ""
 
 
 func _on_forward_changed() -> void:
@@ -427,44 +511,102 @@ func _on_forward_changed() -> void:
 	match port_forward.state:
 		PortForward.State.OPEN:
 			_message(Lang.t("Open to the internet. Invite code: %s (/invite copies it)") % invite_code())
-			log_event("Router ports open; invite code %s" % invite_code())
+			log_event("Router ports open (%s:%d); invite code %s" % [port_forward.external_ip, port_forward.port,
+				InviteCode.encode(port_forward.external_ip, port_forward.port)])
+			if dedicated:
+				log_event("Players connect to: %s" % internet_address())
 		PortForward.State.FAILED:
 			_message(Lang.t("Can't open the world to the internet: %s") % Lang.t(port_forward.error))
 			_message(Lang.t("Friends can still join over a VPN: Game Menu > Invite Friends"))
 			log_event("Can't open the router's ports: %s" % port_forward.error)
 
 
-## Connects to a host ("address", "address:port" or an invite code). The
-## game starts when the host answers (welcome).
-func join(address: String) -> String:
+## Connects to a host ("address", "address:port", a domain name or an
+## invite code). The game starts when the host answers (welcome). Returns
+## 0, or why it can't even try (a NetErrors code; also in last_code).
+## A name is looked up first (without waiting: _poll_resolve).
+func join(address: String) -> int:
 	leave()
 	password_wanted = false
+	_set_error(0)
 	if InviteCode.looks_like_code(address) and InviteCode.decode(address) == "":
-		return "This invite code has a typo"
-	var host_name := InviteCode.to_address(address)
-	var port := PORT
-	if host_name.contains(":"):
-		port = int(host_name.get_slice(":", 1))
-		host_name = host_name.get_slice(":", 0)
-	if host_name == "":
-		return "No address"
+		return _set_error(NetErrors.INVITE_TYPO)
+	var parts := ServerStatus.split_address(address)
+	var host_name: String = parts[0]
+	var port: int = parts[1]
+	if host_name == "" or port <= 0 or port > 65535:
+		return _set_error(NetErrors.NO_ADDRESS)
 	last_address = address.strip_edges()
 	save_config()
+	mode = Mode.CLIENT
+	if host_name.is_valid_ip_address():
+		return _connect(host_name, port)
+	_resolve_host = host_name
+	_resolve_port = port
+	_resolve_id = IP.resolve_hostname_queue_item(host_name, IP.TYPE_IPV4)
+	return 0
+
+
+## Client: the looked-up address of a join by name, when it's known.
+func _poll_resolve() -> void:
+	var status := IP.get_resolve_item_status(_resolve_id)
+	if status == IP.RESOLVER_STATUS_WAITING:
+		return
+	var ip := IP.get_resolve_item_address(_resolve_id) if status == IP.RESOLVER_STATUS_DONE else ""
+	IP.erase_resolve_item(_resolve_id)
+	_resolve_id = -1
+	if ip == "":
+		var host_name := _resolve_host
+		leave()
+		_set_error(NetErrors.CANT_RESOLVE, PackedStringArray([host_name]))
+		players_changed.emit()
+		return
+	if _connect(ip, _resolve_port) != 0:
+		leave()
+		players_changed.emit()
+
+
+func _connect(ip: String, port: int) -> int:
 	_peer = ENetMultiplayerPeer.new()
-	if _peer.create_client(host_name, port) != OK:
+	if _peer.create_client(ip, port) != OK:
 		_peer = null
-		return "Can't connect to %s" % address
+		mode = Mode.OFFLINE
+		return _set_error(NetErrors.CANT_CONNECT, PackedStringArray(["%s:%d" % [ip, port]]))
 	_peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
 	multiplayer.multiplayer_peer = _peer
 	mode = Mode.CLIENT
-	last_error = ""
-	return ""
+	_last_heard = _now()
+	return 0
+
+
+## Remembers why the connection ended (0: it didn't); returns the code.
+func _set_error(code: int, args: PackedStringArray = PackedStringArray()) -> int:
+	last_code = code
+	last_args = args
+	return code
+
+
+## The last error in the player's language with its code ("" if none).
+func error_text() -> String:
+	return NetErrors.text(last_code, last_args) if last_code != 0 else ""
+
+
+static func _now() -> float:
+	return Time.get_ticks_msec() / 1000.0
 
 
 ## Leaves the game or stops hosting.
 func leave() -> void:
 	if is_client():
 		send_player_state() # (the host keeps this player)
+	elif is_host() and _has_clients():
+		# Clients are told why (else they'd see "connection lost").
+		_refused.rpc(NetErrors.SERVER_CLOSED if dedicated else NetErrors.HOST_LEFT, PackedStringArray())
+	if _peer and _peer.get_connection_status() != MultiplayerPeer.CONNECTION_DISCONNECTED and _peer.host:
+		_peer.host.flush() # (what was just sent goes before the connection closes)
+	if _resolve_id >= 0:
+		IP.erase_resolve_item(_resolve_id)
+		_resolve_id = -1
 	if _peer:
 		_peer.close()
 	_peer = null
@@ -489,7 +631,7 @@ func leave() -> void:
 	_open_containers.clear()
 	_container_slots.clear()
 	for list: Dictionary in [_addresses, _tags, _waiting_hello, _nonces, _counters, _strikes, _dropping, _moves,
-			_modes, _ops, _active, _mode_told]:
+			_modes, _ops, _active, _mode_told, _hello_names, _heard, _warned]:
 		list.clear()
 	world_info.clear()
 	_lan_out = null
@@ -530,11 +672,11 @@ func _on_peer_connected(id: int) -> void:
 	var enet := _peer.get_peer(id)
 	var address := enet.get_remote_address() if enet else ""
 	if enet:
-		enet.set_timeout(0, 5000, PEER_TIMEOUT_MS) # a silent connection goes after 15 s
+		enet.set_timeout(PEER_TIMEOUT_LIMIT, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS)
 	var now := Time.get_ticks_msec() / 1000.0
+	_addresses[id] = address
 	if lists.is_ip_banned(address):
-		log_event("Refused %s: the address is banned" % address)
-		_drop(id, "You are banned from this server")
+		_drop(id, NetErrors.BANNED)
 		return
 	var tries: Array = _tries.get(address, []).filter(func(t: float) -> bool: return now - t < TRIES_SECONDS)
 	tries.append(now)
@@ -542,16 +684,13 @@ func _on_peer_connected(id: int) -> void:
 	if _tries.size() > 1000:
 		_tries.clear() # (many addresses: forgotten rather than kept forever)
 		_tries[address] = tries
-	var same_address := _addresses.values().count(address)
+	var same_address := _addresses.values().count(address) - 1 # (this one is in already)
 	if tries.size() > MAX_TRIES or same_address >= max_per_address:
-		log_event("Refused %s: too many connections" % address)
-		_drop(id, "Too many connections from your address")
+		_drop(id, NetErrors.TOO_MANY_CONNECTIONS)
 		return
 	if _waiting_hello.size() >= MAX_PENDING:
-		log_event("Refused %s: too many joins at once" % address)
-		_drop(id, "The server is busy, try again in a moment")
+		_drop(id, NetErrors.SERVER_BUSY)
 		return
-	_addresses[id] = address
 	_waiting_hello[id] = now + HELLO_SECONDS
 	_nonces[id] = Crypto.new().generate_random_bytes(16).hex_encode()
 	_challenge.rpc_id(id, _salt(), _nonces[id], password != "")
@@ -588,44 +727,58 @@ func _challenge(salt: String, nonce: String, needs_password: bool) -> void:
 		PlayerProfile.tag_for_server(salt), proof)
 
 
-## Host: tells a peer why and closes its connection a moment later (so the
-## reason arrives).
-func _drop(id: int, reason: String) -> void:
+## Host: tells a peer why (a NetErrors code and its arguments: the client
+## shows it in its own language) and closes its connection a moment later
+## (so the reason arrives). The log gets the code and the English text.
+func _drop(id: int, code: int, args: PackedStringArray = PackedStringArray()) -> void:
 	if _dropping.has(id):
 		return
 	_dropping[id] = true
-	_refused.rpc_id(id, reason)
+	_refused.rpc_id(id, code, args)
 	_waiting_hello.erase(id)
+	var address: String = _addresses.get(id, "?")
 	if players.has(id):
-		log_event("%s was kicked: %s" % [players[id].name, reason])
+		log_event("%s (%s) was kicked: %s" % [players[id].name, address, NetErrors.log_text(code, args)])
+	else:
+		var who: String = _hello_names.get(id, "")
+		log_event("Refused %s%s: %s" % [who + " " if who != "" else "", "(%s)" % address, NetErrors.log_text(code, args)])
 	get_tree().create_timer(0.5).timeout.connect(func() -> void:
 		if _peer and id in multiplayer.get_peers():
 			_peer.disconnect_peer(id))
 
 
 ## Host: whether a joined peer stays under a flood limit (`limit` in
-## `seconds`); more is refused (a strike), four times more is a kick.
+## `seconds`): a token bucket holding FLOOD_BURST times `limit`, so the
+## messages a lag spike held back and delivers at once pass. More is
+## refused (and logged once); refusing at twice the allowed rate for about
+## FLOOD_SECONDS is a kick.
 func _within(id: int, kind: String, limit: int, seconds: float) -> bool:
 	if not _joined(id):
 		return false # not introduced: ignored
-	var now := Time.get_ticks_msec() / 1000.0
+	var now := _now()
+	var rate := float(limit) / seconds
+	var capacity := float(limit) * FLOOD_BURST
 	var key := "%d/%s" % [id, kind]
-	var entry: Array = _counters.get(key, [now, 0])
-	if now - float(entry[0]) > seconds:
-		entry = [now, 0]
-	entry[1] = int(entry[1]) + 1
-	_counters[key] = entry
-	var count := int(entry[1])
-	if count > limit * 4:
-		_drop(id, "Kicked for spamming")
+	# [tokens, when last filled, refusals lately (fading over FLOOD_SECONDS)]
+	var bucket: Array = _counters.get(key, [capacity, now, 0.0])
+	var dt := maxf(now - float(bucket[1]), 0.0)
+	bucket[0] = minf(float(bucket[0]) + rate * dt, capacity)
+	bucket[1] = now
+	bucket[2] = float(bucket[2]) * exp(-dt / FLOOD_SECONDS)
+	_counters[key] = bucket
+	if float(bucket[0]) >= 1.0:
+		bucket[0] = float(bucket[0]) - 1.0
+		return true
+	var first := float(bucket[2]) < 1.0
+	bucket[2] = float(bucket[2]) + 1.0
+	if float(bucket[2]) > maxf(rate * FLOOD_SECONDS * 2.0, 20.0):
+		_drop(id, NetErrors.KICKED_SPAM)
 		return false
-	if count > limit:
-		if count == limit + 1:
-			_strike(id, "too many %s messages" % kind, 2)
-			if kind == "chat":
-				_command_output.rpc_id(id, Lang.t("You are sending messages too fast"), CommandSource.MessageKind.ERROR)
-		return false
-	return true
+	if first:
+		log_event("[flood] %s (%s): too many %s messages, refused" % [str(players.get(id, {}).get("name", "?")), _addresses.get(id, "?"), kind])
+		if kind == "chat":
+			_command_output.rpc_id(id, Lang.t("You are sending messages too fast"), CommandSource.MessageKind.ERROR)
+	return false
 
 
 ## Host: a peer that joined (introduced itself and was let in).
@@ -634,9 +787,11 @@ func _joined(id: int) -> bool:
 
 
 ## Host: something a client sent was refused (`why`, for the log). Strikes
-## add up (`weight` each); too many in STRIKE_SECONDS is a kick.
+## add up (`weight` each); too many in STRIKE_SECONDS is a kick. Weight 0:
+## what lag explains (out of reach of where the host last saw the player):
+## refused and logged (the first few), never a kick.
 func _strike(id: int, why: String, weight: int = 1) -> void:
-	var now := Time.get_ticks_msec() / 1000.0
+	var now := _now()
 	var list: Array = (_strikes.get(id, []) as Array).filter(func(entry: Array) -> bool: return now - float(entry[0]) < STRIKE_SECONDS)
 	list.append([now, weight])
 	_strikes[id] = list
@@ -646,7 +801,7 @@ func _strike(id: int, why: String, weight: int = 1) -> void:
 	if list.size() <= 10:
 		log_event("[security] %s (%s): %s" % [str(players.get(id, {}).get("name", "?")), _addresses.get(id, "?"), why])
 	if total > STRIKE_LIMIT:
-		_drop(id, "Kicked for sending bad data")
+		_drop(id, NetErrors.KICKED_BAD_DATA)
 
 
 func _on_peer_disconnected(id: int) -> void:
@@ -660,6 +815,9 @@ func _on_peer_disconnected(id: int) -> void:
 		if key.begins_with("%d/" % id):
 			_counters.erase(key)
 	_strikes.erase(id)
+	_hello_names.erase(id)
+	_heard.erase(id)
+	_warned.erase(id)
 	if is_host():
 		var world := _world()
 		if world:
@@ -691,21 +849,30 @@ func _on_peer_disconnected(id: int) -> void:
 
 
 func _on_connected() -> void:
-	pass # the host asks to introduce (_challenge)
+	# The host asks to introduce (_challenge). Its timeouts as the host's.
+	var host_peer := _peer.get_peer(1) if _peer else null
+	if host_peer:
+		host_peer.set_timeout(PEER_TIMEOUT_LIMIT, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS)
+	_last_heard = _now()
 
 
 func _on_connection_failed() -> void:
-	last_error = "Could not connect"
 	leave()
+	_set_error(NetErrors.CANT_REACH)
 	players_changed.emit()
 
 
+## The host went without saying why (a refusal says, _refused): the
+## connection broke. Timed out when nothing came for a while before.
 func _on_server_disconnected() -> void:
-	last_error = "The host left the game"
+	var silent := _now() - _last_heard
 	leave()
+	_set_error(NetErrors.TIMED_OUT if silent > 3.0 else NetErrors.CONNECTION_LOST)
 	var game := Game.find(get_tree())
 	if game:
+		show_disconnected = true
 		game.quit_to_title()
+	players_changed.emit()
 
 
 ## Client -> host: who is joining.
@@ -719,42 +886,39 @@ func _hello(joining_name: String, version: String, tag: String, proof: String) -
 	_waiting_hello.erase(id)
 	var address: String = _addresses.get(id, "?")
 	if joining_name.length() > 64 or version.length() > 32 or tag.length() > 64 or proof.length() > 64:
-		_drop(id, "Could not connect")
+		_drop(id, NetErrors.HANDSHAKE_FAILED)
 		return
+	_hello_names[id] = NetGuard.clean_text(joining_name, 16)
 	var game_version := str(ProjectSettings.get_setting("application/config/version", "dev"))
 	if version != game_version:
-		_drop(id, "The host plays version %s" % game_version)
+		_drop(id, NetErrors.VERSION_MISMATCH, PackedStringArray([game_version, NetGuard.clean_text(version, 32)]))
 		return
 	if tag.length() != 64 or not tag.is_valid_hex_number():
-		_drop(id, "Could not connect")
+		_drop(id, NetErrors.HANDSHAKE_FAILED)
 		return
 	if lists.is_banned(tag):
-		log_event("Refused %s (%s): banned" % [joining_name, address])
-		_drop(id, "You are banned from this server")
+		_drop(id, NetErrors.BANNED)
 		return
 	if password != "":
 		if proof == "":
-			_drop(id, PASSWORD_NEEDED)
+			_drop(id, NetErrors.PASSWORD_NEEDED)
 			return
 		if proof != password_proof(_salt(), str(_nonces.get(id, "")), password):
-			log_event("Refused %s (%s): wrong password" % [joining_name, address])
-			_drop(id, WRONG_PASSWORD)
+			_drop(id, NetErrors.WRONG_PASSWORD)
 			return
 	_nonces.erase(id)
 	if not NetGuard.valid_name(joining_name):
-		_drop(id, "Your name can only have 3-16 letters (A-Z), digits and _")
+		_drop(id, NetErrors.BAD_NAME)
 		return
 	if whitelist_on() and not lists.is_whitelisted(joining_name, tag) and not lists.is_op(joining_name, tag):
-		log_event("Refused %s (%s): not on the whitelist" % [joining_name, address])
-		_drop(id, "You are not white-listed on this server")
+		_drop(id, NetErrors.NOT_WHITELISTED)
 		return
 	if player_count() >= max_players:
-		log_event("Refused %s (%s): the server is full" % [joining_name, address])
-		_drop(id, "The server is full")
+		_drop(id, NetErrors.SERVER_FULL)
 		return
 	var world := _world()
 	if world == null or (not dedicated and _game_player() == null):
-		_drop(id, "The host is not in a world")
+		_drop(id, NetErrors.HOST_NOT_IN_WORLD)
 		return
 	_tags[id] = tag
 	var unique_name := joining_name
@@ -796,15 +960,18 @@ func _name_taken(wanted: String) -> bool:
 	return false
 
 
+## Host -> client: why it can't join or has to go (a NetErrors code and
+## its arguments; the client shows them in its language).
 @rpc("authority", "call_remote", "reliable")
-func _refused(reason: String) -> void:
-	last_error = reason.left(200)
-	password_wanted = reason == PASSWORD_NEEDED or reason == WRONG_PASSWORD
-	var in_game := Game.find(get_tree()) != null
+func _refused(code: int, args: PackedStringArray) -> void:
+	_set_error(code if NetErrors.MESSAGES.has(code) else NetErrors.CONNECTION_LOST, NetErrors.clean_args(args))
+	password_wanted = NetErrors.wants_password(code)
+	var game := Game.find(get_tree())
 	leave()
+	if game:
+		show_disconnected = true # kicked, banned or the server stopped while playing
+		game.quit_to_title()
 	players_changed.emit()
-	if in_game:
-		Game.find(get_tree()).quit_to_title() # kicked or banned while playing
 
 
 ## Host -> client: the world to play; the client loads it (Game).
@@ -833,6 +1000,7 @@ func _welcome(info: Dictionary) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _send_players(all: Dictionary) -> void:
+	_last_heard = _now()
 	players = all
 	# Players gone (the host tells: clients don't see each other's connections).
 	for id: int in avatars.keys():
@@ -923,12 +1091,15 @@ func _process(delta: float) -> void:
 	if is_host():
 		for id: int in _waiting_hello.keys():
 			if now > float(_waiting_hello[id]):
-				_drop(id, "Could not connect") # never introduced itself
+				_drop(id, NetErrors.HANDSHAKE_FAILED) # never introduced itself
 		_second_timer -= delta
 		if _second_timer <= 0.0:
 			_second_timer = 1.0
 			_check_idle(now)
-	if not is_online() or _world() == null:
+			_check_connections(now)
+	if _resolve_id >= 0:
+		_poll_resolve()
+	if not is_online() or _peer == null or _world() == null:
 		return
 	_state_timer -= delta
 	if _state_timer <= 0.0:
@@ -967,7 +1138,55 @@ func _check_idle(now: float) -> void:
 		return
 	for id: int in _clients():
 		if now - float(_active.get(id, now)) > idle_minutes * 60.0:
-			_drop(id, "You have been idle for too long")
+			_drop(id, NetErrors.KICKED_IDLE)
+
+
+## Host: a client that went quiet (or loses many packets) is told its
+## connection is unstable (it arrives when the connection is back) and the
+## log says so; ENet's own timeout (PEER_TIMEOUT_MAX_MS) ends it if it
+## stays gone. Lag is never a kick.
+func _check_connections(now: float) -> void:
+	for id: int in _clients():
+		if not _heard.has(id) or now - float(_warned.get(id, -WARN_SECONDS)) < WARN_SECONDS:
+			continue
+		var silent := now - float(_heard[id])
+		var peer := _peer.get_peer(id) if _peer else null
+		var loss := peer.get_statistic(ENetPacketPeer.PEER_PACKET_LOSS) / float(ENetPacketPeer.PACKET_LOSS_SCALE) if peer else 0.0
+		if silent < CLIENT_SILENT_SECONDS and loss < CLIENT_LOSS:
+			continue
+		_warned[id] = now
+		log_event("[net] %s: connection problems (%s)" % [players[id].name,
+			"nothing for %.0f s" % silent if silent >= CLIENT_SILENT_SECONDS else "%d%% packets lost" % roundi(loss * 100.0)])
+		_connection_warning.rpc_id(id)
+
+
+## Host -> client: the host hears it badly (ConnectionIndicator shows it).
+@rpc("authority", "call_remote", "reliable")
+func _connection_warning() -> void:
+	_message(Lang.t("Your connection is unstable"))
+	warned_at = _now()
+
+
+## Client: when the host last said the connection is unstable (s).
+var warned_at := -100.0
+
+
+## Client: how the connection to the host is doing: the round trip (ms,
+## -1 unknown) and how long nothing came from the host (s).
+func connection_quality() -> Dictionary:
+	if not is_client() or _peer == null or _peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
+		return {"ping": -1, "silent": 0.0}
+	var host_peer := _peer.get_peer(1)
+	var ping := int(host_peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME)) if host_peer else -1
+	return {"ping": ping, "silent": _now() - _last_heard}
+
+
+## Client: whether to show the connection warning.
+func connection_bad() -> bool:
+	if _world() == null:
+		return false
+	var quality := connection_quality()
+	return float(quality.silent) > STALL_SECONDS or int(quality.ping) > SLOW_PING_MS or _now() - warned_at < 5.0
 
 
 ## A dedicated server: when every player sleeps for SLEEP_SECONDS, the night
@@ -1157,7 +1376,7 @@ func _edit_allowed(peer: int, pos: Vector3i, protected: bool) -> bool:
 		return false
 	var reach := REACH_CREATIVE if is_creative(peer) else REACH_SURVIVAL
 	if NetGuard.distance_to_block(at + Vector3(0, Player.EYE_HEIGHT, 0), pos) > reach:
-		_strike(peer, "out of reach %s" % pos)
+		_strike(peer, "out of reach %s" % pos, 0)
 		return false
 	if protected and _spawn_protected(peer, pos):
 		_command_output.rpc_id(peer, Lang.t("The spawn is protected: only ops can change it"), CommandSource.MessageKind.ERROR)
@@ -1200,7 +1419,7 @@ func _client_set_block(x: int, y: int, z: int, id: int) -> void:
 		_restore_block(peer, pos)
 		return
 	if not is_creative(peer) and NetGuard.survival_forbidden(id):
-		_strike(peer, "placing %s in survival" % Blocks.get_type(id).name, 5)
+		_strike(peer, "placing %s in survival" % Blocks.get_type(id).name, 2) # (or its game mode just changed)
 		_restore_block(peer, pos)
 		return
 	_active[peer] = Time.get_ticks_msec() / 1000.0
@@ -1222,7 +1441,7 @@ func _client_destroy(x: int, y: int, z: int, drop: bool, can_harvest: bool) -> v
 		return
 	var creative := is_creative(peer)
 	if not creative and NetGuard.unbreakable(id):
-		_strike(peer, "breaking %s in survival" % Blocks.get_type(id).name, 5)
+		_strike(peer, "breaking %s in survival" % Blocks.get_type(id).name, 2)
 		_restore_block(peer, pos)
 		return
 	# What drops is the host's call: nothing in creative; the right tool by
@@ -1281,6 +1500,8 @@ func _send_own_state() -> void:
 func _player_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	var world := _world()
+	if _joined(id):
+		_heard[id] = _now()
 	if world == null or not _within(id, "state", STATE_LIMIT, 1.0):
 		return
 	if not NetGuard.in_world(at) or not is_finite(yaw) or not is_finite(pitch):
@@ -1305,11 +1526,15 @@ func _player_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int,
 	if verdict == NetGuard.Mover.IGNORE:
 		return
 	if verdict == NetGuard.Mover.REJECT:
+		# Sent back to where it was last fine (lag that outran even the
+		# allowance looks the same); only a long run of large ones kicks.
+		var excess := mover.excess
 		if mover.violated(now):
-			_drop(id, "Kicked for moving too fast")
+			_drop(id, NetErrors.KICKED_MOVING)
 			return
-		if mover.violations.size() <= 3 or mover.violations.size() % 10 == 0:
-			log_event("[security] %s moved too fast (%.1f blocks), sent back" % [players[id].name, before.distance_to(at)])
+		var count := mover.violations.size()
+		if count <= 3 or count % 10 == 0:
+			log_event("[movement] %s moved %.1f blocks too far (%d lately), sent back" % [players[id].name, excess, count])
 		_correct_position.rpc_id(id, mover.position)
 		return
 	# The game mode is the host's: a client saying otherwise is told again.
@@ -1350,6 +1575,7 @@ func _respawn_ok(peer: int, at: Vector3) -> bool:
 ## Host -> client: the other player `id` (or the host's own, 1) moved.
 @rpc("authority", "call_remote", "unreliable_ordered")
 func _peer_state(id: int, at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int) -> void:
+	_last_heard = _now()
 	if id == multiplayer.get_unique_id() or not players.has(id):
 		return
 	_show_state(id, at, yaw, pitch, flags, held, swings)
@@ -1564,6 +1790,7 @@ func _send_world_sync() -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _world_sync(game_time: int, day_time: float, raining: bool, rain: float, thundering: bool, thunder: float) -> void:
+	_last_heard = _now()
 	var world := _world()
 	if world == null:
 		return
@@ -1630,7 +1857,10 @@ func kick(player: String, reason: String = "") -> String:
 	if id == 0:
 		return ""
 	var who: String = players[id].name
-	_drop(id, "Kicked by an operator" + (": " + NetGuard.clean_text(reason, 100) if reason.strip_edges() != "" else ""))
+	if reason.strip_edges() != "":
+		_drop(id, NetErrors.KICKED_REASON, PackedStringArray([NetGuard.clean_text(reason, 100)]))
+	else:
+		_drop(id, NetErrors.KICKED)
 	return who
 
 
@@ -1641,7 +1871,7 @@ func ban(player: String) -> String:
 		return ""
 	var who: String = players[id].name
 	lists.ban(_tags[id], who)
-	_drop(id, "You are banned from this server")
+	_drop(id, NetErrors.BANNED)
 	return who
 
 
@@ -1662,7 +1892,7 @@ func ban_ip(target: String) -> String:
 	lists.ban_ip(address, players[id].name if id != 0 else "")
 	for peer: int in _addresses.keys():
 		if _addresses[peer] == address:
-			_drop(peer, "You are banned from this server")
+			_drop(peer, NetErrors.BANNED)
 	return address
 
 
@@ -1730,15 +1960,15 @@ func _save_request() -> void:
 
 
 ## A dedicated server stopping: everyone's player is asked for, then they
-## are sent away (`reason`).
-func shutdown_server(reason: String) -> void:
+## are sent away (`code`: NetErrors).
+func shutdown_server(code: int) -> void:
 	if not is_host():
 		return
 	if _has_clients():
 		_save_request.rpc()
 		await get_tree().create_timer(1.0).timeout
 		for peer in _clients():
-			_drop(peer, reason)
+			_drop(peer, code)
 		await get_tree().create_timer(0.7).timeout
 
 
@@ -1813,6 +2043,7 @@ func _send_snapshots() -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _snapshot(entries: Array, gone: PackedInt32Array, items: Array, items_gone: PackedInt32Array) -> void:
+	_last_heard = _now()
 	var world := _world()
 	if world == null:
 		return
@@ -1871,7 +2102,7 @@ func _client_spawn(state: Dictionary, extra: Dictionary) -> void:
 	var at: Vector3 = clean.get("position", Vector3.INF)
 	var eye := _position_of(peer) + Vector3(0, Player.EYE_HEIGHT, 0)
 	if not NetGuard.in_world(at) or not eye.is_finite() or at.distance_to(eye) > (REACH_CREATIVE if is_creative(peer) else REACH_SURVIVAL) + 2.0:
-		_strike(peer, "a %s out of reach" % type, 2)
+		_strike(peer, "a %s out of reach" % type, 0)
 		entity.free()
 		return
 	if type == "tnt":
@@ -1913,7 +2144,7 @@ func _client_attack(id: int, amount: int) -> void:
 	if entity == null or avatar == null or avatar.dead:
 		return
 	if entity.center().distance_to(avatar.target_position + Vector3(0, Player.EYE_HEIGHT, 0)) > REACH_SURVIVAL + 1.0:
-		_strike(peer, "hit out of reach")
+		_strike(peer, "hit out of reach", 0)
 		return
 	_active[peer] = Time.get_ticks_msec() / 1000.0
 	if entity.damage(clampi(amount, 0, _max_hit(peer)), avatar.target_position) and entity is Mob:
@@ -2129,7 +2360,7 @@ func _client_hurt(target: int, amount: int, knock: bool) -> void:
 		return
 	var from := attacker.target_position
 	if (at + Vector3(0, 0.9, 0)).distance_to(from + Vector3(0, Player.EYE_HEIGHT, 0)) > REACH_SURVIVAL + 1.0:
-		_strike(peer, "hit a player out of reach")
+		_strike(peer, "hit a player out of reach", 0)
 		return
 	_active[peer] = Time.get_ticks_msec() / 1000.0
 	hurt_peer(target, clampi(amount, 0, _max_hit(peer)), from if knock else Vector3.INF)
@@ -2164,7 +2395,7 @@ func _client_item(id: int, count: int, position: Vector3, velocity: Vector3, dam
 		_strike(peer, "dropping an impossible item (%d x%d)" % [id, count], 3)
 		return
 	if not is_creative(peer) and id < Blocks.count() and NetGuard.survival_forbidden(id):
-		_strike(peer, "dropping %s in survival" % Blocks.get_type(id).name, 5)
+		_strike(peer, "dropping %s in survival" % Blocks.get_type(id).name, 2)
 		return
 	var eye := _position_of(peer) + Vector3(0, Player.EYE_HEIGHT, 0)
 	if not eye.is_finite():
@@ -2536,7 +2767,7 @@ func _client_container_slots(pos: Variant, changes: PackedInt32Array) -> void:
 			_strike(peer, "impossible container slot (%d: %d x%d)" % [slot, id, count], 3)
 			continue
 		if not creative and id < Blocks.count() and NetGuard.survival_forbidden(id):
-			_strike(peer, "putting %s in a container in survival" % Blocks.get_type(id).name, 5)
+			_strike(peer, "putting %s in a container in survival" % Blocks.get_type(id).name, 2)
 			stale[slot] = true
 			continue
 		var k := slot * 3

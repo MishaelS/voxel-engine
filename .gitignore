@@ -38,8 +38,9 @@ desktop.ini
 *.log
 
 ROADMAP.md
-# --- Native code (native/build.sh) ---
+# --- Native code (tools/build.sh; build-docker-*: its Docker builds) ---
 /native/build/
+/native/build-docker-*/
 
 # --- Dedicated server (made when it runs in the project folder) ---
 server.properties
