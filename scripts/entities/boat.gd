@@ -6,7 +6,7 @@ extends Entity
 ## - solid like the game's: the player and creatures bump into it and can
 ##   stand on it, boats bump into each other (EntityPhysics.solid_entities);
 ## - right-click gets in; walking forward rows it the way the player looks:
-##   slower than Beta's (about 4.5 blocks a second), picking up speed
+##   a little slower than Beta's (about 6 blocks a second), picking up speed
 ##   smoothly and gliding on when the rowing stops, slowing down little by
 ##   little (water drag);
 ## - pushed aside by the player and creatures pressing against it (the
@@ -16,10 +16,10 @@ extends Entity
 ##   sticks; hits break it whole (it drops itself).
 
 ## Speed added per tick while rowing and the share kept per tick on water:
-## together a smooth rise to about 0.22 blocks a tick and a long glide.
-const ROW_PUSH := 0.007
+## together a smooth rise to about 0.31 blocks a tick and a long glide.
+const ROW_PUSH := 0.0095
 const WATER_DRAG := 0.97
-const MAX_SPEED := 0.25
+const MAX_SPEED := 0.35
 const CRASH_SPEED := 0.2
 
 var _model := {}

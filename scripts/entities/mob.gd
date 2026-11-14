@@ -82,6 +82,7 @@ var _wander := Vector3.INF
 var _panic := 0
 var _attack_cooldown := 0
 var _fuse := 0
+var _prev_fuse := 0 # (last tick's: drawn in between)
 var _look_at := Vector3.INF
 var _look_ticks := 0
 ## Idle look-around: where the head turns (yaw, pitch) and when next.
@@ -206,6 +207,7 @@ func _apply_size() -> void:
 
 func _ai_tick() -> void:
 	_prev_yaw = _yaw
+	_prev_fuse = _fuse
 	_path_age += 1
 	_attack_cooldown = maxi(_attack_cooldown - 1, 0)
 	_look_ticks -= 1
@@ -940,9 +942,18 @@ func _process(delta: float) -> void:
 			* Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * size), -middle)
 	var brightness := world.brightness_at(center()) if world else 1.0
 	var flash := 0.0
-	if mob_type == "creeper" and _fuse > 0:
-		flash = 1.0 if int(_fuse / 2.0) % 2 == 0 else 0.0
-		_model.root.scale = Vector3.ONE * float(MobModels.model(mob_type).get("scale", 1.0)) / 16.0 * (1.0 + _fuse / float(CREEPER_FUSE) * 0.2)
+	if mob_type == "creeper":
+		# Beta's RenderCreeper: the fuse (0..1, between ticks) swells it -
+		# hardly at first, then fast (to the 4th power), wider (+40%) than
+		# taller (+10%), trembling a little - and lays a faint white over
+		# its skin (up to 20%) that blinks every tenth of the fuse.
+		var fuse := clampf(lerpf(_prev_fuse, _fuse, alpha) / (CREEPER_FUSE - 2), 0.0, 1.0)
+		var tremble := 1.0 + sin(fuse * 100.0) * fuse * 0.01
+		var swell := fuse * fuse * fuse * fuse
+		var base := float(MobModels.model(mob_type).get("scale", 1.0)) / 16.0
+		_model.root.scale = Vector3((1.0 + swell * 0.4) * tremble, (1.0 + swell * 0.1) / tremble, (1.0 + swell * 0.4) * tremble) * base
+		if fuse > 0.0 and int(fuse * 10.0) % 2 == 1:
+			flash = fuse * 0.2
 	if _held:
 		FallingBlocks.light(_held, brightness)
 	for mesh: MeshInstance3D in _model.meshes:

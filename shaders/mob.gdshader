@@ -7,7 +7,7 @@ uniform sampler2D skin : source_color, filter_nearest, repeat_disable;
 instance uniform float brightness = 1.0;
 instance uniform float hurt = 0.0;
 instance uniform vec4 tint : source_color = vec4(1.0);
-// Creeper about to blow: flashing white.
+// Creeper about to blow: a faint blinking white (0..0.2, Beta's).
 instance uniform float flash = 0.0;
 
 varying flat float shade;
@@ -22,7 +22,9 @@ void fragment() {
 	vec3 color = texel.rgb * tint.rgb * shade * brightness;
 	// Hurt (and dying): Beta's red overlay, (brightness, 0, 0) at 40%.
 	color = mix(color, vec3(brightness * shade, 0.0, 0.0), hurt * 0.4);
-	color = mix(color, vec3(1.0), flash * 0.7);
+	// (mixed in sRGB like Beta's GL overlay: in linear light 20% white
+	// looked like half)
+	color = pow(mix(pow(max(color, vec3(0.0)), vec3(1.0 / 2.2)), vec3(1.0), flash), vec3(2.2));
 	ALBEDO = color;
 	ALPHA = texel.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.5;

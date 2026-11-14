@@ -13,6 +13,11 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- The creeper about to explode like Beta's RenderCreeper: it swells hardly at first and fast at the end (+40% wide, +10% tall, trembling) and a faint white (at most 20%, mixed like Beta's) blinks over its skin every tenth of the fuse, instead of turning white.
+- The boat's texture in the colors of oak planks.
+- Boats row faster: up to about 6 blocks a second (was 4.5).
+
 ## [0.0.13] - 2026-11-14
 
 ### Added
