@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.19] - 2026-11-14
+
 ### Added
 - The surf by the sea (ambient/ocean, looped): twice a second the open water at sea level within 24 blocks is counted; under the open sky and near the sea's height the waves roll in, louder the more sea there is, and fade out in caves, deep down and high up (muffled under water like the other sounds).
 
@@ -627,7 +629,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.18...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.19...HEAD
+[0.0.19]: https://github.com/MishaelS/voxel-engine/compare/v0.0.18...v0.0.19
 [0.0.18]: https://github.com/MishaelS/voxel-engine/compare/v0.0.17...v0.0.18
 [0.0.17]: https://github.com/MishaelS/voxel-engine/compare/v0.0.16...v0.0.17
 [0.0.16]: https://github.com/MishaelS/voxel-engine/compare/v0.0.15...v0.0.16
