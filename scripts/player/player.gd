@@ -966,6 +966,37 @@ const ACOUSTIC_DIRECTIONS: Array[Vector3] = [Vector3.UP, Vector3.DOWN, Vector3.L
 	Vector3.FORWARD, Vector3.BACK, Vector3(1, 1, 1), Vector3(-1, 1, 1), Vector3(1, 1, -1), Vector3(-1, 1, -1),
 	Vector3(1, -1, 1), Vector3(-1, -1, 1), Vector3(1, -1, -1), Vector3(-1, -1, -1)]
 var _acoustics_timer := 0.0
+var _surf_turn := false
+## The surf (Sounds.set_surf): open water at sea level within SURF_RANGE
+## (sampled every SURF_STEP blocks), louder the more of it there is, with
+## the sky above the player and near the sea's height (not in a cave, deep
+## down or high on a mountain).
+const SURF_RANGE := 24
+const SURF_STEP := 4
+
+
+func _update_surf() -> void:
+	var sea := world.sea_level
+	if sea <= 0 or dead:
+		Sounds.set_surf(0.0)
+		return
+	var eye := eye_position()
+	var near_sea := clampf(1.0 - absf(eye.y - sea) / 24.0, 0.0, 1.0)
+	var sky := world.get_light(Vector3i(eye.floor())) / 15.0
+	if near_sea <= 0.0 or sky <= 0.0:
+		Sounds.set_surf(0.0)
+		return
+	var water := 0
+	var total := 0
+	for dx in range(-SURF_RANGE, SURF_RANGE + 1, SURF_STEP):
+		for dz in range(-SURF_RANGE, SURF_RANGE + 1, SURF_STEP):
+			total += 1
+			var cell := Vector3i(floori(eye.x) + dx, sea - 1, floori(eye.z) + dz)
+			var id := world.get_block(cell)
+			if Blocks.liquid_table[id] == 1 and Blocks.family_of(id) == "water" \
+					and world.get_block(cell + Vector3i.UP) == Blocks.AIR:
+				water += 1
+	Sounds.set_surf(clampf(water / float(total) * 2.5, 0.0, 1.0) * near_sea * sky)
 ## How much of the sound a block's surface throws back (by its sound
 ## material; wooden blocks that sound like stone count as wood).
 const REFLECTION := {"stone": 1.0, "glass": 0.95, "wood": 0.6, "gravel": 0.55, "sand": 0.5, "grass": 0.45,
@@ -989,6 +1020,9 @@ static func reflection(id: int) -> float:
 
 
 func _update_acoustics() -> void:
+	_surf_turn = not _surf_turn
+	if _surf_turn:
+		_update_surf()
 	if eyes_in_water() or dead or not Settings.get_value("cave_echo"):
 		Sounds.set_space(0.0, 0.3)
 		return

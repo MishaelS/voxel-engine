@@ -13,6 +13,12 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- The surf by the sea (ambient/ocean, looped): twice a second the open water at sea level within 24 blocks is counted; under the open sky and near the sea's height the waves roll in, louder the more sea there is, and fade out in caves, deep down and high up (muffled under water like the other sounds).
+
+### Changed
+- Real sounds for falling (damage/fallbig, two variants, and damage/fallsmall) and flint and steel (fire/ignite) instead of the silent placeholders, and the old ones for the player getting hurt (the classic "oof"), the bow, explosions, lava and splashes; damage/hurtflesh added for later. The list of missing sounds is gone: none are missing.
+
 ## [0.0.18] - 2026-11-14
 
 ### Added

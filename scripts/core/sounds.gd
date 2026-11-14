@@ -15,6 +15,8 @@ extends Node
 ##   and hollower the bigger the room, duller where the walls soak sound up
 ##   (wood, earth, wool) than where they throw it back (stone, glass); the
 ##   music stays dry;
+## - by the sea the surf (ambient/ocean, looped) rolls in: set_surf(), from
+##   the player twice a second, by how much open sea is around;
 ## - every menu button clicks;
 ## - music: a track from assets/music now and then (every 10-20 minutes,
 ##   like the game), one for the time of day (MUSIC_TIMES: at dawn, by day,
@@ -77,6 +79,13 @@ var _room := 0.3
 var _space_target := 0.0
 var _room_target := 0.3
 var _space_until := 0
+## The surf: a looped 2D sound on the Sound bus (muffled under water too),
+## its volume eased toward the target.
+const SURF_VOLUME := 0.5
+var _surf: AudioStreamPlayer
+var _surf_level := 0.0
+var _surf_target := 0.0
+var _surf_until := 0
 var _absorb := 0.0 # (0 hard walls .. 1 soft ones)
 var _absorb_target := 0.0
 
@@ -118,6 +127,9 @@ func _ready() -> void:
 		player.bus = "Sound"
 		add_child(player)
 		_players_2d.append(player)
+	_surf = AudioStreamPlayer.new()
+	_surf.bus = "Sound"
+	add_child(_surf)
 	_music = AudioStreamPlayer.new()
 	_music.bus = "Music"
 	add_child(_music)
@@ -230,6 +242,34 @@ func _distance_db(index: int) -> float:
 	return linear_to_db(maxf(gain, 0.0001))
 
 
+## How much sea is around (0..1); to be called again within 1.5 s, else
+## the surf fades out (leaving the world).
+func set_surf(amount: float) -> void:
+	_surf_target = clampf(amount, 0.0, 1.0)
+	_surf_until = Time.get_ticks_msec() + 1500
+
+
+func _update_surf(delta: float) -> void:
+	var target := _surf_target if Time.get_ticks_msec() < _surf_until else 0.0
+	_surf_level = move_toward(_surf_level, target, delta * 0.4) # (comes and goes over a few seconds)
+	if _surf_level <= 0.001:
+		if _surf.playing:
+			_surf.stop()
+		return
+	if not _surf.playing:
+		var variants: Array = _groups.get("ambient/ocean", [])
+		if variants.is_empty():
+			return
+		var stream := (variants[randi() % variants.size()] as AudioStream).duplicate()
+		if stream is AudioStreamOggVorbis:
+			(stream as AudioStreamOggVorbis).loop = true
+		elif stream is AudioStreamMP3:
+			(stream as AudioStreamMP3).loop = true
+		_surf.stream = stream
+		_surf.play(randf() * stream.get_length()) # (not always from the start)
+	_surf.volume_db = linear_to_db(_surf_level * SURF_VOLUME)
+
+
 func _update_voices() -> void:
 	for i in _players_3d.size():
 		if _players_3d[i].playing:
@@ -238,6 +278,7 @@ func _update_voices() -> void:
 
 func _process(delta: float) -> void:
 	_update_voices()
+	_update_surf(delta)
 	var target := 1.0 if Time.get_ticks_msec() < _underwater_until else 0.0
 	if not is_equal_approx(_muffle, target):
 		_set_muffle(move_toward(_muffle, target, delta * 4.0)) # (a quarter second in or out)
