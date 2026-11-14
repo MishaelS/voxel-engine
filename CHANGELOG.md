@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.18] - 2026-11-14
+
 ### Added
 - Creatures make footstep sounds like Beta's (a step of the block underfoot every block walked, snow on a snow layer), and every creature and the player thud when a fall hurts (damage/fallbig above 4, damage/fallsmall).
 - Options -> Audio: Echo in Caves (on by default); off, no rays are cast and nothing echoes.
@@ -619,7 +621,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.17...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.18...HEAD
+[0.0.18]: https://github.com/MishaelS/voxel-engine/compare/v0.0.17...v0.0.18
 [0.0.17]: https://github.com/MishaelS/voxel-engine/compare/v0.0.16...v0.0.17
 [0.0.16]: https://github.com/MishaelS/voxel-engine/compare/v0.0.15...v0.0.16
 [0.0.15]: https://github.com/MishaelS/voxel-engine/compare/v0.0.14...v0.0.15
