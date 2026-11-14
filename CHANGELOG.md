@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.22] - 2026-11-14
+
 ### Added
 - A dedicated server: `tools/run_server.sh` (or `godot --headless --path . -- --server`) runs a world without a local player for many players, set up in server.properties (port, world, seed, type, game mode, difficulty, max players, MOTD, password, whitelist, view distance, spawn protection, idle timeout, PvP, autosave...); commands typed in the console, logs in logs/latest.log, /stop saves and exits. How to deploy: SERVER.md.
 - Server password (sent only as a one-time hash), whitelist, bans by IP as well as by computer, operators (/op, /deop) instead of one cheats switch, /whitelist, /ban-ip, /pardon-ip, /save-all, /stop, /kick with a reason, idle kick, limits on waiting and per-address connections.
@@ -664,7 +666,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.21...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.22...HEAD
+[0.0.22]: https://github.com/MishaelS/voxel-engine/compare/v0.0.21...v0.0.22
 [0.0.21]: https://github.com/MishaelS/voxel-engine/compare/v0.0.20...v0.0.21
 [0.0.20]: https://github.com/MishaelS/voxel-engine/compare/v0.0.19...v0.0.20
 [0.0.19]: https://github.com/MishaelS/voxel-engine/compare/v0.0.18...v0.0.19
