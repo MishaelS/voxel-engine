@@ -75,9 +75,7 @@ func _ready() -> void:
 		player.inventory.changed.connect(_refresh)
 		player.game_mode_changed.connect(func(_mode: Player.GameMode) -> void: _refresh())
 		player.status_message.connect(show_status)
-	Settings.changed.connect(func(key: String, _value: Variant) -> void:
-		if key == "gui_scale":
-			_refresh.call_deferred())
+	Settings.gui_rescaled.connect(func(_factor: float) -> void: _refresh.call_deferred())
 	_refresh()
 
 

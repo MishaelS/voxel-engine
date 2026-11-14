@@ -137,10 +137,13 @@ func _sheet(mesh: ImmediateMesh, x: int, z: int, bottom: float, top: float, eye:
 
 static func world_tick(world: VoxelWorld) -> void:
 	var player := world.player as Player
-	if player == null:
-		return
+	# Around every player (a dedicated server has none of its own).
+	for at in world.player_positions(false):
+		_world_tick_at(world, Vector3i(at.floor()), player != null and at == player.global_position)
+
+
+static func _world_tick_at(world: VoxelWorld, center: Vector3i, own: bool) -> void:
 	var weather := world.weather
-	var center := Vector3i(player.global_position.floor())
 	# Snow piles up and water freezes in the cold biomes.
 	for i in SURFACE_TRIES:
 		var x := center.x + randi_range(-64, 64)
@@ -158,7 +161,8 @@ static func world_tick(world: VoxelWorld) -> void:
 	if weather.rain_strength <= 0.0:
 		return
 	# Splashes and the sound of rain where it lands near the player.
-	_rain_effects(world, center, weather.rain_strength)
+	if own:
+		_rain_effects(world, center, weather.rain_strength)
 	# Lightning in a storm.
 	if weather.is_storming():
 		var columns := 128 * 128 / 16

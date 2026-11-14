@@ -359,7 +359,7 @@ func _player():
 
 ## Every player in the world (the local one, the network game's others).
 func _players() -> Array:
-	var result := [world.player]
+	var result := [world.player] if world.player else []
 	if Net.is_host():
 		for avatar: RemotePlayer in Net.avatars.values():
 			if is_instance_valid(avatar):

@@ -300,6 +300,13 @@ static func _something_on(world: VoxelWorld, pos: Vector3i, items_count: bool) -
 		var body := AABB(feet - Vector3(Player.HALF_WIDTH, 0, Player.HALF_WIDTH), Vector3(Player.HALF_WIDTH * 2, Player.HEIGHT, Player.HALF_WIDTH * 2))
 		if body.intersects(box):
 			return true
+	if Net.is_host(): # the network game's other players step on it too
+		for avatar: RemotePlayer in Net.avatars.values():
+			if is_instance_valid(avatar) and not avatar.dead:
+				var feet := avatar.target_position
+				var body := AABB(feet - Vector3(Player.HALF_WIDTH, 0, Player.HALF_WIDTH), Vector3(Player.HALF_WIDTH * 2, Player.HEIGHT, Player.HALF_WIDTH * 2))
+				if body.intersects(box):
+					return true
 	for entity in world.entities.all():
 		if entity is Mob and not entity.is_dead() and entity.hit_box().intersects(box):
 			return true

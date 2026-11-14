@@ -108,8 +108,14 @@ var remote := false
 var _applying_network := false
 var _remote_waiting := {} # columns asked from the host
 var _remote_centers: Array[Vector2i] = []
-## Columns kept loaded around the other players (host).
-const REMOTE_RADIUS := 4
+## Columns kept loaded around the other players (host; a dedicated
+## server's simulation-distance).
+var remote_radius := 4
+## A dedicated server (Net.dedicated): no meshes are built (nobody looks),
+## and with no player of its own the loaded area is around `stream_center`
+## (the spawn) besides the players'.
+var no_meshes := false
+var stream_center := Vector3.INF
 
 var _chunks := {}          # Vector3i -> ChunkData
 var _columns := {}         # Vector2i -> Array[ChunkData]: generated columns, bottom to top
@@ -286,6 +292,10 @@ func _ready() -> void:
 	ChunkMesher.prepare_native()
 	save = WorldSave.current
 	remote = Net.is_client()
+	no_meshes = Net.dedicated
+	if Net.dedicated:
+		remote_radius = Net.simulation_distance
+		render_distance = Net.spawn_radius
 	if save:
 		world_seed = save.world_seed
 		generator = save.generator as Generator
@@ -353,11 +363,14 @@ func _process(delta: float) -> void:
 	_start_light_jobs()
 	var t3 := Time.get_ticks_usec()
 	_run_light_spread(LIGHT_SPREAD_FRAME_US)
-	_finish_mesh_jobs()
+	if not no_meshes:
+		_finish_mesh_jobs()
 	var t3b := Time.get_ticks_usec()
-	_start_mesh_jobs()
+	if not no_meshes:
+		_start_mesh_jobs()
 	var t4 := Time.get_ticks_usec()
-	_update_culling(delta)
+	if not no_meshes:
+		_update_culling(delta)
 	var t5 := Time.get_ticks_usec()
 	frame_times = {"stream": t1 - t0, "generation": t2 - t1, "light": t3 - t2, "mesh": t4 - t3, "mesh_upload": t3b - t3, "mesh_queue": _queue_us, "cull": t5 - t4}
 
@@ -444,16 +457,21 @@ func generate() -> void:
 		else:
 			player.global_position = find_spawn()
 			if save and not remote and save.state.is_empty():
-				_first_start()
+				_first_start(player.global_position)
+	elif no_meshes and save:
+		# A dedicated server: the spawn area stays loaded.
+		stream_center = find_spawn()
+		if save.state.is_empty():
+			_first_start(stream_center)
 
 
 ## A new world's first start: the bonus chest by the spawn, the debug
 ## world's creatures.
-func _first_start() -> void:
+func _first_start(spawn: Vector3) -> void:
 	if generator == Generator.DEBUG:
 		place_debug_mobs()
 	elif save.bonus_chest:
-		place_bonus_chest(Vector3i(player.global_position.floor()))
+		place_bonus_chest(Vector3i(spawn.floor()))
 
 
 ## The bonus chest like the game's (since 1.3): on the ground a few blocks
@@ -641,7 +659,7 @@ func _wait_for_jobs() -> void:
 # --- Streaming -----------------------------------------------------------------------
 
 func _player_column_now() -> Vector2i:
-	var position := player.global_position if player else Vector3.ZERO
+	var position := player.global_position if player else (stream_center if stream_center != Vector3.INF else Vector3.ZERO)
 	return Vector2i(floori(position.x / ChunkData.SIZE), floori(position.z / ChunkData.SIZE))
 
 
@@ -665,6 +683,8 @@ func _update_streaming() -> void:
 	_light_scan_needed = true
 	_wake_deferred()
 	var radius := render_distance + 1
+	if remote:
+		radius = mini(radius, Net.view_limit + 1) # (the host sends changed land no farther)
 	_wanted_columns.clear()
 	# Ring by ring from the outside in: the nearest end up last (taken
 	# first) without sorting hundreds of columns.
@@ -677,8 +697,8 @@ func _update_streaming() -> void:
 	# Host: the columns around the other players too (their edits and the
 	# world's ticks there need them).
 	for other in _remote_centers:
-		for dx in range(-REMOTE_RADIUS, REMOTE_RADIUS + 1):
-			for dz in range(-REMOTE_RADIUS, REMOTE_RADIUS + 1):
+		for dx in range(-remote_radius, remote_radius + 1):
+			for dz in range(-remote_radius, remote_radius + 1):
 				var column := other + Vector2i(dx, dz)
 				if not _columns.has(column) and not _wanted_columns.has(column):
 					_wanted_columns.append(column)
@@ -688,7 +708,7 @@ func _update_streaming() -> void:
 		if absi(column.x - center.x) > unload_radius or absi(column.y - center.y) > unload_radius:
 			var near_other := false
 			for other in _remote_centers:
-				near_other = near_other or (absi(column.x - other.x) <= REMOTE_RADIUS + 2 and absi(column.y - other.y) <= REMOTE_RADIUS + 2)
+				near_other = near_other or (absi(column.x - other.x) <= remote_radius + 2 and absi(column.y - other.y) <= remote_radius + 2)
 			if not near_other:
 				_unload_column(column)
 
@@ -1583,7 +1603,7 @@ func _mark_dirty_around(coord: Vector3i, local: Vector3i) -> void:
 ## Marks a chunk to be meshed again (if loaded and not waiting for the
 ## player to come near).
 func _mark_dirty_chunk(neighbor: Vector3i) -> void:
-	if not _chunks.has(neighbor):
+	if not _chunks.has(neighbor) or no_meshes:
 		return
 	var column := Vector2i(neighbor.x, neighbor.z)
 	var waiting: Variant = _deferred.get(column)
@@ -1841,6 +1861,7 @@ func _tick(_tick_index: int) -> void:
 	_tick_block_entities()
 	var t4 := Time.get_ticks_usec()
 	_run_display_ticks()
+	_wake_springs()
 	_mood_tick()
 	var t5 := Time.get_ticks_usec()
 	tick_times = {"weather": t1 - t0, "scheduled": t2 - t1, "random": t3 - t2, "block_entities": t4 - t3, "display": t5 - t4}
@@ -1908,6 +1929,37 @@ func _run_display_ticks() -> void:
 					_void_dust(data, origin)
 
 
+## Springs start to flow when a player comes near (their display tick, see
+## NatureBehavior.spring_display_tick): the host does it around the network
+## game's other players too (a dedicated server has no player of its own).
+const SPRING_TRIES := 10
+var _spring_table := PackedByteArray()
+
+
+func _wake_springs() -> void:
+	if not Net.is_host() or Net.avatars.is_empty():
+		return
+	if _spring_table.is_empty():
+		_spring_table.resize(Blocks.count())
+		for id in Blocks.count():
+			_spring_table[id] = 1 if Blocks.get_type(id).name.ends_with("_spring") else 0
+	for at: Vector3 in player_positions():
+		if player and at == player.global_position:
+			continue # (its own display ticks)
+		var center := chunk_coord_of(Vector3i(at.floor()))
+		for dy in range(-1, 2):
+			for dz in range(-1, 2):
+				for dx in range(-1, 2):
+					var coord := center + Vector3i(dx, dy, dz)
+					var data: ChunkData = _chunks.get(coord)
+					if data == null:
+						continue
+					for i in SPRING_TRIES:
+						var index := _display_rng.randi() & 4095
+						if _spring_table[data.blocks[index]] == 1:
+							NatureBehavior.spring_display_tick(self, coord * ChunkData.SIZE + Vector3i(index & 15, index >> 8, (index >> 4) & 15), _display_rng)
+
+
 ## The void's dust like the game's: in air near the bedrock (below y 8),
 ## dark specks drift, more the deeper (a cell at height y: 7 - y in 8).
 const VOID_DUST_TRIES := 40
@@ -1941,6 +1993,21 @@ func _run_scheduled_ticks() -> void:
 			handler.call(self, pos)
 
 
+## Where the players are: this one and, hosting, the network game's
+## others (their last position the host accepted); `alive_only` leaves out
+## the dead.
+func player_positions(alive_only: bool = true) -> Array[Vector3]:
+	var result: Array[Vector3] = []
+	var own := player as Player
+	if own and not (alive_only and own.dead):
+		result.append(own.global_position)
+	if Net.is_host():
+		for avatar: RemotePlayer in Net.avatars.values():
+			if is_instance_valid(avatar) and not (alive_only and avatar.dead):
+				result.append(avatar.target_position)
+	return result
+
+
 ## Random ticks reach this many columns around the player, like the game's
 ## (9 chunks there; the rest of the loaded world just waits).
 const RANDOM_TICK_RADIUS := 8
@@ -1952,21 +2019,26 @@ var _random_tick_queue: Array[Vector3i] = []
 
 
 func _run_random_ticks() -> void:
-	if player == null or random_tick_speed <= 0:
+	if random_tick_speed <= 0:
 		return
 	if _random_tick_queue.is_empty():
-		# A new round: the chunks with something that ticks, near the player.
-		var center := Vector2i(floori(player.global_position.x) >> 4, floori(player.global_position.z) >> 4)
-		for cx in range(center.x - RANDOM_TICK_RADIUS, center.x + RANDOM_TICK_RADIUS + 1):
-			for cz in range(center.y - RANDOM_TICK_RADIUS, center.y + RANDOM_TICK_RADIUS + 1):
-				var column_chunks: Variant = _columns.get(Vector2i(cx, cz))
-				if column_chunks == null:
-					continue
-				var cy := 0
-				for data: ChunkData in column_chunks:
-					if data.tickable_count > 0:
-						_random_tick_queue.append(Vector3i(cx, cy, cz))
-					cy += 1
+		# A new round: the chunks with something that ticks, near the
+		# players (this one, and the network game's others on the host).
+		var queued := {}
+		for at in player_positions(false):
+			var center := Vector2i(floori(at.x) >> 4, floori(at.z) >> 4)
+			var radius := RANDOM_TICK_RADIUS if player and at == player.global_position else mini(RANDOM_TICK_RADIUS, remote_radius)
+			for cx in range(center.x - radius, center.x + radius + 1):
+				for cz in range(center.y - radius, center.y + radius + 1):
+					var column_chunks: Variant = _columns.get(Vector2i(cx, cz))
+					if column_chunks == null or queued.has(Vector2i(cx, cz)):
+						continue
+					queued[Vector2i(cx, cz)] = true
+					var cy := 0
+					for data: ChunkData in column_chunks:
+						if data.tickable_count > 0:
+							_random_tick_queue.append(Vector3i(cx, cy, cz))
+						cy += 1
 	var ticks_randomly := Blocks.ticks_randomly
 	var started := Time.get_ticks_usec()
 	while not _random_tick_queue.is_empty():
@@ -2020,7 +2092,7 @@ const MESH_QUEUE_INTERVAL_MS := 250
 ## backlog (taken after the sorted queue); air and far deep chunks are
 ## dealt with at once.
 func _enqueue_column(column: Vector2i) -> void:
-	if not _columns.has(column) or not _can_mesh(Vector3i(column.x, 0, column.y)):
+	if no_meshes or not _columns.has(column) or not _can_mesh(Vector3i(column.x, 0, column.y)):
 		return
 	var near := open_edges or _near_player(column)
 	for k in WorldGenerator.HEIGHT_CHUNKS:

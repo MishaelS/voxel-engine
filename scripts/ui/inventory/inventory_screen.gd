@@ -113,8 +113,8 @@ func _ready() -> void:
 	_catalog = Items.catalog()
 	if player:
 		player.inventory.changed.connect(_refresh)
-	Settings.changed.connect(func(key: String, _value: Variant) -> void:
-		if key == "gui_scale" and _open:
+	Settings.gui_rescaled.connect(func(_factor: float) -> void:
+		if _open:
 			_refresh.call_deferred())
 
 
@@ -205,6 +205,20 @@ func _give(id: int, count: int, damage: int = 0) -> void:
 		var left := player.inventory.add(id, count, damage)
 		if left > 0:
 			player.throw_items(id, left, damage)
+
+
+## Takes up to `count` of item `id` off the cursor (a network game's host
+## took back items another player got first, Net._take_back). Returns how
+## many it took.
+func take_from_cursor(id: int, count: int) -> int:
+	if _held_id != id or _held_count <= 0:
+		return 0
+	var taken := mini(count, _held_count)
+	_held_count -= taken
+	_clear_held_if_empty()
+	if _open:
+		_refresh()
+	return taken
 
 
 func _input(event: InputEvent) -> void:

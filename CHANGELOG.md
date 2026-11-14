@@ -13,6 +13,17 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- A dedicated server: `tools/run_server.sh` (or `godot --headless --path . -- --server`) runs a world without a local player for many players, set up in server.properties (port, world, seed, type, game mode, difficulty, max players, MOTD, password, whitelist, view distance, spawn protection, idle timeout, PvP, autosave...); commands typed in the console, logs in logs/latest.log, /stop saves and exits. How to deploy: SERVER.md.
+- Server password (sent only as a one-time hash), whitelist, bans by IP as well as by computer, operators (/op, /deop) instead of one cheats switch, /whitelist, /ban-ip, /pardon-ip, /save-all, /stop, /kick with a reason, idle kick, limits on waiting and per-address connections.
+
+### Changed
+- The host checks everything clients send: movement speed (too fast is sent back), reach and loaded land for every edit, block and item ids, game mode, container changes (no duplicating by taking a stack at the same time), entities and dropped items made by clients, sizes of every message, text (control characters, BBCode), skins; floods and bad data lead to a kick, refusals are logged. Clients no longer pass anything to each other directly, the host saves where it saw a player, far column requests wait, network traffic is compressed. Not compatible with 0.0.21 hosts and clients.
+- Less text on the network screens: explanations (what to do with the invite code, the warning, the VPN advice, the port) are in tooltips.
+
+### Changed
+- The GUI Scale follows the window like the game's: a chosen scale too big for the window steps down to the largest that fits (the GUI is at least 320 x 240 of its pixels) and back up when the window grows; Auto is the largest that fits. Nothing is rebuilt when the scale comes out the same, so resizing doesn't flicker or reset it.
+
 ## [0.0.21] - 2026-11-14
 
 ### Added

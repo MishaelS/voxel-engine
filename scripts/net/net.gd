@@ -2,17 +2,20 @@ extends Node
 ## Autoload: multiplayer (stage 15), the classic game's way: a player opens
 ## their world to the network from the pause menu ("Open to LAN") and is the
 ## host; others join by address or from the list of games on the local
-## network. Godot's high-level multiplayer over ENet.
+## network. Or a dedicated server (DedicatedServer, `--server`, SERVER.md)
+## hosts a world with no player of its own. Godot's high-level multiplayer
+## over ENet.
 ##
 ## The host runs the world: liquids, growth, redstone, ticks and saving. A
 ## client draws it and moves its own player:
 ## - columns: a client generates the ones nobody has changed itself (the
 ##   generators are deterministic, the same blocks from the same seed); the
-##   host sends the changed ones (compressed). Then every block change is
-##   sent to the clients in batches, a tick at a time;
+##   host sends the changed ones (compressed) within its view distance. Then
+##   every block change is sent to the clients in batches, a tick at a time;
 ## - a client's edits (breaking, placing, buckets...) show at once and go to
-##   the host, which makes them with all their effects; using levers,
-##   buttons, doors and trapdoors is done by the host;
+##   the host, which checks and makes them with all their effects (or sends
+##   the block back as it is); using levers, buttons, doors and trapdoors is
+##   done by the host;
 ## - players see each other (RemotePlayer: the player model with the skin,
 ##   walking, sneaking, swinging, the item in hand, the name above);
 ## - chat, the time of day and the weather are shared.
@@ -21,28 +24,59 @@ extends Node
 ##   with their whole state) and moves its copies ("puppets") along; what a
 ##   client makes (an arrow shot, a boat put down) the host makes. A client
 ##   hits them, rides the host's boats and minecarts (steering them) through
-##   the host. Creatures go after any player; players hurt each other;
+##   the host. Creatures go after any player; players hurt each other
+##   through the host (pvp);
 ## - dropped items too: each client sees the ones within 48 blocks, drops
 ##   and throws through the host and picks them up with its leave;
+## - chests, furnaces, dispensers and signs are the host's (below);
 ## - the host keeps each client's player (where it was, inventory, armor,
-##   health) by its tag in the world's save, and gives it back on joining.
-## Chests, furnaces, dispensers and signs are the next step.
+##   health, game mode) by its tag in the world's save, and gives it back on
+##   joining.
 ##
-## Telling players apart and keeping bots out (the host): a joining player
-## is asked to prove who it is with this server's salt and answers with its
-## tag (PlayerProfile.tag_for_server: a hash of its computer's hashed id and
-## the salt; the same on this server, different on others, nothing about
-## the computer in it). The host bans by tag (user://bans.cfg), allows 3
-## connections and 5 tries in 30 s from one address, drops a connection that
-## doesn't introduce itself within 5 s and kicks players flooding the chat,
-## edits or column requests. Commands: /players, /kick, /ban,
-## /pardon. (A changed client can fake its tag: this stops casual bots and
-## spam, not a determined attacker or a flood at the network level.)
+## Trust: everything goes through the host. Clients never reach each other
+## (the server relay is off: chat, looks, hits and movement are passed on by
+## the host after its checks), and nothing a client sends is believed as is
+## (NetGuard): types, ranges and sizes are checked, text is cleaned, and
+## - where a player is, is the host's: movement faster than the game allows
+##   (walking, flying in creative, riding) is sent back (NetGuard.Mover);
+##   teleports and respawns go through the host;
+## - breaking, placing, using, signs, containers, hits and pick-ups only
+##   reach REACH_SURVIVAL / REACH_CREATIVE blocks from that place; nothing
+##   is made in unloaded land; survival can't place or break what only the
+##   world makes (bedrock, spawners); the spawn is protected for non-ops;
+## - the game mode is the host's (/gamemode goes through it), so is who may
+##   cheat (ops, NetGuard);
+## - containers: a client's change to a slot that changed on the host since
+##   it saw it is merged, or undone on both sides (no two players take the
+##   same stack); entity states from clients are rebuilt from known keys.
+## Inventories are each client's own: a changed client can still give itself
+## items; the host refuses what only the world makes and what is impossible
+## (counts, ids, damage), not every item it can't account for.
+##
+## Joining: a joining player is asked to prove who it is with this server's
+## salt and answers with its tag (PlayerProfile.tag_for_server: a hash of
+## its computer's hashed id and the salt; the same on this server, different
+## on others, nothing about the computer in it), its name (3-16 of A-Z, 0-9,
+## _; Player Settings' name is spelled that way, NetGuard.network_name) and,
+## if the server has a password, a hash of it with a one-time nonce (the
+## password itself never goes over the network). Then bans (by tag,
+## user://bans.cfg, and by address, banned-ips.cfg), the whitelist, max
+## players. At most MAX_PENDING joins wait to introduce themselves (for
+## HELLO_SECONDS), max_per_address connections and MAX_TRIES tries in
+## TRIES_SECONDS from one address; idle players can be kicked. Floods (chat,
+## edits, columns...) are refused and bad data counted (strikes): too much
+## of either is a kick. Ops (ServerLists: ops.cfg, names tied to tags) run
+## the cheat and admin commands; the host of an Open to LAN game always is
+## one, and its Allow Cheats lets everyone cheat. Commands: /players,
+## /kick, /ban, /pardon, /ban-ip, /pardon-ip, /op, /deop, /whitelist,
+## /save-all, /stop. (A changed client can fake its tag: this stops casual
+## bots and spam, not a determined attacker or a flood at the network level.)
 ##
 ## The server list pings without joining: while hosting, a ServerStatus
 ## Responder answers small UDP asks on the game port + 1 with the players
-## in, the most, the version, the host's name and the world's name (the
-## protocol and its limits are in server_status.gd).
+## in, the most, the version, the host's name and the world's name (a
+## dedicated server's motd) (the protocol and its limits are in
+## server_status.gd).
 ##
 ## Playing over the internet: "Allow Internet Access" in Open to LAN opens
 ## the ports on the home router (PortForward, UPnP) and gives an invite code
@@ -58,6 +92,8 @@ const PORT := 25565
 const LAN_PORT := 4445
 const LAN_SEND_SECONDS := 1.5
 const LAN_FORGET_SECONDS := 5.0
+const LAN_GAMES_MAX := 64
+## Players at most in an Open to LAN game (a dedicated server: max-players).
 const MAX_PLAYERS := 8
 const CONFIG_PATH := "user://multiplayer.cfg"
 ## Seconds between the host's time and weather messages.
@@ -65,19 +101,48 @@ const SYNC_SECONDS := 1.0
 ## Player state messages a second (each tick).
 const STATE_RATE := 20.0
 const SERVER_CONFIG := "user://server.cfg"
-const BANS_PATH := "user://bans.cfg"
-## Joining limits per address, the time to introduce oneself, flood limits.
+## Joining limits per address, the time to introduce oneself, joins waiting
+## at once, how long a silent connection lasts.
 const MAX_PER_ADDRESS := 3
 const MAX_TRIES := 5
 const TRIES_SECONDS := 30.0
 const HELLO_SECONDS := 5.0
+const MAX_PENDING := 8
+const PEER_TIMEOUT_MS := 15000
+## Flood limits: [count, seconds] per kind; more is refused (and counted
+## as a strike), four times more is a kick.
 const CHAT_LIMIT := 8      # lines per 5 seconds
-const EDIT_LIMIT := 80     # edits and uses per second
+const EDIT_LIMIT := 60     # edits and uses per second
 const COLUMN_LIMIT := 400  # column requests per second
+const ATTACK_LIMIT := 30   # hits per second (a sword's sweep hits several)
+const SPAWN_LIMIT := 8     # entities made per second
+const DROP_LIMIT := 64     # items dropped per second (a death drops 40 stacks)
+const STATE_LIMIT := 60    # movement messages per second (20 are sent)
+## Strikes (bad data, floods, out of reach...) in STRIKE_SECONDS before a kick.
+const STRIKE_LIMIT := 30
+const STRIKE_SECONDS := 60.0
+## Reach from the eyes to the block (a little more than the game's 4.5 / 5:
+## the host sees players a moment late).
+const REACH_SURVIVAL := 6.0
+const REACH_CREATIVE := 8.0
+## Entities in one snapshot, new ones (with their whole state) in one, items.
+const SNAPSHOT_ENTITIES := 200
+const SNAPSHOT_NEW := 24
+const SNAPSHOT_ITEMS := 200
+## Entities a client may make (arrows it shoots, boats and carts it puts
+## down, paintings it hangs, TNT it lights).
+const CLIENT_SPAWNS: Array[String] = ["arrow", "boat", "minecart", "chest_minecart", "furnace_minecart", "painting", "tnt"]
+## Refusals a client shows a password screen for.
+const PASSWORD_NEEDED := "This server needs a password"
+const WRONG_PASSWORD := "Wrong password"
+## Seconds everyone must sleep before a dedicated server skips the night.
+const SLEEP_SECONDS := 5.0
 
 var mode := Mode.OFFLINE
-## A network game's "Allow Cheats" (the host chooses on opening; clients get
-## it on joining) and the game mode new players get.
+## A network game's "Allow Cheats" (the host chooses on opening: everyone
+## may cheat; a dedicated server: only ops). A client: whether it may (the
+## host says on joining and when it changes). Also the game mode new players
+## get.
 var cheats := false
 var lan_game_mode := 0
 ## Open to LAN's "Allow Internet Access": host() opens the router's ports.
@@ -86,18 +151,49 @@ var internet := false
 var port_forward := PortForward.new()
 ## The port the host listens on.
 var host_port := PORT
+## A dedicated server (DedicatedServer, its settings from server.properties).
+var dedicated := false
+var server: DedicatedServer
+## The host's settings (Open to LAN: these defaults).
+var max_players := MAX_PLAYERS
+var motd := ""
+var password := ""
+var bind_ip := ""
+var view_distance := 34
+var simulation_distance := 4
+var spawn_protection := 0
+var spawn_radius := 3
+var idle_minutes := 0
+var pvp := true
+var autosave_seconds := 300.0
+var max_per_address := MAX_PER_ADDRESS
+var lan_broadcast := true
+var server_difficulty := -1
+## Ops, the whitelist and bans (user://).
+var lists := ServerLists.new()
 ## Commands that change the world (or reach other players): a client's run
 ## on the host (Commands not listed here run on the player's own side).
 const HOST_COMMANDS: Array[String] = ["time", "weather", "gamerule", "tick", "setblock", "fill", "clone", "summon",
-	"kill", "damage", "execute", "setworldspawn", "difficulty", "msg", "tell", "w"]
-## Commands always allowed (no cheats needed).
+	"kill", "damage", "execute", "setworldspawn", "difficulty", "msg", "tell", "w", "gamemode", "tp", "teleport",
+	"say", "kick", "ban", "pardon", "ban-ip", "pardon-ip", "op", "deop", "whitelist", "players", "save-all", "stop"]
+## Commands always allowed (no cheats needed); the host decides on the ones
+## in OP_COMMANDS.
 const FREE_COMMANDS: Array[String] = ["help", "seed", "say", "players", "kick", "ban", "pardon", "list", "me",
-	"msg", "tell", "w", "invite"]
+	"msg", "tell", "w", "invite", "ban-ip", "pardon-ip", "op", "deop", "whitelist", "save-all", "stop"]
+## Commands only ops may run on the host.
+const OP_COMMANDS: Array[String] = ["players", "kick", "ban", "pardon", "ban-ip", "pardon-ip", "op", "deop",
+	"whitelist", "save-all", "stop"]
 var player_name := ""
 var last_address := "127.0.0.1"
+## Client: the password to join with (asked when a server wants one: the
+## Multiplayer screen shows the password screen when `password_wanted`).
+var join_password := ""
+var password_wanted := false
+## Client: the host's view distance (columns farther aren't asked for).
+var view_limit := 64
 ## Peer id -> {"name": String, "ping": ms (-1 unknown)}, everyone in the
-## game (this one too); the host measures the pings and sends them each
-## second (the Tab list).
+## game (this one too; a dedicated server isn't a player); the host measures
+## the pings and sends them each second (the Tab list).
 var players := {}
 ## Peer id -> RemotePlayer.
 var avatars := {}
@@ -118,23 +214,38 @@ var _status_responder: ServerStatus.Responder
 var _lan_timer := 0.0
 var _sync_timer := 0.0
 var _state_timer := 0.0
+var _second_timer := 0.0
+var _sleep_time := 0.0
 var _pending_blocks := PackedInt32Array()
-## Client: columns asked for -> true; answers: column -> PackedInt32Array
-## (the host's blocks) or empty (generate it); block changes waiting for a
-## column that is on its way.
+## Client: columns asked for -> true (or when to ask again, a host's
+## "later"); answers: column -> PackedInt32Array (the host's blocks) or empty
+## (generate it); block changes waiting for a column that is on its way.
 var _asked := {}
 var _answers := {}
 var _waiting_changes := {}
 var _swings := 0
 ## Host: peer id -> address, the tags of the players in (peer id -> tag),
-## joins waiting to introduce themselves (peer id -> deadline), tries by
-## address (address -> [times]), counters for the flood limits.
+## joins waiting to introduce themselves (peer id -> deadline) and their
+## nonces, tries by address (address -> [times]), counters for the flood
+## limits, strikes (peer -> [[time, weight]...]), peers being dropped.
 var _addresses := {}
 var _tags := {}
 var _waiting_hello := {}
+var _nonces := {}
 var _tries := {}
 var _counters := {}
+var _strikes := {}
+var _dropping := {}
 var _server_salt := ""
+## Host: each client's movement (NetGuard.Mover), game mode, op or not, last
+## activity (idle kick), when it was last told its game mode.
+var _moves := {}
+var _modes := {}
+var _ops := {}
+var _active := {}
+var _mode_told := {}
+var _spawn_cache := Vector3.INF
+var _spawn_cached_at := -100.0
 ## Host: next entity / item number; per client what it has seen
 ## (peer -> {number: true}).
 var _next_net_id := 1
@@ -162,6 +273,10 @@ func _ready() -> void:
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 	port_forward.changed.connect(_on_forward_changed)
+	if DedicatedServer.requested():
+		var node := DedicatedServer.new()
+		node.name = "DedicatedServer"
+		add_child(node)
 
 
 func _notification(what: int) -> void:
@@ -192,10 +307,39 @@ func _load_config() -> void:
 
 
 func save_config() -> void:
+	if dedicated:
+		return
 	var config := ConfigFile.new()
 	config.set_value("player", "name", player_name)
 	config.set_value("player", "address", last_address)
 	config.save(CONFIG_PATH)
+
+
+## A dedicated server's settings (DedicatedServer, from server.properties).
+func configure_dedicated(node: DedicatedServer) -> void:
+	dedicated = true
+	server = node
+	var config := node.config
+	player_name = "Server"
+	max_players = config.get_int("max-players", 1, 100)
+	motd = NetGuard.clean_text(config.get_string("motd"), 64)
+	password = config.get_string("password")
+	bind_ip = config.get_string("server-ip").strip_edges()
+	view_distance = config.get_int("view-distance", 4, 32)
+	simulation_distance = config.get_int("simulation-distance", 2, 10)
+	spawn_protection = config.get_int("spawn-protection", 0, 1000)
+	spawn_radius = config.get_int("spawn-radius", 1, 8)
+	idle_minutes = config.get_int("idle-timeout", 0, 10000)
+	pvp = config.get_bool("pvp")
+	autosave_seconds = config.get_int("autosave-minutes", 1, 60) * 60.0
+	max_per_address = config.get_int("max-connections-per-ip", 1, 100)
+	lan_broadcast = config.get_bool("lan-broadcast")
+	internet = config.get_bool("upnp")
+	lists.enforce_tags = config.get_bool("enforce-tags")
+	lan_game_mode = 1 if config.get_string("gamemode").to_lower() in ["creative", "c", "1"] else 0
+	server_difficulty = {"peaceful": 0, "easy": 1, "normal": 2, "hard": 3, "0": 0, "1": 1, "2": 2, "3": 3}.get(
+		config.get_string("difficulty").to_lower(), 2)
+	cheats = false
 
 
 func _world() -> VoxelWorld:
@@ -218,6 +362,15 @@ func _message(text: String) -> void:
 		chat.add_message(text, CommandSource.MessageKind.INFO)
 
 
+## A line for the log: a dedicated server's console and logs/latest.log,
+## the game's own log (stdout) otherwise.
+func log_event(text: String) -> void:
+	if server:
+		server.log_line(text)
+	else:
+		print("[Net] ", text)
+
+
 # --- Hosting and joining -------------------------------------------------------------
 
 ## Opens the world being played to the network. Returns an error text, or "".
@@ -225,21 +378,28 @@ func host(port: int = PORT) -> String:
 	if is_online():
 		return "Already open"
 	_peer = ENetMultiplayerPeer.new()
-	var error := _peer.create_server(port, MAX_PLAYERS)
+	if bind_ip != "":
+		_peer.set_bind_ip(bind_ip)
+	# Room for MAX_PENDING more than the players: a full server can still say so.
+	var error := _peer.create_server(port, max_players + MAX_PENDING)
 	if error != OK:
 		_peer = null
 		return "Can't open port %d" % port
+	_peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
+	# Clients only ever talk to the host (it checks and passes things on).
+	(multiplayer as SceneMultiplayer).server_relay = false
 	multiplayer.multiplayer_peer = _peer
 	mode = Mode.HOST
-	players = {1: {"name": player_name}}
+	players = {} if dedicated else {1: {"name": player_name}}
 	var world := _world()
 	saved_players = world.save.state.get("net_players", {}) if world and world.save else {}
-	looks = {1: _own_look()}
+	looks = {} if dedicated else {1: _own_look()}
 	_status_responder = ServerStatus.Responder.new()
 	_status_responder.open(port)
-	_lan_out = PacketPeerUDP.new()
-	_lan_out.set_broadcast_enabled(true)
-	_lan_out.set_dest_address("255.255.255.255", LAN_PORT)
+	if lan_broadcast:
+		_lan_out = PacketPeerUDP.new()
+		_lan_out.set_broadcast_enabled(true)
+		_lan_out.set_dest_address("255.255.255.255", LAN_PORT)
 	host_port = port
 	if internet:
 		port_forward.open(port)
@@ -267,15 +427,18 @@ func _on_forward_changed() -> void:
 	match port_forward.state:
 		PortForward.State.OPEN:
 			_message(Lang.t("Open to the internet. Invite code: %s (/invite copies it)") % invite_code())
+			log_event("Router ports open; invite code %s" % invite_code())
 		PortForward.State.FAILED:
 			_message(Lang.t("Can't open the world to the internet: %s") % Lang.t(port_forward.error))
 			_message(Lang.t("Friends can still join over a VPN: Game Menu > Invite Friends"))
+			log_event("Can't open the router's ports: %s" % port_forward.error)
 
 
 ## Connects to a host ("address", "address:port" or an invite code). The
 ## game starts when the host answers (welcome).
 func join(address: String) -> String:
 	leave()
+	password_wanted = false
 	if InviteCode.looks_like_code(address) and InviteCode.decode(address) == "":
 		return "This invite code has a typo"
 	var host_name := InviteCode.to_address(address)
@@ -291,6 +454,7 @@ func join(address: String) -> String:
 	if _peer.create_client(host_name, port) != OK:
 		_peer = null
 		return "Can't connect to %s" % address
+	_peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
 	multiplayer.multiplayer_peer = _peer
 	mode = Mode.CLIENT
 	last_error = ""
@@ -304,7 +468,8 @@ func leave() -> void:
 	if _peer:
 		_peer.close()
 	_peer = null
-	cheats = false
+	if not dedicated:
+		cheats = false
 	multiplayer.multiplayer_peer = null
 	mode = Mode.OFFLINE
 	players.clear()
@@ -323,31 +488,73 @@ func leave() -> void:
 	_viewers.clear()
 	_open_containers.clear()
 	_container_slots.clear()
+	for list: Dictionary in [_addresses, _tags, _waiting_hello, _nonces, _counters, _strikes, _dropping, _moves,
+			_modes, _ops, _active, _mode_told]:
+		list.clear()
 	world_info.clear()
 	_lan_out = null
 	if _status_responder:
 		_status_responder.close()
 	_status_responder = null
-	internet = false
+	if not dedicated:
+		internet = false
 	port_forward.close()
 	players_changed.emit()
+
+
+## Players in the game (a dedicated server isn't one).
+func player_count() -> int:
+	return players.size()
+
+
+## Whether the host has anyone to send to.
+func _has_clients() -> bool:
+	for id: int in players:
+		if id != 1:
+			return true
+	return false
+
+
+## The clients in the game (not the host).
+func _clients() -> Array[int]:
+	var result: Array[int] = []
+	for id: int in players:
+		if id != 1:
+			result.append(id)
+	return result
 
 
 func _on_peer_connected(id: int) -> void:
 	if not is_host():
 		return
-	var address := _peer.get_peer(id).get_remote_address() if _peer.get_peer(id) else ""
+	var enet := _peer.get_peer(id)
+	var address := enet.get_remote_address() if enet else ""
+	if enet:
+		enet.set_timeout(0, 5000, PEER_TIMEOUT_MS) # a silent connection goes after 15 s
 	var now := Time.get_ticks_msec() / 1000.0
+	if lists.is_ip_banned(address):
+		log_event("Refused %s: the address is banned" % address)
+		_drop(id, "You are banned from this server")
+		return
 	var tries: Array = _tries.get(address, []).filter(func(t: float) -> bool: return now - t < TRIES_SECONDS)
 	tries.append(now)
 	_tries[address] = tries
+	if _tries.size() > 1000:
+		_tries.clear() # (many addresses: forgotten rather than kept forever)
+		_tries[address] = tries
 	var same_address := _addresses.values().count(address)
-	if tries.size() > MAX_TRIES or same_address >= MAX_PER_ADDRESS:
+	if tries.size() > MAX_TRIES or same_address >= max_per_address:
+		log_event("Refused %s: too many connections" % address)
 		_drop(id, "Too many connections from your address")
+		return
+	if _waiting_hello.size() >= MAX_PENDING:
+		log_event("Refused %s: too many joins at once" % address)
+		_drop(id, "The server is busy, try again in a moment")
 		return
 	_addresses[id] = address
 	_waiting_hello[id] = now + HELLO_SECONDS
-	_challenge.rpc_id(id, _salt())
+	_nonces[id] = Crypto.new().generate_random_bytes(16).hex_encode()
+	_challenge.rpc_id(id, _salt(), _nonces[id], password != "")
 
 
 ## This server's salt (made once): players' tags are made with it.
@@ -363,28 +570,43 @@ func _salt() -> String:
 	return _server_salt
 
 
-## Host -> joining client: "prove who you are with this salt".
+## What a client sends for the password: the password hashed with the
+## server's salt, hashed again with this join's nonce (a recorded answer is
+## worth nothing the next time; the password never leaves the computer).
+static func password_proof(salt: String, nonce: String, secret: String) -> String:
+	return (nonce + "|" + (salt + "|" + secret).sha256_text()).sha256_text()
+
+
+## Host -> joining client: "prove who you are with this salt" (and the
+## password, if `needs_password`, with this nonce).
 @rpc("authority", "call_remote", "reliable")
-func _challenge(salt: String) -> void:
-	_hello.rpc_id(1, player_name, str(ProjectSettings.get_setting("application/config/version", "dev")),
-		PlayerProfile.tag_for_server(salt))
-	send_look()
+func _challenge(salt: String, nonce: String, needs_password: bool) -> void:
+	var proof := ""
+	if needs_password and join_password != "":
+		proof = password_proof(salt, nonce, join_password)
+	_hello.rpc_id(1, NetGuard.network_name(player_name), str(ProjectSettings.get_setting("application/config/version", "dev")),
+		PlayerProfile.tag_for_server(salt), proof)
 
 
 ## Host: tells a peer why and closes its connection a moment later (so the
 ## reason arrives).
 func _drop(id: int, reason: String) -> void:
+	if _dropping.has(id):
+		return
+	_dropping[id] = true
 	_refused.rpc_id(id, reason)
 	_waiting_hello.erase(id)
+	if players.has(id):
+		log_event("%s was kicked: %s" % [players[id].name, reason])
 	get_tree().create_timer(0.5).timeout.connect(func() -> void:
-		if _peer and _peer.get_peer(id):
+		if _peer and id in multiplayer.get_peers():
 			_peer.disconnect_peer(id))
 
 
-## Host: whether a peer stays under a flood limit (`limit` in `seconds`);
-## kicked if not.
+## Host: whether a joined peer stays under a flood limit (`limit` in
+## `seconds`); more is refused (a strike), four times more is a kick.
 func _within(id: int, kind: String, limit: int, seconds: float) -> bool:
-	if not players.has(id):
+	if not _joined(id):
 		return false # not introduced: ignored
 	var now := Time.get_ticks_msec() / 1000.0
 	var key := "%d/%s" % [id, kind]
@@ -393,17 +615,51 @@ func _within(id: int, kind: String, limit: int, seconds: float) -> bool:
 		entry = [now, 0]
 	entry[1] = int(entry[1]) + 1
 	_counters[key] = entry
-	if int(entry[1]) > limit:
+	var count := int(entry[1])
+	if count > limit * 4:
 		_drop(id, "Kicked for spamming")
+		return false
+	if count > limit:
+		if count == limit + 1:
+			_strike(id, "too many %s messages" % kind, 2)
+			if kind == "chat":
+				_command_output.rpc_id(id, Lang.t("You are sending messages too fast"), CommandSource.MessageKind.ERROR)
 		return false
 	return true
 
 
+## Host: a peer that joined (introduced itself and was let in).
+func _joined(id: int) -> bool:
+	return is_host() and id != 1 and players.has(id) and not _dropping.has(id)
+
+
+## Host: something a client sent was refused (`why`, for the log). Strikes
+## add up (`weight` each); too many in STRIKE_SECONDS is a kick.
+func _strike(id: int, why: String, weight: int = 1) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	var list: Array = (_strikes.get(id, []) as Array).filter(func(entry: Array) -> bool: return now - float(entry[0]) < STRIKE_SECONDS)
+	list.append([now, weight])
+	_strikes[id] = list
+	var total := 0
+	for entry: Array in list:
+		total += int(entry[1])
+	if list.size() <= 10:
+		log_event("[security] %s (%s): %s" % [str(players.get(id, {}).get("name", "?")), _addresses.get(id, "?"), why])
+	if total > STRIKE_LIMIT:
+		_drop(id, "Kicked for sending bad data")
+
+
 func _on_peer_disconnected(id: int) -> void:
 	_waiting_hello.erase(id)
+	_nonces.erase(id)
+	_dropping.erase(id)
 	_close_for(id)
 	_known_entities.erase(id)
 	_known_items.erase(id)
+	for key: String in _counters.keys():
+		if key.begins_with("%d/" % id):
+			_counters.erase(key)
+	_strikes.erase(id)
 	if is_host():
 		var world := _world()
 		if world:
@@ -418,12 +674,19 @@ func _on_peer_disconnected(id: int) -> void:
 	looks.erase(id)
 	_tags.erase(id)
 	_addresses.erase(id)
+	_moves.erase(id)
+	_modes.erase(id)
+	_ops.erase(id)
+	_active.erase(id)
+	_mode_told.erase(id)
 	if avatars.has(id):
 		(avatars[id] as Node).queue_free()
 		avatars.erase(id)
-	_message("%s left the game" % left_name)
+	_message(Lang.t("%s left the game") % left_name)
 	if is_host():
+		log_event("%s left the game" % left_name)
 		_send_players.rpc(players)
+		_server_message.rpc("%s left the game" % left_name)
 	players_changed.emit()
 
 
@@ -447,13 +710,17 @@ func _on_server_disconnected() -> void:
 
 ## Client -> host: who is joining.
 @rpc("any_peer", "call_remote", "reliable")
-func _hello(joining_name: String, version: String, tag: String) -> void:
+func _hello(joining_name: String, version: String, tag: String, proof: String) -> void:
 	if not is_host():
 		return
 	var id := multiplayer.get_remote_sender_id()
 	if not _waiting_hello.has(id) or players.has(id):
 		return
 	_waiting_hello.erase(id)
+	var address: String = _addresses.get(id, "?")
+	if joining_name.length() > 64 or version.length() > 32 or tag.length() > 64 or proof.length() > 64:
+		_drop(id, "Could not connect")
+		return
 	var game_version := str(ProjectSettings.get_setting("application/config/version", "dev"))
 	if version != game_version:
 		_drop(id, "The host plays version %s" % game_version)
@@ -461,43 +728,78 @@ func _hello(joining_name: String, version: String, tag: String) -> void:
 	if tag.length() != 64 or not tag.is_valid_hex_number():
 		_drop(id, "Could not connect")
 		return
-	if is_banned(tag):
+	if lists.is_banned(tag):
+		log_event("Refused %s (%s): banned" % [joining_name, address])
 		_drop(id, "You are banned from this server")
 		return
-	joining_name = joining_name.strip_edges().left(16)
-	if joining_name == "":
-		joining_name = "Player"
-	_tags[id] = tag
+	if password != "":
+		if proof == "":
+			_drop(id, PASSWORD_NEEDED)
+			return
+		if proof != password_proof(_salt(), str(_nonces.get(id, "")), password):
+			log_event("Refused %s (%s): wrong password" % [joining_name, address])
+			_drop(id, WRONG_PASSWORD)
+			return
+	_nonces.erase(id)
+	if not NetGuard.valid_name(joining_name):
+		_drop(id, "Your name can only have 3-16 letters (A-Z), digits and _")
+		return
+	if whitelist_on() and not lists.is_whitelisted(joining_name, tag) and not lists.is_op(joining_name, tag):
+		log_event("Refused %s (%s): not on the whitelist" % [joining_name, address])
+		_drop(id, "You are not white-listed on this server")
+		return
+	if player_count() >= max_players:
+		log_event("Refused %s (%s): the server is full" % [joining_name, address])
+		_drop(id, "The server is full")
+		return
 	var world := _world()
-	var host_player := _game_player()
-	if world == null or host_player == null:
+	if world == null or (not dedicated and _game_player() == null):
 		_drop(id, "The host is not in a world")
 		return
-	var taken := false
-	for peer: int in players:
-		taken = taken or players[peer].name == joining_name
-	var unique_name := joining_name if not taken else "%s%d" % [joining_name, id % 100]
+	_tags[id] = tag
+	var unique_name := joining_name
+	var n := 2
+	while _name_taken(unique_name):
+		unique_name = "%s%d" % [joining_name.left(NetGuard.NAME_MAX - str(n).length()), n]
+		n += 1
 	players[id] = {"name": unique_name}
+	_ops[id] = lists.is_op(unique_name, tag) or lists.is_op(joining_name, tag)
+	var saved: Dictionary = saved_players.get(tag, {})
+	_modes[id] = clampi(int(saved.get("game_mode", lan_game_mode)), 0, 1)
+	var start: Vector3 = saved.get("position", world.find_spawn())
+	var now := Time.get_ticks_msec() / 1000.0
+	_moves[id] = NetGuard.Mover.new(start if NetGuard.in_world(start) else world.find_spawn(), now)
+	_active[id] = now
 	var save := world.save
 	_welcome.rpc_id(id, {
 		"name": save.name if save else "World", "seed": world.world_seed, "generator": world.generator,
-		"tall": save.tall_terrain if save else false, "terrain": save.terrain if save else WorldSave.CLASSIC, "game_mode": lan_game_mode, "cheats": cheats,
+		"tall": save.tall_terrain if save else false, "terrain": save.terrain if save else WorldSave.CLASSIC,
+		"game_mode": _modes[id], "cheats": can_cheat(id), "op": is_op(id), "view_distance": view_distance,
 		"spawn": world.find_spawn(), # the world spawn (not the host's bed)
 		"game_time": world.clock.game_time, "day_time": world.clock.day_time,
-		"your_name": unique_name, "player": saved_players.get(tag, {}),
+		"your_name": unique_name, "player": saved,
 	})
 	_send_players.rpc(players)
 	# How everyone already here looks.
 	for peer: int in looks:
-		_look.rpc_id(id, peer, looks[peer].color, looks[peer].png)
-	_message("%s joined the game" % unique_name)
-	_joined_message.rpc("%s joined the game" % unique_name)
+		_look_of.rpc_id(id, peer, looks[peer].color, looks[peer].png)
+	_message(Lang.t("%s joined the game") % unique_name)
+	log_event("%s joined the game from %s (#%s)%s" % [unique_name, address, tag.left(8), " as an op" if _ops[id] else ""])
+	_server_message.rpc("%s joined the game" % unique_name)
 	players_changed.emit()
+
+
+func _name_taken(wanted: String) -> bool:
+	for peer: int in players:
+		if str(players[peer].name).to_lower() == wanted.to_lower():
+			return true
+	return false
 
 
 @rpc("authority", "call_remote", "reliable")
 func _refused(reason: String) -> void:
-	last_error = reason
+	last_error = reason.left(200)
+	password_wanted = reason == PASSWORD_NEEDED or reason == WRONG_PASSWORD
 	var in_game := Game.find(get_tree()) != null
 	leave()
 	players_changed.emit()
@@ -509,11 +811,12 @@ func _refused(reason: String) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _welcome(info: Dictionary) -> void:
 	world_info = info
-	player_name = info.get("your_name", player_name)
+	player_name = str(info.get("your_name", player_name)).left(NetGuard.NAME_MAX)
 	cheats = bool(info.get("cheats", false))
+	view_limit = clampi(int(info.get("view_distance", 64)), 2, 64)
 	var save := WorldSave.new()
 	save.remote = true
-	save.name = info.get("name", "World")
+	save.name = str(info.get("name", "World")).left(64)
 	save.world_seed = info.get("seed", 0)
 	save.generator = info.get("generator", 0)
 	save.tall_terrain = info.get("tall", false)
@@ -525,25 +828,43 @@ func _welcome(info: Dictionary) -> void:
 	WorldSave.current = save
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	send_look()
 
 
 @rpc("authority", "call_remote", "reliable")
 func _send_players(all: Dictionary) -> void:
 	players = all
+	# Players gone (the host tells: clients don't see each other's connections).
+	for id: int in avatars.keys():
+		if not players.has(id):
+			if is_instance_valid(avatars[id]):
+				(avatars[id] as Node).queue_free()
+			avatars.erase(id)
+			looks.erase(id)
 	players_changed.emit()
 
 
 @rpc("authority", "call_remote", "reliable")
-func _joined_message(text: String) -> void:
+func _server_message(text: String) -> void:
 	_message(text)
 
 
+## Host: a message for everyone (/say, the console), the log too.
+func broadcast_message(text: String) -> void:
+	_message(text)
+	log_event(text)
+	if is_host() and _has_clients():
+		_server_message.rpc(text)
+
+
 ## The server list's status answer (ServerStatus): players in, the most,
-## the version, the host's name, the world's name as the message of the day.
+## the version, the host's name, the world's name (or the motd) as the
+## message of the day.
 func _status_info() -> Array:
 	var world := _world()
-	return [players.size(), MAX_PLAYERS, str(ProjectSettings.get_setting("application/config/version", "dev")),
-		player_name, world.save.name if world and world.save else "World"]
+	var world_name: String = world.save.name if world and world.save else "World"
+	return [player_count(), max_players, str(ProjectSettings.get_setting("application/config/version", "dev")),
+		player_name, motd if motd != "" else world_name]
 
 
 # --- LAN discovery ---------------------------------------------------------------------
@@ -573,19 +894,26 @@ func _process(delta: float) -> void:
 		if _lan_timer <= 0.0:
 			_lan_timer = LAN_SEND_SECONDS
 			var world := _world()
-			var world_name: String = world.save.name if world and world.save else "World"
-			_lan_out.put_packet(("VEBE;%s;%s;%d" % [player_name, world_name, PORT]).to_utf8_buffer())
+			var world_name: String = motd if motd != "" else (world.save.name if world and world.save else "World")
+			_lan_out.put_packet(("VEBE;%s;%s;%d" % [player_name.replace(";", " "), world_name.replace(";", " "), host_port]).to_utf8_buffer())
 	if _lan_in:
 		var changed := false
-		while _lan_in.get_available_packet_count() > 0:
-			var text := _lan_in.get_packet().get_string_from_utf8()
-			var parts := text.split(";")
-			if parts.size() < 4 or parts[0] != "VEBE":
+		var read := 0
+		while _lan_in.get_available_packet_count() > 0 and read < 64:
+			read += 1
+			var packet := _lan_in.get_packet()
+			if packet.size() > 256:
+				continue
+			var parts := packet.get_string_from_utf8().split(";")
+			if parts.size() < 4 or parts[0] != "VEBE" or not parts[3].is_valid_int():
 				continue
 			var address := _lan_in.get_packet_ip()
 			var key := "%s:%s" % [address, parts[3]]
+			if not lan_games.has(key) and lan_games.size() >= LAN_GAMES_MAX:
+				continue
 			changed = changed or not lan_games.has(key)
-			lan_games[key] = {"name": parts[1], "world": parts[2], "address": address, "port": int(parts[3]), "seen": now}
+			lan_games[key] = {"name": NetGuard.clean_text(parts[1], 32), "world": NetGuard.clean_text(parts[2], 32),
+				"address": address, "port": clampi(int(parts[3]), 1, 65535), "seen": now}
 		for key: String in lan_games.keys():
 			if now - float(lan_games[key].seen) > LAN_FORGET_SECONDS:
 				lan_games.erase(key)
@@ -596,13 +924,17 @@ func _process(delta: float) -> void:
 		for id: int in _waiting_hello.keys():
 			if now > float(_waiting_hello[id]):
 				_drop(id, "Could not connect") # never introduced itself
+		_second_timer -= delta
+		if _second_timer <= 0.0:
+			_second_timer = 1.0
+			_check_idle(now)
 	if not is_online() or _world() == null:
 		return
 	_state_timer -= delta
 	if _state_timer <= 0.0:
 		_state_timer = 1.0 / STATE_RATE
 		_send_own_state()
-	if is_host() and players.size() > 1:
+	if is_host() and _has_clients():
 		_snapshot_timer -= delta
 		if _snapshot_timer <= 0.0:
 			_snapshot_timer = SNAPSHOT_SECONDS
@@ -625,6 +957,35 @@ func _process(delta: float) -> void:
 		if _sync_timer <= 0.0:
 			_sync_timer = SYNC_SECONDS
 			_send_world_sync()
+		if dedicated:
+			_dedicated_sleep(delta)
+
+
+## Host: players idle for idle_minutes are kicked (0: never).
+func _check_idle(now: float) -> void:
+	if idle_minutes <= 0:
+		return
+	for id: int in _clients():
+		if now - float(_active.get(id, now)) > idle_minutes * 60.0:
+			_drop(id, "You have been idle for too long")
+
+
+## A dedicated server: when every player sleeps for SLEEP_SECONDS, the night
+## passes (on the host of an Open to LAN game its own player does it).
+func _dedicated_sleep(delta: float) -> void:
+	var world := _world()
+	var sleeping := false
+	for avatar: RemotePlayer in avatars.values():
+		sleeping = sleeping or (is_instance_valid(avatar) and avatar.is_sleeping())
+	if not sleeping or not all_asleep() or world == null or not DayNightCycle.is_night(world.clock.day_time):
+		_sleep_time = 0.0
+		return
+	_sleep_time += delta
+	if _sleep_time >= SLEEP_SECONDS:
+		_sleep_time = 0.0
+		world.clock.add_day_time(WorldClock.TICKS_PER_DAY - fposmod(world.clock.day_time, WorldClock.TICKS_PER_DAY))
+		broadcast_message("Good morning")
+		_send_world_sync()
 
 
 # --- World: columns and block changes ----------------------------------------------------
@@ -632,7 +993,7 @@ func _process(delta: float) -> void:
 ## Host: a block changed (VoxelWorld.set_block); sent to the clients with the
 ## rest of this frame's changes.
 func block_changed(pos: Vector3i, id: int) -> void:
-	if is_host() and players.size() > 1:
+	if is_host() and _has_clients():
 		_pending_blocks.append_array(PackedInt32Array([pos.x, pos.y, pos.z, id]))
 
 
@@ -644,7 +1005,8 @@ func column_for(column: Vector2i) -> Variant:
 		_answers.erase(column)
 		_asked.erase(column)
 		return answer if (answer as PackedInt32Array).size() > 0 else "generate"
-	if not _asked.has(column):
+	var asked: Variant = _asked.get(column)
+	if asked == null or (asked is float and Time.get_ticks_msec() / 1000.0 >= float(asked)):
 		_asked[column] = true
 		_request_column.rpc_id(1, column.x, column.y)
 	return "wait"
@@ -657,30 +1019,59 @@ func take_waiting_changes(column: Vector2i) -> PackedInt32Array:
 	return changes
 
 
+## Host: where a client's player is as the host accepted it.
+func _position_of(peer: int) -> Vector3:
+	if peer == 1 or (peer == multiplayer.get_unique_id() and is_host()):
+		var player := _game_player()
+		return player.global_position if player else Vector3.INF
+	var mover: NetGuard.Mover = _moves.get(peer)
+	return mover.position if mover else Vector3.INF
+
+
 @rpc("any_peer", "call_remote", "reliable")
 func _request_column(cx: int, cz: int) -> void:
-	if not is_host() or not _within(multiplayer.get_remote_sender_id(), "column", COLUMN_LIMIT, 1.0):
+	var peer := multiplayer.get_remote_sender_id()
+	if not is_host() or not _within(peer, "column", COLUMN_LIMIT, 1.0):
+		return
+	var at := _position_of(peer)
+	if absi(cx) > 2000000 or absi(cz) > 2000000 or at == Vector3.INF:
+		_strike(peer, "column out of the world", 2)
 		return
 	var world := _world()
+	# Only around where the host sees the player: nobody makes the host
+	# read (or answer for) the whole world.
+	if maxi(absi(cx - (floori(at.x) >> 4)), absi(cz - (floori(at.z) >> 4))) > view_distance + 2:
+		_column_later.rpc_id(peer, cx, cz)
+		return
 	var data := PackedByteArray()
 	if world:
 		var blocks := world.column_blocks_for_network(Vector2i(cx, cz))
 		if not blocks.is_empty():
 			data = blocks.to_byte_array().compress(FileAccess.COMPRESSION_ZSTD)
 	var signs: Array = world.column_signs_for_network(Vector2i(cx, cz)) if world else []
-	_column_answer.rpc_id(multiplayer.get_remote_sender_id(), cx, cz, data, signs)
+	_column_answer.rpc_id(peer, cx, cz, data, signs)
 
 
 @rpc("authority", "call_remote", "reliable")
 func _column_answer(cx: int, cz: int, data: PackedByteArray, signs: Array) -> void:
 	var world := _world()
 	if world:
-		for sign: Array in signs:
-			world.apply_network_sign(Vector3i(sign[0], sign[1], sign[2]), _sign_lines(sign[3]))
+		for sign: Variant in signs:
+			if sign is Array and (sign as Array).size() == 4:
+				world.apply_network_sign(Vector3i(int(sign[0]), int(sign[1]), int(sign[2])), _sign_lines(sign[3]))
 	var blocks := PackedInt32Array()
 	if not data.is_empty():
 		blocks = data.decompress(WorldGenerator.COLUMN_VOLUME * 4, FileAccess.COMPRESSION_ZSTD).to_int32_array()
+		if blocks.size() != WorldGenerator.COLUMN_VOLUME:
+			blocks = PackedInt32Array()
 	_answers[Vector2i(cx, cz)] = blocks
+
+
+## Host -> client: that column is beyond the view distance from where the
+## host sees the player; ask again in a moment.
+@rpc("authority", "call_remote", "reliable")
+func _column_later(cx: int, cz: int) -> void:
+	_asked[Vector2i(cx, cz)] = Time.get_ticks_msec() / 1000.0 + 3.0
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -705,24 +1096,28 @@ func send_sign(pos: Vector3i, lines: Array) -> void:
 
 ## Host: a sign's text changed (here or from a client): to every client.
 func sign_changed(pos: Vector3i, lines: Array) -> void:
-	if players.size() > 1:
+	if _has_clients():
 		_sign_text.rpc(pos, lines)
 
 
-## At most four lines of a sign's length (from the network).
+## At most four lines of a sign's length (from the network), cleaned.
 static func _sign_lines(value: Variant) -> Array:
 	var lines := ["", "", "", ""]
 	if value is Array:
 		for i in mini((value as Array).size(), 4):
-			lines[i] = str(value[i]).left(SignBehavior.LINE_LENGTH)
+			lines[i] = NetGuard.clean_text(str(value[i]).left(SignBehavior.LINE_LENGTH * 2), SignBehavior.LINE_LENGTH)
 	return lines
 
 
 @rpc("any_peer", "call_remote", "reliable")
 func _client_sign(pos: Vector3i, lines: Array) -> void:
+	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if is_host() and world and _within(multiplayer.get_remote_sender_id(), "edit", EDIT_LIMIT, 1.0):
-		world.set_sign_text(pos, _sign_lines(lines))
+	if world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0) or lines.size() > 4:
+		return
+	if not _edit_allowed(peer, pos, true):
+		return
+	world.set_sign_text(pos, _sign_lines(lines))
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -747,25 +1142,107 @@ func send_use(pos: Vector3i) -> void:
 	_client_use.rpc_id(1, pos.x, pos.y, pos.z)
 
 
+## Host: whether the player of `peer` may change (or use) the block at
+## `pos`: loaded here, within its reach, outside the spawn protection
+## (`protected`: an edit, not a use) unless an op.
+func _edit_allowed(peer: int, pos: Vector3i, protected: bool) -> bool:
+	var world := _world()
+	if not NetGuard.in_world_i(pos):
+		_strike(peer, "block out of the world %s" % pos, 3)
+		return false
+	if world == null or not world.is_inside(pos):
+		return false # (land the host hasn't loaded: the player can't be there)
+	var at := _position_of(peer)
+	if at == Vector3.INF:
+		return false
+	var reach := REACH_CREATIVE if is_creative(peer) else REACH_SURVIVAL
+	if NetGuard.distance_to_block(at + Vector3(0, Player.EYE_HEIGHT, 0), pos) > reach:
+		_strike(peer, "out of reach %s" % pos)
+		return false
+	if protected and _spawn_protected(peer, pos):
+		_command_output.rpc_id(peer, Lang.t("The spawn is protected: only ops can change it"), CommandSource.MessageKind.ERROR)
+		return false
+	return true
+
+
+func _spawn_protected(peer: int, pos: Vector3i) -> bool:
+	if spawn_protection <= 0 or is_op(peer):
+		return false
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _spawn_cached_at > 10.0:
+		_spawn_cached_at = now
+		var world := _world()
+		_spawn_cache = world.find_spawn() if world else Vector3.INF
+	if _spawn_cache == Vector3.INF:
+		return false
+	return absi(pos.x - floori(_spawn_cache.x)) <= spawn_protection and absi(pos.z - floori(_spawn_cache.z)) <= spawn_protection
+
+
+## Host -> a client whose edit was refused: the block as it really is.
+func _restore_block(peer: int, pos: Vector3i) -> void:
+	var world := _world()
+	if world and world.is_inside(pos) and NetGuard.in_world_i(pos):
+		_blocks_changed.rpc_id(peer, PackedInt32Array([pos.x, pos.y, pos.z, world.get_block(pos)]))
+
+
 @rpc("any_peer", "call_remote", "reliable")
 func _client_set_block(x: int, y: int, z: int, id: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if is_host() and _within(multiplayer.get_remote_sender_id(), "edit", EDIT_LIMIT, 1.0) and world and id >= 0 and id < Blocks.count():
-		world.set_block(Vector3i(x, y, z), id)
+	if world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+		return
+	var pos := Vector3i(x, y, z)
+	if id < 0 or id >= Blocks.count():
+		_strike(peer, "no such block %d" % id, 5)
+		_restore_block(peer, pos)
+		return
+	if not _edit_allowed(peer, pos, true):
+		_restore_block(peer, pos)
+		return
+	if not is_creative(peer) and NetGuard.survival_forbidden(id):
+		_strike(peer, "placing %s in survival" % Blocks.get_type(id).name, 5)
+		_restore_block(peer, pos)
+		return
+	_active[peer] = Time.get_ticks_msec() / 1000.0
+	world.set_block(pos, id)
 
 
 @rpc("any_peer", "call_remote", "reliable")
 func _client_destroy(x: int, y: int, z: int, drop: bool, can_harvest: bool) -> void:
+	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if is_host() and _within(multiplayer.get_remote_sender_id(), "edit", EDIT_LIMIT, 1.0) and world:
-		world.destroy_block(Vector3i(x, y, z), drop, can_harvest)
+	if world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+		return
+	var pos := Vector3i(x, y, z)
+	if not _edit_allowed(peer, pos, true):
+		_restore_block(peer, pos)
+		return
+	var id := world.get_block(pos)
+	if id == Blocks.AIR:
+		return
+	var creative := is_creative(peer)
+	if not creative and NetGuard.unbreakable(id):
+		_strike(peer, "breaking %s in survival" % Blocks.get_type(id).name, 5)
+		_restore_block(peer, pos)
+		return
+	# What drops is the host's call: nothing in creative; the right tool by
+	# what the player holds (as it last said).
+	var avatar := _avatar_of(peer)
+	var held := avatar.held_block() if avatar else Blocks.AIR
+	_active[peer] = Time.get_ticks_msec() / 1000.0
+	world.destroy_block(pos, drop and not creative, can_harvest and Items.can_harvest(held, id))
 
 
 @rpc("any_peer", "call_remote", "reliable")
 func _client_use(x: int, y: int, z: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if is_host() and _within(multiplayer.get_remote_sender_id(), "edit", EDIT_LIMIT, 1.0) and world:
-		BlockInteraction.use_shared(world, Vector3i(x, y, z))
+	if world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+		return
+	var pos := Vector3i(x, y, z)
+	if _edit_allowed(peer, pos, false):
+		_active[peer] = Time.get_ticks_msec() / 1000.0
+		BlockInteraction.use_shared(world, pos)
 
 
 ## Host: where the clients' players are (their columns are kept loaded).
@@ -791,12 +1268,94 @@ func _send_own_state() -> void:
 		return
 	var flags := (1 if player.sneaking else 0) | (2 if player.vehicle else 0) | (4 if player.dead else 0) \
 		| (8 if player.sleeping else 0) | (16 if player.is_creative() else 0)
-	_player_state.rpc(player.global_position, player.rotation.y, player.pitch(), flags, player.held_block(), _swings)
+	if is_host():
+		for peer in _clients():
+			_peer_state.rpc_id(peer, 1, player.global_position, player.rotation.y, player.pitch(), flags, player.held_block(), _swings)
+	else:
+		_player_state.rpc_id(1, player.global_position, player.rotation.y, player.pitch(), flags, player.held_block(), _swings)
 
 
+## Client -> host: where its player is now (20 times a second). The host
+## checks the move (NetGuard.Mover) and passes it on to the others.
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _player_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int) -> void:
 	var id := multiplayer.get_remote_sender_id()
+	var world := _world()
+	if world == null or not _within(id, "state", STATE_LIMIT, 1.0):
+		return
+	if not NetGuard.in_world(at) or not is_finite(yaw) or not is_finite(pitch):
+		_strike(id, "impossible position", 3)
+		return
+	flags &= 31
+	if held != Blocks.AIR and not Items.exists(held):
+		held = Blocks.AIR
+	pitch = clampf(pitch, -PI, PI)
+	var now := Time.get_ticks_msec() / 1000.0
+	var mover: NetGuard.Mover = _moves.get(id)
+	if mover == null:
+		return
+	var dead := flags & 4 != 0
+	if mover.dead and not dead and _respawn_ok(id, at):
+		mover.teleport(at, now) # back to life at the spawn or its bed
+		mover.waiting_for = Vector3.INF
+	mover.dead = dead
+	var creative := is_creative(id)
+	var before := mover.position
+	var verdict := mover.check(at, now, creative, flags & 2 != 0)
+	if verdict == NetGuard.Mover.IGNORE:
+		return
+	if verdict == NetGuard.Mover.REJECT:
+		if mover.violated(now):
+			_drop(id, "Kicked for moving too fast")
+			return
+		if mover.violations.size() <= 3 or mover.violations.size() % 10 == 0:
+			log_event("[security] %s moved too fast (%.1f blocks), sent back" % [players[id].name, before.distance_to(at)])
+		_correct_position.rpc_id(id, mover.position)
+		return
+	# The game mode is the host's: a client saying otherwise is told again.
+	if (flags & 16 != 0) != creative and now - float(_mode_told.get(id, -10.0)) > 2.0:
+		_mode_told[id] = now
+		_set_mode.rpc_id(id, _modes.get(id, lan_game_mode), can_cheat(id))
+	flags = (flags & ~16) | (16 if creative else 0)
+	var avatar: RemotePlayer = avatars.get(id)
+	if avatar and is_instance_valid(avatar) and (before.distance_to(at) > 0.05 or absf(angle_difference(avatar.rotation.y, yaw)) > 0.05):
+		_active[id] = now
+	_show_state(id, at, yaw, pitch, flags, held, swings)
+	for peer in _clients():
+		if peer != id:
+			_peer_state.rpc_id(peer, id, at, yaw, pitch, flags, held, swings)
+
+
+## Host: whether a player coming back to life at `at` is where it may
+## respawn: the world spawn or by a bed (the one it last slept in).
+func _respawn_ok(peer: int, at: Vector3) -> bool:
+	var world := _world()
+	if world == null:
+		return false
+	var spawn := world.find_spawn()
+	if Vector2(at.x - spawn.x, at.z - spawn.z).length() < 8.0:
+		return true
+	var saved: Dictionary = saved_players.get(_tags.get(peer, ""), {})
+	var bed: Variant = saved.get("spawn", Vector3.INF)
+	if bed is Vector3 and bed != Vector3.INF and (bed as Vector3).distance_to(at) < 4.0:
+		return true
+	for dx in range(-2, 3):
+		for dz in range(-2, 3):
+			for dy in range(-1, 2):
+				if Blocks.family_of(world.get_block(Vector3i(at.floor()) + Vector3i(dx, dy, dz))).begins_with("bed_"):
+					return true
+	return false
+
+
+## Host -> client: the other player `id` (or the host's own, 1) moved.
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _peer_state(id: int, at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int) -> void:
+	if id == multiplayer.get_unique_id() or not players.has(id):
+		return
+	_show_state(id, at, yaw, pitch, flags, held, swings)
+
+
+func _show_state(id: int, at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int) -> void:
 	var world := _world()
 	if world == null or not players.has(id):
 		return
@@ -814,25 +1373,105 @@ func _player_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int,
 	avatar.set_state(at, yaw, pitch, flags, held, swings)
 
 
+## Host -> client: back to where the host saw it (it moved too fast), or
+## moved by the host (/tp, a respawn the host decided).
+@rpc("authority", "call_remote", "reliable")
+func _correct_position(at: Vector3) -> void:
+	var player := _game_player()
+	if player and at.is_finite():
+		CommandTargets.teleport(player, at)
+
+
+## Host: moves a client's player (/tp from the host or the console).
+func teleport_peer(peer: int, at: Vector3) -> void:
+	if peer == multiplayer.get_unique_id():
+		var player := _game_player()
+		if player:
+			CommandTargets.teleport(player, at)
+		return
+	var mover: NetGuard.Mover = _moves.get(peer)
+	if mover:
+		mover.teleport(at, Time.get_ticks_msec() / 1000.0)
+	var avatar := _avatar_of(peer)
+	if avatar:
+		avatar.target_position = at
+	_correct_position.rpc_id(peer, at)
+
+
+## Host: the game mode of a player (0 survival, 1 creative), kept with its
+## player in the save.
+func is_creative(peer: int) -> bool:
+	if peer == multiplayer.get_unique_id():
+		var player := _game_player()
+		return player != null and player.is_creative()
+	return int(_modes.get(peer, lan_game_mode)) == Player.GameMode.CREATIVE
+
+
+func set_peer_game_mode(peer: int, game_mode: int) -> void:
+	if peer == multiplayer.get_unique_id():
+		var player := _game_player()
+		if player:
+			player.game_mode = game_mode as Player.GameMode
+		return
+	_modes[peer] = game_mode
+	var tag: String = _tags.get(peer, "")
+	if tag != "":
+		var saved: Dictionary = saved_players.get(tag, {})
+		saved["game_mode"] = game_mode
+		saved_players[tag] = saved
+	_set_mode.rpc_id(peer, game_mode, can_cheat(peer))
+
+
+## Host -> client: its game mode and whether it may cheat (an op).
+@rpc("authority", "call_remote", "reliable")
+func _set_mode(game_mode: int, may_cheat: bool) -> void:
+	cheats = may_cheat
+	var player := _game_player()
+	if player and player.game_mode != clampi(game_mode, 0, 1):
+		player.game_mode = clampi(game_mode, 0, 1) as Player.GameMode
+
+
 # --- Chat, time and weather -------------------------------------------------------------------
 
-## Says something to everyone.
+## Says something to everyone (the chat already shows it here).
 func say(text: String) -> void:
-	_chat_line.rpc(player_name, text)
-
-
-@rpc("any_peer", "call_remote", "reliable")
-func _chat_line(from: String, text: String) -> void:
-	var sender := multiplayer.get_remote_sender_id()
-	if is_host() and not _within(sender, "chat", CHAT_LIMIT, 5.0):
+	text = NetGuard.clean_text(text)
+	if text == "":
 		return
-	if players.has(sender):
-		from = players[sender].name # (not whatever name it claims)
-	text = text.left(256)
+	if is_host():
+		log_event("<%s> %s" % [player_name, text])
+		for peer in _clients():
+			_chat_from.rpc_id(peer, 1, player_name, text)
+	elif is_client():
+		_chat_line.rpc_id(1, text)
+
+
+## Client -> host: a chat line; the host passes it on with the name it knows.
+@rpc("any_peer", "call_remote", "reliable")
+func _chat_line(text: String) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if not _within(sender, "chat", CHAT_LIMIT, 5.0):
+		return
+	text = NetGuard.clean_text(text)
+	if text == "":
+		return
+	_active[sender] = Time.get_ticks_msec() / 1000.0
+	var from: String = players[sender].name
+	log_event("<%s> %s" % [from, text])
 	var chat := _chat()
 	if chat:
-		var look: Dictionary = looks.get(multiplayer.get_remote_sender_id(), {})
-		chat.add_chat(from, text, int(look.get("color", 0)))
+		chat.add_chat(from, text, color_of(sender))
+	for peer in _clients():
+		if peer != sender:
+			_chat_from.rpc_id(peer, sender, from, text)
+
+
+## Host -> client: someone's chat line.
+@rpc("authority", "call_remote", "reliable")
+func _chat_from(id: int, from: String, text: String) -> void:
+	var chat := _chat()
+	if chat:
+		chat.add_chat(from.left(NetGuard.NAME_MAX + 4), text.left(NetGuard.CHAT_MAX), color_of(id))
 
 
 # --- Looks: name colors and skins ----------------------------------------------------------
@@ -844,25 +1483,53 @@ func _own_look() -> Dictionary:
 ## Sends this player's name color and skin to everyone (on joining and
 ## when they change in Player Settings).
 func send_look() -> void:
-	if not is_online() or multiplayer.multiplayer_peer == null:
+	if not is_online() or multiplayer.multiplayer_peer == null or dedicated:
 		return
 	var own := _own_look()
 	var id := multiplayer.get_unique_id()
 	looks[id] = own
-	_look.rpc(id, own.color, own.png)
+	if is_host():
+		for peer in _clients():
+			_look_of.rpc_id(peer, id, own.color, own.png)
+	else:
+		_look.rpc_id(1, own.color, own.png)
 	players_changed.emit()
 
 
+## Client -> host: its look; checked (a small real skin) and passed on.
 @rpc("any_peer", "call_remote", "reliable")
-func _look(id: int, color: int, png: PackedByteArray) -> void:
+func _look(color: int, png: PackedByteArray) -> void:
 	var sender := multiplayer.get_remote_sender_id()
-	if sender != id and sender != 1:
-		return # only one's own look (or the host passing it on)
-	looks[id] = {"color": clampi(color, 0, PlayerProfile.COLORS.size() - 1), "png": png,
-		"skin": PlayerProfile.skin_from_png(png)}
+	if not _within(sender, "look", 6, 10.0):
+		return
+	var skin: Texture2D = null
+	if png.size() > NetGuard.SKIN_BYTES:
+		_strike(sender, "skin of %d bytes" % png.size(), 3)
+		png = PackedByteArray()
+	elif not png.is_empty():
+		skin = PlayerProfile.skin_from_png(png)
+		if skin == null:
+			png = PackedByteArray()
+	color = clampi(color, 0, PlayerProfile.COLORS.size() - 1)
+	_set_look(sender, color, png, skin)
+	for peer in _clients():
+		if peer != sender:
+			_look_of.rpc_id(peer, sender, color, png)
+
+
+## Host -> client: how player `id` looks.
+@rpc("authority", "call_remote", "reliable")
+func _look_of(id: int, color: int, png: PackedByteArray) -> void:
+	if png.size() > NetGuard.SKIN_BYTES:
+		png = PackedByteArray()
+	_set_look(id, clampi(color, 0, PlayerProfile.COLORS.size() - 1), png, PlayerProfile.skin_from_png(png))
+
+
+func _set_look(id: int, color: int, png: PackedByteArray, skin: Texture2D) -> void:
+	looks[id] = {"color": color, "png": png, "skin": skin}
 	var avatar: RemotePlayer = avatars.get(id)
 	if avatar and is_instance_valid(avatar):
-		avatar.set_look(looks[id].color, looks[id].skin)
+		avatar.set_look(color, skin)
 	players_changed.emit()
 
 
@@ -882,7 +1549,7 @@ func skin_of(id: int) -> Texture2D:
 
 func _send_world_sync() -> void:
 	var world := _world()
-	if world == null or players.size() < 2:
+	if world == null or not _has_clients():
 		return
 	# The round trip to each player (ENet's measure), for the Tab list.
 	for id: int in players:
@@ -908,12 +1575,35 @@ func _world_sync(game_time: int, day_time: float, raining: bool, rain: float, th
 	world.weather.thunder_strength = thunder
 
 
-# --- The host's commands (NetCommands) and bans ---------------------------------------------
+# --- Permissions, the host's commands (NetCommands), bans and lists ---------------------------
+
+## Whether a player is an op: the host of an Open to LAN game always, a
+## client when on the ops list (ServerLists, its name tied to its tag).
+func is_op(peer: int) -> bool:
+	if peer == multiplayer.get_unique_id() or peer == 0:
+		return is_host() or not is_online()
+	return bool(_ops.get(peer, false))
+
+
+## Whether a player may run cheat commands: ops, and everyone in an Open to
+## LAN game with Allow Cheats on.
+func can_cheat(peer: int) -> bool:
+	return is_op(peer) or (cheats and not dedicated)
+
+
+func whitelist_on() -> bool:
+	return server.config.get_bool("white-list") if dedicated else lists.whitelist_enabled()
+
+
+func set_whitelist(on: bool) -> void:
+	if dedicated:
+		server.config.set_value("white-list", on)
+	else:
+		lists.set_whitelist_enabled(on)
+
 
 func is_banned(tag: String) -> bool:
-	var config := ConfigFile.new()
-	config.load(BANS_PATH)
-	return config.has_section_key("bans", tag)
+	return lists.is_banned(tag)
 
 
 ## The players with their tags (first 8 characters) and addresses.
@@ -921,7 +1611,10 @@ func describe_players() -> String:
 	var lines := PackedStringArray()
 	for id: int in players:
 		var tag: String = PlayerProfile.tag_for_server(_salt()) if id == 1 else _tags.get(id, "")
-		lines.append("%s  #%s  %s" % [players[id].name, tag.left(8), "host" if id == 1 else _addresses.get(id, "?")])
+		lines.append("%s  #%s  %s%s%s" % [players[id].name, tag.left(8), "host" if id == 1 else _addresses.get(id, "?"),
+			"  op" if is_op(id) and id != 1 else "", "  creative" if is_creative(id) else ""])
+	if lines.is_empty():
+		lines.append(Lang.t("Nobody is here"))
 	return "\n".join(lines)
 
 
@@ -932,12 +1625,13 @@ func _peer_named(player: String) -> int:
 	return 0
 
 
-func kick(player: String) -> String:
+func kick(player: String, reason: String = "") -> String:
 	var id := _peer_named(player)
 	if id == 0:
 		return ""
-	_drop(id, "Kicked by the host")
-	return players[id].name
+	var who: String = players[id].name
+	_drop(id, "Kicked by an operator" + (": " + NetGuard.clean_text(reason, 100) if reason.strip_edges() != "" else ""))
+	return who
 
 
 ## Bans a player's tag (they can't come back from that computer) and kicks them.
@@ -945,28 +1639,107 @@ func ban(player: String) -> String:
 	var id := _peer_named(player)
 	if id == 0 or not _tags.has(id):
 		return ""
-	var config := ConfigFile.new()
-	config.load(BANS_PATH)
-	config.set_value("bans", _tags[id], players[id].name)
-	config.save(BANS_PATH)
+	var who: String = players[id].name
+	lists.ban(_tags[id], who)
 	_drop(id, "You are banned from this server")
-	return players[id].name
+	return who
 
 
 ## Lifts a ban by the start of the tag (or the name it was banned with).
 func pardon(tag_or_name: String) -> String:
-	var config := ConfigFile.new()
-	config.load(BANS_PATH)
-	if not config.has_section("bans"):
+	return lists.pardon(tag_or_name)
+
+
+## Bans an address (or the address of the player named so) and kicks
+## everyone from it. Returns the address or "".
+func ban_ip(target: String) -> String:
+	var address := target.strip_edges()
+	var id := _peer_named(address)
+	if id != 0:
+		address = _addresses.get(id, "")
+	if not address.is_valid_ip_address():
 		return ""
-	var wanted := tag_or_name.strip_edges().trim_prefix("#").to_lower()
-	for tag: String in config.get_section_keys("bans"):
-		var banned_name := str(config.get_value("bans", tag))
-		if wanted != "" and (tag.begins_with(wanted) or banned_name.to_lower() == wanted):
-			config.erase_section_key("bans", tag)
-			config.save(BANS_PATH)
-			return banned_name
-	return ""
+	lists.ban_ip(address, players[id].name if id != 0 else "")
+	for peer: int in _addresses.keys():
+		if _addresses[peer] == address:
+			_drop(peer, "You are banned from this server")
+	return address
+
+
+func pardon_ip(address: String) -> bool:
+	return lists.pardon_ip(address)
+
+
+## Makes a player an op (online: tied to its computer; else by name, tied
+## when it joins). Returns the name.
+func op_player(player: String) -> String:
+	var id := _peer_named(player)
+	var who := player.strip_edges()
+	if id != 0:
+		who = players[id].name
+		lists.op(who, _tags.get(id, ""))
+		_ops[id] = true
+		_set_mode.rpc_id(id, _modes.get(id, lan_game_mode), can_cheat(id))
+		_command_output.rpc_id(id, Lang.t("You are now an operator"), CommandSource.MessageKind.INFO)
+	elif NetGuard.valid_name(who):
+		lists.op(who, "")
+	else:
+		return ""
+	return who
+
+
+func deop_player(player: String) -> String:
+	var id := _peer_named(player)
+	var who: String = players[id].name if id != 0 else player.strip_edges()
+	var was := lists.deop(who)
+	if id != 0 and _ops.get(id, false):
+		_ops[id] = false
+		was = true
+		_set_mode.rpc_id(id, _modes.get(id, lan_game_mode), can_cheat(id))
+		_command_output.rpc_id(id, Lang.t("You are no longer an operator"), CommandSource.MessageKind.INFO)
+	return who if was else ""
+
+
+func whitelist_add(player: String) -> String:
+	var id := _peer_named(player)
+	var who: String = players[id].name if id != 0 else player.strip_edges()
+	if id == 0 and not NetGuard.valid_name(who):
+		return ""
+	lists.whitelist_add(who, _tags.get(id, "") if id != 0 else "")
+	return who
+
+
+func whitelist_remove(player: String) -> String:
+	var who := player.strip_edges()
+	return who if lists.whitelist_remove(who) else ""
+
+
+## Saves the world now (the players' newest states come with the next save).
+func save_all() -> void:
+	if is_host() and _has_clients():
+		_save_request.rpc()
+	var game := Game.find(get_tree())
+	if game:
+		game.save_game()
+
+
+## Host -> clients: send your player now (a save is coming).
+@rpc("authority", "call_remote", "reliable")
+func _save_request() -> void:
+	send_player_state()
+
+
+## A dedicated server stopping: everyone's player is asked for, then they
+## are sent away (`reason`).
+func shutdown_server(reason: String) -> void:
+	if not is_host():
+		return
+	if _has_clients():
+		_save_request.rpc()
+		await get_tree().create_timer(1.0).timeout
+		for peer in _clients():
+			_drop(peer, reason)
+		await get_tree().create_timer(0.7).timeout
 
 
 # --- Entities and dropped items (the host's, seen by clients) --------------------------------
@@ -977,7 +1750,8 @@ func _avatar_of(peer: int) -> RemotePlayer:
 
 
 ## Host: each client gets the entities and items near its player: new ones
-## whole, all with where they are now, and which ones went.
+## whole (SNAPSHOT_NEW at a time), all with where they are now, and which
+## ones went; at most SNAPSHOT_ENTITIES / SNAPSHOT_ITEMS in one.
 func _send_snapshots() -> void:
 	var world := _world()
 	if world == null:
@@ -992,7 +1766,10 @@ func _send_snapshots() -> void:
 		var known: Dictionary = _known_entities.get(peer, {})
 		var seen := {}
 		var entries := []
+		var new_ones := 0
 		for entity in world.entities.all():
+			if entries.size() >= SNAPSHOT_ENTITIES:
+				break
 			if entity.removed or entity.type_name() == "fishing_bobber":
 				continue
 			if Vector2(entity.feet().x - at.x, entity.feet().z - at.z).length() > ENTITY_RANGE:
@@ -1000,9 +1777,13 @@ func _send_snapshots() -> void:
 			if entity.net_id == 0:
 				entity.net_id = _next_net_id
 				_next_net_id += 1
+			var is_new := not known.has(entity.net_id)
+			if is_new:
+				if new_ones >= SNAPSHOT_NEW:
+					continue # (next time)
+				new_ones += 1
 			seen[entity.net_id] = true
-			var whole: Variant = null if known.has(entity.net_id) else entity.save_state()
-			entries.append([entity.net_id, entity.feet(), entity.net_yaw(), entity.net_state(), whole])
+			entries.append([entity.net_id, entity.feet(), entity.net_yaw(), entity.net_state(), entity.save_state() if is_new else null])
 		var gone := PackedInt32Array()
 		for id: int in known:
 			if not seen.has(id):
@@ -1012,6 +1793,8 @@ func _send_snapshots() -> void:
 		var seen_items := {}
 		var items := []
 		for item: Dictionary in world.items.net_items():
+			if items.size() >= SNAPSHOT_ITEMS:
+				break
 			var pos: Vector3 = item.pos
 			if Vector2(pos.x - at.x, pos.z - at.z).length() > ITEM_RANGE:
 				continue
@@ -1070,19 +1853,40 @@ func send_spawn(entity: Entity) -> void:
 func _client_spawn(state: Dictionary, extra: Dictionary) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if not is_host() or world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+	if world == null or not _within(peer, "spawn", SPAWN_LIMIT, 1.0):
 		return
-	var entity := world.entities.create(str(state.get("type", "")))
-	if entity == null or entity is Mob:
-		return # (no creatures from clients)
-	world.entities.spawn(entity, state.get("position", Vector3.ZERO))
-	entity.load_state(state)
-	entity.velocity = extra.get("velocity", Vector3.ZERO)
-	if "_yaw" in entity:
-		entity.set("_yaw", float(extra.get("yaw", 0.0)))
+	if state.size() > 32 or extra.size() > 8:
+		_strike(peer, "entity state too big", 3)
+		return
+	var type := str(state.get("type", ""))
+	if not type in CLIENT_SPAWNS:
+		_strike(peer, "making a %s" % type.left(32), 5)
+		return
+	var entity := world.entities.create(type)
+	if entity == null:
+		return
+	# Only the keys (and value types) this kind has; where it appears near
+	# the player; no faster than a full bow's arrow.
+	var clean := NetGuard.clean_entity_state(state, entity.save_state())
+	var at: Vector3 = clean.get("position", Vector3.INF)
+	var eye := _position_of(peer) + Vector3(0, Player.EYE_HEIGHT, 0)
+	if not NetGuard.in_world(at) or not eye.is_finite() or at.distance_to(eye) > (REACH_CREATIVE if is_creative(peer) else REACH_SURVIVAL) + 2.0:
+		_strike(peer, "a %s out of reach" % type, 2)
+		entity.free()
+		return
+	if type == "tnt":
+		clean["fuse"] = PrimedTnt.FUSE
+	world.entities.spawn(entity, at)
+	entity.load_state(clean)
+	var velocity: Variant = extra.get("velocity", Vector3.ZERO)
+	entity.velocity = (velocity as Vector3).limit_length(4.0) if velocity is Vector3 and (velocity as Vector3).is_finite() else Vector3.ZERO
+	var yaw: Variant = extra.get("yaw", 0.0)
+	if "_yaw" in entity and yaw is float and is_finite(yaw):
+		entity.set("_yaw", yaw)
 	if entity is Arrow:
 		(entity as Arrow).shooter = _avatar_of(peer)
-		(entity as Arrow).power = float(extra.get("power", 1.0))
+		var power: Variant = extra.get("power", 1.0)
+		(entity as Arrow).power = clampf(power, 0.0, 1.0) if power is float and is_finite(power) else 1.0
 
 
 ## Client -> host: hit the host's entity `id` for `amount`.
@@ -1090,17 +1894,29 @@ func send_attack(id: int, amount: int) -> void:
 	_client_attack.rpc_id(1, id, amount)
 
 
+## The hardest hit a player can make with what it holds (a critical hit
+## is half as hard again).
+func _max_hit(peer: int) -> int:
+	var avatar := _avatar_of(peer)
+	var damage := Items.attack_damage(avatar.held_block() if avatar else Blocks.AIR)
+	return damage + damage / 2 + 1
+
+
 @rpc("any_peer", "call_remote", "reliable")
 func _client_attack(id: int, amount: int) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if not is_host() or world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+	if world == null or not _within(peer, "attack", ATTACK_LIMIT, 1.0):
 		return
 	var entity := world.entities.by_net_id(id)
 	var avatar := _avatar_of(peer)
-	if entity == null or avatar == null or entity.center().distance_to(avatar.target_position) > 7.0:
+	if entity == null or avatar == null or avatar.dead:
 		return
-	if entity.damage(clampi(amount, 0, 40), avatar.target_position) and entity is Mob:
+	if entity.center().distance_to(avatar.target_position + Vector3(0, Player.EYE_HEIGHT, 0)) > REACH_SURVIVAL + 1.0:
+		_strike(peer, "hit out of reach")
+		return
+	_active[peer] = Time.get_ticks_msec() / 1000.0
+	if entity.damage(clampi(amount, 0, _max_hit(peer)), avatar.target_position) and entity is Mob:
 		(entity as Mob).hurt_by(avatar)
 
 
@@ -1113,10 +1929,13 @@ func send_mount(id: int) -> void:
 func _client_mount(id: int) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if not is_host() or world == null or not players.has(peer):
+	var avatar := _avatar_of(peer)
+	if world == null or avatar == null or avatar.dead or not _within(peer, "edit", EDIT_LIMIT, 1.0):
 		return
 	var entity := world.entities.by_net_id(id)
-	if entity and (entity is Boat or (entity is Minecart and entity.type_name() == "minecart")) and entity.seat_free():
+	if entity == null or entity.center().distance_to(avatar.target_position) > REACH_CREATIVE:
+		return
+	if (entity is Boat or (entity is Minecart and entity.type_name() == "minecart")) and entity.seat_free():
 		entity.remote_rider = peer
 		_mounted.rpc_id(peer, id)
 
@@ -1140,21 +1959,23 @@ func send_dismount(id: int) -> void:
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _client_steer(id: int, forward: float, look: Vector3) -> void:
+	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if not is_host() or world == null:
+	if world == null or not _within(peer, "steer", STATE_LIMIT, 1.0) or not look.is_finite() or not is_finite(forward):
 		return
 	var entity := world.entities.by_net_id(id)
-	if entity and entity.remote_rider == multiplayer.get_remote_sender_id() and entity.has_method("steer"):
-		entity.call("steer", clampf(forward, -1.0, 1.0), look)
+	if entity and entity.remote_rider == peer and entity.has_method("steer"):
+		entity.call("steer", clampf(forward, -1.0, 1.0), look.normalized() if look.length() > 0.001 else Vector3.FORWARD)
 
 
 @rpc("any_peer", "call_remote", "reliable")
 func _client_dismount(id: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if not is_host() or world == null:
+	if world == null or not _joined(peer):
 		return
 	var entity := world.entities.by_net_id(id)
-	if entity and entity.remote_rider == multiplayer.get_remote_sender_id():
+	if entity and entity.remote_rider == peer:
 		entity.remote_rider = 0
 
 
@@ -1175,14 +1996,15 @@ func _client_interact(id: int, held: PackedInt32Array, riding: bool) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
 	var avatar := _avatar_of(peer)
-	if not is_host() or world == null or avatar == null or held.size() != 3 or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+	if world == null or avatar == null or avatar.dead or held.size() != 3 or not _within(peer, "edit", EDIT_LIMIT, 1.0):
 		return
 	var entity := world.entities.by_net_id(id)
 	if entity == null or not entity.has_method("interact") or entity.center().distance_to(avatar.target_position) > 7.0:
 		return
-	if (held[0] != Blocks.AIR and not Items.exists(held[0])) or held[1] < 0 or held[1] > 64:
+	if not NetGuard.valid_stack(held[0], held[1], held[2]):
+		_strike(peer, "impossible item in hand", 3)
 		return
-	var proxy := NetPlayerProxy.new(held, avatar.is_creative(), riding, avatar.target_position)
+	var proxy := NetPlayerProxy.new(held, is_creative(peer), riding, avatar.target_position)
 	if not entity.call("interact", proxy, proxy.inventory.id_at(0)):
 		return
 	var mounted := 0
@@ -1231,13 +2053,15 @@ func _client_jukebox(pos: Vector3i, held: PackedInt32Array) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
 	var avatar := _avatar_of(peer)
-	if not is_host() or world == null or avatar == null or held.size() != 3 or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+	if world == null or avatar == null or held.size() != 3 or not _within(peer, "edit", EDIT_LIMIT, 1.0):
 		return
-	if Blocks.family_of(world.get_block(pos)) != "jukebox" or Vector3(pos).distance_to(avatar.target_position) > CONTAINER_REACH:
+	if not NetGuard.in_world_i(pos) or Blocks.family_of(world.get_block(pos)) != "jukebox" \
+			or Vector3(pos).distance_to(avatar.target_position) > CONTAINER_REACH:
 		return
-	if (held[0] != Blocks.AIR and not Items.exists(held[0])) or held[1] < 0 or held[1] > 64:
+	if not NetGuard.valid_stack(held[0], held[1], held[2]):
+		_strike(peer, "impossible item in hand", 3)
 		return
-	var proxy := NetPlayerProxy.new(held, avatar.is_creative(), false, avatar.target_position)
+	var proxy := NetPlayerProxy.new(held, is_creative(peer), false, avatar.target_position)
 	if MusicBehavior.use_jukebox(world, pos, proxy, proxy.inventory.id_at(0)):
 		var inventory := proxy.inventory
 		_interacted.rpc_id(peer, PackedInt32Array([held[0], held[1], held[2],
@@ -1246,7 +2070,7 @@ func _client_jukebox(pos: Vector3i, held: PackedInt32Array) -> void:
 
 ## Host: a jukebox started (`track`) or stopped ("") playing: for everyone.
 func record_changed(pos: Vector3i, track: String) -> void:
-	if players.size() > 1:
+	if _has_clients():
 		_record.rpc(pos, track)
 
 
@@ -1272,7 +2096,8 @@ func all_asleep() -> bool:
 
 # --- Players hurting players (and creatures hurting clients) -------------------------------------
 
-## Hurts the player of `peer` (the host's creatures, another player's hit).
+## Hurts the player of `peer` (the host's creatures, another player's hit;
+## a client's hits go through the host).
 func hurt_peer(peer: int, amount: int, from: Vector3) -> void:
 	if peer == multiplayer.get_unique_id():
 		var player := _game_player()
@@ -1282,14 +2107,37 @@ func hurt_peer(peer: int, amount: int, from: Vector3) -> void:
 			if from != Vector3.INF:
 				player.knockback(from)
 		return
-	_hurt.rpc_id(peer, amount, from)
+	if is_host():
+		_hurt.rpc_id(peer, amount, from)
+	elif is_client():
+		_client_hurt.rpc_id(1, peer, amount, from != Vector3.INF)
 
 
+## Client -> host: its player hit the player of `target` (`amount`, and
+## pushed it away with `knock`). The host checks pvp, the reach and the
+## weapon, and hurts it from where it sees the attacker.
 @rpc("any_peer", "call_remote", "reliable")
-func _hurt(amount: int, from: Vector3) -> void:
-	var sender := multiplayer.get_remote_sender_id()
-	if not players.has(sender) or (sender != 1 and not _within_any(sender)):
+func _client_hurt(target: int, amount: int, knock: bool) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	if not _within(peer, "attack", ATTACK_LIMIT, 1.0) or not pvp or target == peer:
 		return
+	if not (_joined(target) or (target == 1 and not dedicated)):
+		return
+	var attacker := _avatar_of(peer)
+	var at := _position_of(target)
+	if attacker == null or attacker.dead or at == Vector3.INF:
+		return
+	var from := attacker.target_position
+	if (at + Vector3(0, 0.9, 0)).distance_to(from + Vector3(0, Player.EYE_HEIGHT, 0)) > REACH_SURVIVAL + 1.0:
+		_strike(peer, "hit a player out of reach")
+		return
+	_active[peer] = Time.get_ticks_msec() / 1000.0
+	hurt_peer(target, clampi(amount, 0, _max_hit(peer)), from if knock else Vector3.INF)
+
+
+## Host -> client: its player is hurt (and pushed away from `from`).
+@rpc("authority", "call_remote", "reliable")
+func _hurt(amount: int, from: Vector3) -> void:
 	var player := _game_player()
 	if player == null:
 		return
@@ -1297,18 +2145,6 @@ func _hurt(amount: int, from: Vector3) -> void:
 		player.damage(mini(amount, 20))
 	if from != Vector3.INF and from.is_finite():
 		player.knockback(from)
-
-
-## Hits from other players: at most a few a second.
-func _within_any(sender: int) -> bool:
-	var now := Time.get_ticks_msec() / 1000.0
-	var key := "%d/hurt" % sender
-	var entry: Array = _counters.get(key, [now, 0])
-	if now - float(entry[0]) > 1.0:
-		entry = [now, 0]
-	entry[1] = int(entry[1]) + 1
-	_counters[key] = entry
-	return int(entry[1]) <= 10
 
 
 # --- Dropped items: through the host ----------------------------------------------------------------
@@ -1322,11 +2158,21 @@ func send_item(id: int, count: int, position: Vector3, velocity: Vector3, damage
 func _client_item(id: int, count: int, position: Vector3, velocity: Vector3, damage: int, delay: int) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if not is_host() or world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+	if world == null or not _within(peer, "drop", DROP_LIMIT, 1.0):
 		return
-	if id <= 0 or count <= 0 or count > 64:
+	if id == Blocks.AIR or not NetGuard.valid_stack(id, count, damage):
+		_strike(peer, "dropping an impossible item (%d x%d)" % [id, count], 3)
 		return
-	world.items.spawn(id, count, position, velocity, delay, damage)
+	if not is_creative(peer) and id < Blocks.count() and NetGuard.survival_forbidden(id):
+		_strike(peer, "dropping %s in survival" % Blocks.get_type(id).name, 5)
+		return
+	var eye := _position_of(peer) + Vector3(0, Player.EYE_HEIGHT, 0)
+	if not eye.is_finite():
+		return
+	if not position.is_finite() or position.distance_to(eye) > 4.0:
+		position = eye # (from its eyes, not wherever it said)
+	velocity = velocity.limit_length(1.5) if velocity.is_finite() else Vector3.ZERO
+	world.items.spawn(id, count, position, velocity, clampi(delay, 0, 200), damage)
 
 
 ## Client -> host: pick up the host's item `nid` (it walked over it).
@@ -1339,7 +2185,7 @@ func _client_pickup(nid: int) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
 	var avatar := _avatar_of(peer)
-	if not is_host() or world == null or avatar == null:
+	if world == null or avatar == null or avatar.dead or not _within(peer, "pickup", 200, 1.0):
 		return
 	var taken: Array = world.items.take_for_network(nid, avatar.target_position)
 	if not taken.is_empty():
@@ -1349,12 +2195,32 @@ func _client_pickup(nid: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _give(id: int, count: int, damage: int) -> void:
 	var player := _game_player()
-	if player == null:
+	if player == null or not NetGuard.valid_stack(id, count, damage) or id == Blocks.AIR:
 		return
 	var left := player.inventory.add(id, count, damage)
 	Sounds.play("random/pop", null, 0.2, ((randf() - randf()) * 0.7 + 1.0) * 2.0)
 	if left > 0: # (no room after all: back on the ground)
 		send_item(id, left, player.global_position + Vector3(0, 1, 0), Vector3.ZERO, damage, 40)
+
+
+## Host -> client: takes back items it got from a container slot another
+## player had emptied first (the cursor first, then the inventory).
+@rpc("authority", "call_remote", "reliable")
+func _take_back(id: int, count: int) -> void:
+	var player := _game_player()
+	if player == null or count <= 0:
+		return
+	var screen := _inventory_screen()
+	if screen:
+		count -= screen.take_from_cursor(id, count)
+	var inventory := player.inventory
+	for slot in inventory.size():
+		if count <= 0:
+			break
+		if inventory.id_at(slot) == id:
+			var taken := mini(count, inventory.count_at(slot))
+			inventory.take(slot, taken)
+			count -= taken
 
 
 # --- Clients' players kept by the host ------------------------------------------------------------
@@ -1370,15 +2236,26 @@ func send_player_state() -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func _client_player_state(state: Dictionary) -> void:
 	var peer := multiplayer.get_remote_sender_id()
-	if not is_host() or not _tags.has(peer):
+	if not is_host() or not _tags.has(peer) or not players.has(peer):
 		return
-	saved_players[_tags[peer]] = state
+	# (A kicked player's last state still counts: it is sent on leaving.)
+	if not _dropping.has(peer) and not _within(peer, "save", 6, 10.0):
+		return
+	var clean := NetGuard.clean_player_state(state, _position_of(peer))
+	if clean.is_empty():
+		_strike(peer, "player state too big", 3)
+		return
+	var tag: String = _tags[peer]
+	if int(_modes.get(peer, lan_game_mode)) != lan_game_mode:
+		clean["game_mode"] = _modes[peer]
+	saved_players[tag] = clean
 
 
 # --- Cheats ----------------------------------------------------------------------------------
 
 ## Whether commands needing cheats may run here: the network game's choice
-## when online, else the world's ("Allow Cheats").
+## when online (a client: whether the host lets it), else the world's
+## ("Allow Cheats").
 func cheats_allowed() -> bool:
 	if is_online():
 		return cheats
@@ -1387,31 +2264,51 @@ func cheats_allowed() -> bool:
 
 ## Client -> host: a world command (HOST_COMMANDS) typed by this player.
 func send_command(text: String) -> void:
-	_client_command.rpc_id(1, text)
+	_client_command.rpc_id(1, text.left(1024))
 
 
 @rpc("any_peer", "call_remote", "reliable")
 func _client_command(text: String) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if not is_host() or world == null or not _within(peer, "chat", CHAT_LIMIT, 5.0):
+	if world == null or not _within(peer, "chat", CHAT_LIMIT, 5.0):
 		return
-	var root := text.strip_edges().trim_prefix("/").get_slice(" ", 0).to_lower()
-	if not root in HOST_COMMANDS or (not cheats and not root in FREE_COMMANDS):
+	text = NetGuard.clean_text(text, 1024)
+	var root := text.trim_prefix("/").get_slice(" ", 0).to_lower()
+	if not root in HOST_COMMANDS:
 		return
+	var allowed := can_cheat(peer) or root in FREE_COMMANDS
+	if root in OP_COMMANDS or (not is_op(peer) and _runs_op_command(text)):
+		allowed = is_op(peer)
+	var who: String = players[peer].name
+	if not allowed:
+		log_event("%s tried the command: %s" % [who, text])
+		_command_output.rpc_id(peer, Lang.t("You don't have permission to use this command"), CommandSource.MessageKind.ERROR)
+		return
+	log_event("%s issued the command: %s" % [who, text])
+	_active[peer] = Time.get_ticks_msec() / 1000.0
 	var source := CommandSource.new()
-	source.name = str(players[peer].name)
+	source.name = who
 	source.world = world
 	source.origin = _avatar_of(peer) # ~ ~ ~ are where that player is
 	source.output = func(message: String, kind: int) -> void: _command_output.rpc_id(peer, message, kind)
 	Commands.dispatcher.execute(text, source)
 
 
+## Whether a command runs an op's command inside (/execute ... run kick).
+static func _runs_op_command(text: String) -> bool:
+	var words := text.to_lower().split(" ", false)
+	for i in words.size() - 1:
+		if words[i] == "run" and words[i + 1].trim_prefix("/") in OP_COMMANDS:
+			return true
+	return false
+
+
 @rpc("authority", "call_remote", "reliable")
 func _command_output(text: String, kind: int) -> void:
 	var chat := _chat()
 	if chat:
-		chat.add_message(text, kind)
+		chat.add_message(text.left(4096), clampi(kind, 0, CommandSource.MessageKind.size() - 1))
 
 # --- Containers: chests, furnaces and dispensers are the host's -------------------------------------
 # A client asks the host to open one (both halves of a large chest); the host
@@ -1420,6 +2317,11 @@ func _command_output(text: String, kind: int) -> void:
 # the slots that changed: the client what its player moved, the host
 # (10 times a second) what changed there (its player, the furnace, a
 # dispenser firing, another client) and the furnace's fire and arrow.
+# A client's change to a slot that changed on the host since the client saw
+# it is merged when it is more or less of the same item (a furnace's output
+# growing while it is taken) and otherwise undone on both sides: the host
+# keeps its slot and takes back from the client what it got (_take_back) and
+# gives back what it put in (_give). So two players can't take one stack.
 
 const CONTAINER_SECONDS := 0.1
 const CONTAINER_REACH := 8.0
@@ -1503,10 +2405,14 @@ func open_container(positions: Array[Vector3i]) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func _client_open(packed: PackedInt32Array) -> void:
 	if packed.size() not in [3, 6]:
+		_strike(multiplayer.get_remote_sender_id(), "opening %d numbers" % packed.size(), 3)
 		return
 	var keys := []
 	for i in range(0, packed.size(), 3):
-		keys.append(Vector3i(packed[i], packed[i + 1], packed[i + 2]))
+		var pos := Vector3i(packed[i], packed[i + 1], packed[i + 2])
+		if not NetGuard.in_world_i(pos):
+			return
+		keys.append(pos)
 	_open_for(multiplayer.get_remote_sender_id(), keys)
 
 
@@ -1514,7 +2420,7 @@ func _client_open(packed: PackedInt32Array) -> void:
 func _open_for(peer: int, keys: Array) -> void:
 	var world := _world()
 	var avatar := _avatar_of(peer)
-	if not is_host() or world == null or avatar == null or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+	if world == null or avatar == null or avatar.dead or not _within(peer, "edit", EDIT_LIMIT, 1.0):
 		return
 	_close_for(peer)
 	var states := []
@@ -1532,6 +2438,7 @@ func _open_for(peer: int, keys: Array) -> void:
 		if not _viewers.has(key):
 			_viewers[key] = {}
 		_viewers[key][peer] = [state[1], state[2]]
+	_active[peer] = Time.get_ticks_msec() / 1000.0
 	_container_opened.rpc_id(peer, states)
 
 
@@ -1574,7 +2481,7 @@ func _set_container(pos: Variant, entity: Dictionary, slots: PackedInt32Array, f
 	var known: PackedInt32Array = _container_slots.get(pos, _slots_of(inventory))
 	_applying_container = true
 	if changes:
-		for i in range(0, slots.size(), 4):
+		for i in range(0, slots.size() - 3, 4):
 			var slot := slots[i]
 			if slot >= 0 and slot < inventory.size():
 				inventory.set_slot(slot, slots[i + 1], slots[i + 2], slots[i + 3])
@@ -1608,21 +2515,67 @@ func _container_changed(pos: Variant) -> void:
 func _client_container_slots(pos: Variant, changes: PackedInt32Array) -> void:
 	var peer := multiplayer.get_remote_sender_id()
 	var world := _world()
-	if not is_host() or world == null or not _viewers.has(pos) or not (_viewers[pos] as Dictionary).has(peer):
+	if world == null or not _within(peer, "container", 200, 1.0):
+		return
+	if not (pos is Vector3i or pos is int) or not _viewers.has(pos) or not (_viewers[pos] as Dictionary).has(peer):
 		return
 	var entity := _container_at(world, pos)
-	if entity.is_empty() or changes.size() % 4 != 0:
+	var inventory: Inventory = entity.get("inventory")
+	if entity.is_empty() or changes.size() % 4 != 0 or changes.size() > inventory.size() * 4:
+		_strike(peer, "bad container change", 2)
 		return
-	var inventory: Inventory = entity.inventory
+	var creative := is_creative(peer)
+	var agreed: PackedInt32Array = (_viewers[pos][peer][0] as PackedInt32Array).duplicate()
+	var stale := {} # slots the client must be told again
 	for i in range(0, changes.size(), 4):
 		var slot := changes[i]
 		var id := changes[i + 1]
 		var count := changes[i + 2]
-		if slot < 0 or slot >= inventory.size() or (id != Blocks.AIR and not Items.exists(id)) or count < 0 or count > 64:
+		var damage := changes[i + 3]
+		if slot < 0 or slot >= inventory.size() or not NetGuard.valid_stack(id, count, damage):
+			_strike(peer, "impossible container slot (%d: %d x%d)" % [slot, id, count], 3)
 			continue
-		inventory.set_slot(slot, id, count, maxi(changes[i + 3], 0))
-	# What this client has now; the others get it with the next round.
-	_viewers[pos][peer][0] = _slots_of(inventory)
+		if not creative and id < Blocks.count() and NetGuard.survival_forbidden(id):
+			_strike(peer, "putting %s in a container in survival" % Blocks.get_type(id).name, 5)
+			stale[slot] = true
+			continue
+		var k := slot * 3
+		var before := PackedInt32Array([agreed[k], agreed[k + 1], agreed[k + 2]]) if agreed.size() > k + 2 else PackedInt32Array([0, 0, 0])
+		var current := PackedInt32Array([inventory.id_at(slot), inventory.count_at(slot), inventory.damage_at(slot)])
+		if current == before:
+			inventory.set_slot(slot, id, count, damage)
+			continue
+		# Changed here meanwhile: more or less of the same item merges ...
+		if before[0] == current[0] and (id == current[0] or count == 0) and before[0] != Blocks.AIR:
+			var merged := current[1] + (count - before[1])
+			if merged >= 0 and merged <= Items.max_stack(current[0]):
+				inventory.set_slot(slot, current[0], merged, current[2])
+				stale[slot] = true
+				continue
+			if merged < 0:
+				# It took more than is left: the rest goes back.
+				inventory.set_slot(slot, Blocks.AIR, 0)
+				_take_back.rpc_id(peer, before[0], -merged)
+				stale[slot] = true
+				continue
+		# ... anything else is undone: the client gives back what it took
+		# and gets back what it put in.
+		if before[0] != Blocks.AIR and before[1] > 0:
+			_take_back.rpc_id(peer, before[0], before[1])
+		if id != Blocks.AIR and count > 0:
+			_give.rpc_id(peer, id, count, damage)
+		stale[slot] = true
+	# What this client has now (the stale slots as it thinks they are, so the
+	# next round sends it the real ones); the others get it with the next
+	# round too.
+	var known := _slots_of(inventory)
+	for i in range(0, changes.size(), 4):
+		var slot := changes[i]
+		if stale.has(slot) and slot >= 0 and slot * 3 + 2 < known.size():
+			known[slot * 3] = changes[i + 1]
+			known[slot * 3 + 1] = changes[i + 2]
+			known[slot * 3 + 2] = changes[i + 3]
+	_viewers[pos][peer][0] = known
 
 
 ## Client: the window closed (its player, or the host's _container_closed).

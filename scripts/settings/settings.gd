@@ -9,6 +9,9 @@ extends Node
 ## Key bindings are saved in the same file (see KeyBindings).
 
 signal changed(key: String, value: Variant)
+## The GUI's scale (window.content_scale_factor) was set again: a new
+## setting or a window size it doesn't fit (rebuild pixel-sized things).
+signal gui_rescaled(factor: float)
 
 const PATH := "user://settings.cfg"
 const SECTION := "settings"
@@ -20,7 +23,12 @@ const ANISOTROPY_LEVELS := [
 	Viewport.ANISOTROPY_DISABLED, Viewport.ANISOTROPY_2X, Viewport.ANISOTROPY_4X,
 	Viewport.ANISOTROPY_8X, Viewport.ANISOTROPY_16X,
 ]
-const GUI_SCALES: Array[float] = [0.0, 1.0, 1.5, 2.0, 3.0, 4.0] # 0 = auto (screen DPI)
+const GUI_SCALES: Array[float] = [0.0, 1.0, 1.5, 2.0, 3.0, 4.0] # 0 = auto (the largest that fits)
+## Like the game: the GUI is at least 320 x 240 of its pixels (here x
+## UiTheme.PIXEL); a chosen scale too big for the window steps down to the
+## largest that fits, and back up when the window grows again.
+const GUI_MIN_SIZE := Vector2(320, 240) * UiTheme.PIXEL
+var _gui_factor := 0.0
 
 var _settings := {}       # key -> Setting
 var _categories := {}     # category -> Array[Setting] (registration order)
@@ -35,6 +43,7 @@ func _ready() -> void:
 	load_settings()
 	for key: String in _settings:
 		_apply_global(key, _values[key])
+	get_tree().root.size_changed.connect(_apply_gui_scale)
 
 
 func _exit_tree() -> void:
@@ -211,6 +220,26 @@ func save_settings() -> void:
 
 # --- Window-level settings -----------------------------------------------------
 
+## The GUI scale for the setting and the window as it is now: the chosen
+## one, or the largest step that still fits (Auto: the largest that fits).
+## Nothing is redone when it comes out the same (no flicker on resizes).
+func _apply_gui_scale() -> void:
+	var window := get_tree().root
+	var wanted := GUI_SCALES[clampi(int(get_value("gui_scale")), 0, GUI_SCALES.size() - 1)]
+	var fits := minf(window.size.x / GUI_MIN_SIZE.x, window.size.y / GUI_MIN_SIZE.y)
+	var factor := 0.0
+	for step in GUI_SCALES:
+		if step > 0.0 and step <= fits + 0.001 and (wanted == 0.0 or step <= wanted):
+			factor = step
+	if factor == 0.0:
+		factor = clampf(fits, 0.5, 1.0) # (a window smaller than the GUI: shrink below 1)
+	if is_equal_approx(factor, _gui_factor):
+		return
+	_gui_factor = factor
+	window.content_scale_factor = factor
+	gui_rescaled.emit(factor)
+
+
 func _apply_global(key: String, value: Variant) -> void:
 	var window := get_window()
 	var viewport := get_viewport()
@@ -239,7 +268,4 @@ func _apply_global(key: String, value: Variant) -> void:
 		"anisotropic":
 			viewport.anisotropic_filtering_level = ANISOTROPY_LEVELS[value]
 		"gui_scale":
-			var scale := GUI_SCALES[value]
-			if scale == 0.0:
-				scale = DisplayServer.screen_get_scale(window.current_screen)
-			window.content_scale_factor = scale
+			_apply_gui_scale()

@@ -4,6 +4,10 @@ extends Node3D
 ## around the player is built, saves the world (every AUTOSAVE_SECONDS, when
 ## quitting to the title and when the window closes) and goes back to the
 ## title screen.
+##
+## A dedicated server (DedicatedServer) runs scenes/server.tscn: the same
+## Game with only the world (no player, no UI); it saves every
+## Net.autosave_seconds and keeps the players of the network game.
 
 const TITLE_SCENE := "res://scenes/title.tscn"
 ## The classic game saves every 45 s; the save only writes changed columns.
@@ -22,10 +26,17 @@ static func find(tree: SceneTree) -> Game:
 func _ready() -> void:
 	if WorldSave.current == null:
 		# Started directly (not from the title screen): always begin at the
-		# title, like the game does on its first start.
-		get_tree().change_scene_to_file.call_deferred(TITLE_SCENE)
+		# title, like the game does on its first start (a dedicated server
+		# starts its own scene).
+		if not Net.dedicated:
+			get_tree().change_scene_to_file.call_deferred(TITLE_SCENE)
 		return
+	if Net.dedicated and player != null:
+		return # (the game's scene before the server's: never played)
 	add_to_group("game")
+	if Net.dedicated:
+		Settings.forced["difficulty"] = Net.server_difficulty # (server.properties)
+		return # no screens: the server's world only
 	Settings.forced.clear()
 	if WorldSave.current.hardcore:
 		Settings.forced["difficulty"] = 3 # Hard, and it stays
@@ -67,8 +78,10 @@ func _notification(what: int) -> void:
 
 
 func _process(delta: float) -> void:
+	if not is_in_group("game"):
+		return
 	_autosave_timer += delta
-	if _autosave_timer >= AUTOSAVE_SECONDS:
+	if _autosave_timer >= (Net.autosave_seconds if Net.dedicated else AUTOSAVE_SECONDS):
 		_autosave_timer = 0.0
 		save_game()
 
@@ -83,10 +96,15 @@ func save_game() -> void:
 		return
 	var save := world.save
 	world.save_columns()
-	save.game_mode = player.game_mode
 	# The network game's other players (by tag): kept even when not hosting now.
 	var others: Dictionary = Net.saved_players if Net.is_host() else save.state.get("net_players", {})
-	save.state = {"world": world.save_state(), "player": player.save_state()}
+	var own: Dictionary = save.state.get("player", {}) # (a server keeps the single player's)
+	if player:
+		save.game_mode = player.game_mode
+		own = player.save_state()
+	save.state = {"world": world.save_state()}
+	if not own.is_empty():
+		save.state["player"] = own
 	if not others.is_empty():
 		save.state["net_players"] = others
 	save.last_played = int(Time.get_unix_time_from_system())

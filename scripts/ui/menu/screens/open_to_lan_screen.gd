@@ -36,12 +36,12 @@ func build() -> void:
 	_internet_button = add_list_wide_button("", func() -> void:
 		_internet = not _internet
 		_update())
-	_internet_button.tooltip_text = Lang.t("Opens the port on your router (UPnP) and gives an invite code for friends on the internet")
-	_warning = Label.new()
-	_warning.text = Lang.t("Only share the code with people you trust")
+	_internet_button.tooltip_text = Lang.t("Opens the port on your router (UPnP) and gives an invite code for friends on the internet") \
+		+ "\n" + Lang.t("Only share the code with people you trust")
+	_warning = Label.new() # (the warning lives in the button's tooltip now)
+	_warning.text = ""
 	_warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_warning.add_theme_color_override("font_color", UiTheme.WARNING_COLOR)
-	add_list_item(_warning)
 	add_bottom_row([["Start LAN World", _start], ["Cancel", func() -> void: menu.back()]])
 	_update()
 

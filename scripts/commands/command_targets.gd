@@ -129,7 +129,12 @@ static func set_rotation(target: Variant, rotation: Vector2) -> void:
 ## Vector2.INF. Returns "" or why it can't be moved.
 static func teleport(target: Variant, position: Vector3, rotation: Vector2 = Vector2.INF) -> String:
 	if target is RemotePlayer:
-		return Lang.t("Another player can't be moved from here")
+		if not Net.is_host():
+			return Lang.t("Another player can't be moved from here")
+		Net.teleport_peer((target as RemotePlayer).peer_id, position) # the host moves everyone
+		if rotation != Vector2.INF:
+			set_rotation(target, rotation)
+		return ""
 	if target is Player:
 		var player := target as Player
 		if player.vehicle:

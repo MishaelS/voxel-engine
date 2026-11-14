@@ -31,8 +31,10 @@ static func tick_spawner(world: VoxelWorld, pos: Vector3i, delay: int) -> int:
 	var id := world.get_block(pos)
 	if not Blocks.get_type(id).name.begins_with("mob_spawner_"):
 		return -1
-	var player := world.player as Player
-	if player == null or player.global_position.distance_to(Vector3(pos) + Vector3(0.5, 0.5, 0.5)) > RANGE:
+	var near := false
+	for at in world.player_positions():
+		near = near or at.distance_to(Vector3(pos) + Vector3(0.5, 0.5, 0.5)) <= RANGE
+	if not near:
 		return delay
 	if delay > 0:
 		return delay - 1

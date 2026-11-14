@@ -72,6 +72,10 @@ const TOGETHER := [
 	["step", "Then play as on LAN: the world shows up in Multiplayer, or connect with Direct Connect to the host's VPN address."],
 	["h", "Opening the port by hand"],
 	["p", "In the router's settings forward port 25565 (UDP) to the host's computer; friends then connect to the host's public IP address."],
+	["h", "Your own server"],
+	["p", "For many players, run the game as a dedicated server on a computer that stays on (a home PC or a rented server): tools/run_server.sh, on Windows tools\\run_server.bat. It has no window and keeps the world going without you."],
+	["p", "Its settings are in server.properties (made on the first start): the port, the world, the game mode, a password, the whitelist, the most players and more. Open UDP ports 25565 and 25566. Everything is explained in SERVER.md next to the game."],
+	["p", "Server commands (typed in its console, or by operators in the chat): /op, /whitelist, /kick, /ban, /ban-ip, /save-all, /stop."],
 ]
 
 const FOLDER_INTRO := "Everything the game keeps is in one folder:"
@@ -87,6 +91,7 @@ const FOLDER_FILES := [
 	["player.cfg", "Your name, its color and the skin."],
 	["multiplayer.cfg, servers.cfg", "The multiplayer name and the server list."],
 	["server.cfg, bans.cfg", "Your server's settings and bans."],
+	["ops.cfg, whitelist.cfg, banned-ips.cfg", "Your server's operators, whitelist and banned addresses."],
 	["window.cfg", "The window's size and place."],
 	["logs", "The game's logs (useful when something goes wrong)."],
 ]

@@ -40,3 +40,7 @@ desktop.ini
 ROADMAP.md
 # --- Native code (native/build.sh) ---
 /native/build/
+
+# --- Dedicated server (made when it runs in the project folder) ---
+server.properties
+/logs/

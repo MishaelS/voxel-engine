@@ -38,6 +38,17 @@ static func explode(world: VoxelWorld, center: Vector3, power: float, source: Va
 		if f > 0.0:
 			player.damage(int((f * f + f) / 2.0 * 8.0 * power + 1.0))
 			player.velocity += (middle - center).normalized() * f
+	# The network game's other players (the host's world): hurt and pushed
+	# on their computers.
+	if Net.is_host():
+		for avatar: RemotePlayer in Net.avatars.values():
+			if not is_instance_valid(avatar) or avatar.dead:
+				continue
+			var middle := avatar.target_position + Vector3(0, Player.HEIGHT * 0.5, 0)
+			var f := 1.0 - middle.distance_to(center) / reach
+			if f > 0.0:
+				avatar.damage(int((f * f + f) / 2.0 * 8.0 * power + 1.0))
+				avatar.knockback(center)
 	for entity in world.entities.near(center, reach):
 		if entity == source or entity is PrimedTnt:
 			if entity is PrimedTnt and entity != source:

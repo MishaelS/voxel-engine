@@ -28,8 +28,6 @@ func _init() -> void:
 
 
 func build() -> void:
-	add_list_item(_label(Lang.t("Your world is open on port %d") % Net.host_port, GRAY))
-	add_list_item(_gap())
 	add_list_item(_caption("Over the Internet"))
 	_status = _label("", Color.WHITE)
 	add_list_item(_status)
@@ -42,8 +40,10 @@ func build() -> void:
 	_code_row.add_child(_code)
 	var copy := _make_button("Copy", func() -> void:
 		DisplayServer.clipboard_set(Net.invite_code())
-		_status.text = Lang.t("Copied! Send the code to your friend"))
+		_status.text = Lang.t("Copied!")
+		_status.visible = true)
 	copy.custom_minimum_size = Vector2(90 * P, UiTheme.BUTTON_HEIGHT)
+	copy.tooltip_text = Lang.t("Only share the code with people you trust")
 	_code_row.add_child(copy)
 	add_list_item(_code_row)
 	_address = _label("", GRAY)
@@ -55,15 +55,21 @@ func build() -> void:
 	var centered := CenterContainer.new()
 	centered.add_child(_open_button)
 	add_list_item(centered)
-	_warning = _label(Lang.t("Only share the code with people you trust"), UiTheme.WARNING_COLOR)
-	add_list_item(_warning)
+	# (Short on screen; what to do with the code and the warning are in the
+	# tooltips of the code and the Copy button.)
+	_warning = _label("", UiTheme.WARNING_COLOR)
+	_warning.visible = false
 	add_list_item(_gap())
 	add_list_item(_caption("On Your Network"))
 	var lan := InviteCode.lan_addresses()
 	var lines := PackedStringArray()
 	for ip in lan:
 		lines.append("%s:%d" % [ip, Net.host_port])
-	add_list_item(_label("\n".join(lines) if not lines.is_empty() else Lang.t("No network found"), Color.WHITE))
+	var lan_label := _label("\n".join(lines) if not lines.is_empty() else Lang.t("No network found"), Color.WHITE)
+	lan_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	lan_label.tooltip_text = Lang.t("Your world is open on port %d") % Net.host_port \
+		+ "\n" + Lang.t("Friends on the same Wi-Fi or a VPN connect to one of these addresses")
+	add_list_item(lan_label)
 	add_done_button()
 	Net.port_forward.changed.connect(_update)
 	_update()
@@ -85,8 +91,9 @@ func _update() -> void:
 	var state := forward.state
 	_code_row.visible = state == PortForward.State.OPEN
 	_address.visible = state == PortForward.State.OPEN
-	_hint.visible = state == PortForward.State.FAILED
-	_warning.visible = state == PortForward.State.OPEN or state == PortForward.State.WORKING
+	_hint.visible = false # (the VPN advice is the error's tooltip)
+	_status.visible = state != PortForward.State.OPEN
+	_status.tooltip_text = ""
 	_open_button.visible = state == PortForward.State.OFF or state == PortForward.State.FAILED
 	_open_button.text = Lang.t("Try Again" if state == PortForward.State.FAILED else "Allow Internet Access")
 	_status.remove_theme_color_override("font_color")
@@ -96,13 +103,15 @@ func _update() -> void:
 		PortForward.State.WORKING:
 			_process(0.0)
 		PortForward.State.OPEN:
-			_status.text = Lang.t("Friends join with this code (Direct Connect or Add Server):")
 			_code.text = Net.invite_code()
-			_address.text = Lang.t("Internet address: %s") % ("%s:%d" % [forward.external_ip, forward.port])
+			_address.text = "%s:%d" % [forward.external_ip, forward.port]
+			_code.tooltip_text = Lang.t("Friends join with this code (Direct Connect or Add Server):") \
+				+ "\n" + Lang.t("Internet address: %s") % _address.text \
+				+ "\n" + Lang.t("Only share the code with people you trust")
 		PortForward.State.FAILED:
 			_status.text = Lang.t(forward.error)
 			_status.add_theme_color_override("font_color", UiTheme.WARNING_COLOR)
-			_hint.text = Lang.t(VPN_HINT)
+			_status.tooltip_text = Lang.t(VPN_HINT)
 
 
 ## A centered, wrapping line as wide as the wide buttons (not translated by
@@ -115,6 +124,7 @@ func _label(text: String, color: Color) -> Label:
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.custom_minimum_size = Vector2(UiTheme.WIDE_BUTTON * 1.5, 0)
 	label.add_theme_color_override("font_color", color)
+	label.mouse_filter = Control.MOUSE_FILTER_PASS # (for the tooltips)
 	return label
 
 

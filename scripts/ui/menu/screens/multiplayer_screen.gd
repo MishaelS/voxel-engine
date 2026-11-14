@@ -179,6 +179,10 @@ func entry_clicked(entry: ServerEntry, double: bool) -> void:
 
 # --- Buttons -------------------------------------------------------------------------
 
+## The address being joined (for the password screen).
+var _joining := ""
+
+
 func _join_selected() -> void:
 	if _selected < 0:
 		return
@@ -189,6 +193,9 @@ func _join_selected() -> void:
 
 
 func _join_address(address: String) -> void:
+	if address != _joining:
+		Net.join_password = "" # (a password is for the server it was typed for)
+	_joining = address
 	var error := Net.join(address)
 	_status.text = Lang.t(error) if error != "" else Lang.t("Connecting to the server...")
 
@@ -227,6 +234,10 @@ func _ask_delete() -> void:
 func _show_status() -> void:
 	if Net.last_error != "" and _status:
 		_status.text = Lang.t(Net.last_error)
+	if Net.password_wanted and not Net.is_online() and is_inside_tree() and menu:
+		# The server wants a password: asked for, then joined again.
+		Net.password_wanted = false
+		menu.push(PasswordScreen.new(_joining, _join_address))
 
 
 # --- Saving --------------------------------------------------------------------------

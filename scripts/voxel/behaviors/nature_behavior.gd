@@ -65,5 +65,7 @@ static func random_tick(world: VoxelWorld, pos: Vector3i) -> void:
 
 
 static func spring_display_tick(world: VoxelWorld, pos: Vector3i, _rng: RandomNumberGenerator) -> void:
+	if world.remote:
+		return # (the host lets springs flow near every player: VoxelWorld._wake_springs)
 	var family := Blocks.family_of(world.get_block(pos))
 	world.set_block(pos, Blocks.variant(family, 0))

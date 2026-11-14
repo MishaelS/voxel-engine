@@ -129,3 +129,7 @@ func _hurt() -> void:
 	if player and not player.dead and player.global_position.distance_to(middle) <= REACH + 1.0:
 		player.damage(5)
 		player.fire_ticks = maxi(player.fire_ticks, 160)
+	if Net.is_host():
+		for avatar: RemotePlayer in Net.avatars.values():
+			if is_instance_valid(avatar) and not avatar.dead and avatar.target_position.distance_to(middle) <= REACH + 1.0:
+				avatar.damage(5)
