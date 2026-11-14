@@ -19,11 +19,17 @@ const TOOL_MATERIALS := [
 ## Tool kinds and the items.png row of their icons.
 const TOOL_KINDS := [["sword", 4], ["shovel", 5], ["pickaxe", 6], ["axe", 7]]
 
-## Block fuel in ticks (items keep theirs in ItemType.fuel).
+## Block fuel in ticks (items keep theirs in ItemType.fuel), like Beta
+## 1.7.3: every wooden block 300, saplings 100; wooden slabs (stone in Beta)
+## and ladders burn like the modern game.
 const BLOCK_FUEL := {
 	"oak_planks": 300, "birch_planks": 300, "spruce_planks": 300,
 	"oak_log": 300, "birch_log": 300, "spruce_log": 300,
-	"crafting_table": 300, "chest": 300,
+	"oak_stairs": 300, "birch_stairs": 300, "spruce_stairs": 300,
+	"crafting_table": 300, "chest": 300, "bookshelf": 300, "fence": 300,
+	"note_block": 300, "jukebox": 300, "wooden_pressure_plate": 300, "trapdoor": 300,
+	"ladder": 300, "wooden_slab": 150,
+	"oak_sapling": 100, "birch_sapling": 100, "spruce_sapling": 100,
 }
 
 static var types: Array[ItemType] = []
@@ -63,12 +69,12 @@ static func _register_all() -> bool:
 	register(ItemType.make("paper", 58))
 	register(ItemType.make("book", 59))
 	register(ItemType.make("string", 8))
-	register(ItemType.make("wooden_door", 43).stack(1))
+	register(ItemType.make("wooden_door", 43).stack(1).set_fuel(200))
 	register(ItemType.make("iron_door", 44).stack(1))
-	register(ItemType.make("sign", 42).stack(1))
+	register(ItemType.make("sign", 42).stack(1).set_fuel(200))
 	register(ItemType.make("sugar_cane", 27).set_places("sugar_cane_block"))
 	register(ItemType.make("sugar", 13))
-	register(ItemType.make("bowl", 71))
+	register(ItemType.make("bowl", 71).set_fuel(100))
 	register(ItemType.make("mushroom_stew", 72).stack(1).set_food(6, 0.6, 10).set_container("bowl"))
 	register(ItemType.make("cactus_green", 110))
 	for material: Array in TOOL_MATERIALS:
@@ -92,7 +98,7 @@ static func _register_all() -> bool:
 	register(ItemType.make("ink_sac", 78))
 	register(ItemType.make("saddle", 104).stack(1))
 	register(ItemType.make("arrow", 37))
-	register(ItemType.make("bow", 21).set_durability(384))
+	register(ItemType.make("bow", 21).set_durability(384).set_fuel(300))
 	register(ItemType.make("shears", 93).set_durability(238))
 	register(ItemType.make("music_disc_13", 240).stack(1))
 	register(ItemType.make("music_disc_cat", 241).stack(1))
@@ -104,12 +110,12 @@ static func _register_all() -> bool:
 	register(ItemType.make("compass", ItemAnimations.COMPASS_TILE))
 	register(ItemType.make("clock", ItemAnimations.CLOCK_TILE))
 	register(ItemType.make("map", 60).stack(1))
-	register(ItemType.make("fishing_rod", 69).set_durability(64))
+	register(ItemType.make("fishing_rod", 69).set_durability(64).set_fuel(300))
 	register(ItemType.make("painting", 26))
 	register(ItemType.make("minecart", 135).stack(1))
 	register(ItemType.make("chest_minecart", 151).stack(1))
 	register(ItemType.make("furnace_minecart", 167).stack(1))
-	register(ItemType.make("boat", 136).stack(1))
+	register(ItemType.make("boat", 136).stack(1).set_fuel(1200))
 	return true
 
 
@@ -210,7 +216,9 @@ static func fuel_ticks(id: int) -> int:
 	var item := get_type(id)
 	if item:
 		return item.fuel
-	return BLOCK_FUEL.get(Blocks.get_type(id).name, 0) if id > Blocks.AIR else 0
+	if id <= Blocks.AIR or id >= Blocks.count():
+		return 0
+	return BLOCK_FUEL.get(Blocks.get_type(Blocks.item_of(id)).name, 0) # lying logs, top slabs: their item
 
 
 static var _icons_texture: ImageTexture

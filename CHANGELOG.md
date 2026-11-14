@@ -13,6 +13,14 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- The recipe for wool from 4 string (the only Beta 1.7.3 recipe that was missing).
+- Lapis ore smelts into lapis lazuli (like coal and redstone ore already do).
+- Furnace fuel like Beta's: every wooden block burns 300 ticks (wooden stairs, bookshelf, fence, note block, jukebox, wooden pressure plate, trapdoor), saplings 100; and like the modern game: ladder 300, wooden slab 150, wooden door and sign 200, bowl 100, bow and fishing rod 300, boat 1200.
+
+### Fixed
+- Lying logs didn't smelt into charcoal, and turned blocks (lying logs, top slabs, stair variants) didn't burn as fuel like their normal block.
+
 ## [0.0.15] - 2026-11-14
 
 ### Added
