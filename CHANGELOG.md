@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-11-14
+
 ### Added
 - Blocks placed like the modern game's: logs lie along the axis of the clicked side (new lying oak, birch and spruce logs), stairs and slabs go upside down / on top when placed against a ceiling or the upper half of a side (new upside-down stairs and top slabs; a slab clicked on its open face or into a cell with the same slab makes a double slab), dispensers face up or down when looking steeply.
 - World Diorama (F6, was the isometric view): the area around the player cut out as a block on a sky background, with Close, Center Camera, Area, Zoom, Tilt, Time, Fog, Clouds, Players, Mobs, Lighting and screenshot size/background on the right; drag to move, right-drag to turn, wheel to zoom, < > to turn by 90°, Take Screenshot and a button opening the screenshots folder.
@@ -571,7 +573,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.12...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.13...HEAD
+[0.0.13]: https://github.com/MishaelS/voxel-engine/compare/v0.0.12...v0.0.13
 [0.0.12]: https://github.com/MishaelS/voxel-engine/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/MishaelS/voxel-engine/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/MishaelS/voxel-engine/compare/v0.0.9...v0.0.10
