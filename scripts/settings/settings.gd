@@ -50,6 +50,8 @@ func _register_all() -> void:
 		.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0.0 else "%d%%" % int(v)))
 	define("general", Setting.range_of("sound_volume", "Sound", 0, 100, 100, 5) \
 		.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0.0 else "%d%%" % int(v)))
+	# Caves and rooms echo (Player._update_acoustics); off: no rays, no reverb.
+	define("general", Setting.toggle("cave_echo", "Echo in Caves", true))
 	define("general", Setting.range_of("fov", "FOV", 30, 110, 75))
 	define("general", Setting.choice("difficulty", "Difficulty", PackedStringArray(["Peaceful", "Easy", "Normal", "Hard"]), 2))
 	# Video Settings: the main list, laid out like the classic game (two

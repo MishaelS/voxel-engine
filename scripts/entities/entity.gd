@@ -287,6 +287,33 @@ func move(motion: Vector3) -> void:
 		velocity.z = 0.0
 	if result[1] != motion.y:
 		velocity.y = 0.0
+	if makes_steps():
+		_footsteps(result[0], result[2])
+
+
+## Footsteps like Beta's Entity.moveEntity: every block walked (x 0.6) a
+## step sound of the block underfoot (snow when a snow layer lies on it).
+var _walked := 0.0
+var _next_step := 1
+
+
+## Whether walking makes footstep sounds (creatures do; Mob).
+func makes_steps() -> bool:
+	return false
+
+
+func _footsteps(dx: float, dz: float) -> void:
+	_walked += sqrt(dx * dx + dz * dz) * 0.6
+	if _walked <= _next_step or world == null:
+		return
+	var cell := Vector3i(floori(_x), floori(_y - 0.2), floori(_z))
+	var below := world.get_block(cell)
+	if below == Blocks.AIR or Blocks.liquid_table[below] == 1:
+		return
+	_next_step = int(_walked) + 1
+	if Blocks.family_of(world.get_block(cell + Vector3i.UP)) == "snow_layer":
+		below = world.get_block(cell + Vector3i.UP)
+	Sounds.play_block("step", below, Vector3(_x, _y, _z))
 
 
 func _track_fall(start_y: float) -> void:
@@ -297,7 +324,10 @@ func _track_fall(start_y: float) -> void:
 		_fall_distance += start_y - _y
 	if on_ground:
 		if _fall_distance > SAFE_FALL:
-			damage(ceili(_fall_distance - SAFE_FALL))
+			var harm := ceili(_fall_distance - SAFE_FALL)
+			damage(harm)
+			# Beta: a thud by the height (when the files are there).
+			Sounds.play("damage/fallbig" if harm > 4 else "damage/fallsmall", Vector3(_x, _y, _z), 1.0, 1.0)
 		_fall_distance = 0.0
 
 

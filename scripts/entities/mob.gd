@@ -154,6 +154,11 @@ func type_name() -> String:
 
 ## The undead (zombies, skeletons) fear the sun: they catch fire in
 ## daylight under the open sky, like the game's.
+## Creatures walking make footstep sounds like Beta's (squids swim).
+func makes_steps() -> bool:
+	return not spec.get("water", false) and not puppet
+
+
 func is_undead() -> bool:
 	return spec.get("undead", false)
 
@@ -436,7 +441,7 @@ func _slime_tick(player) -> void:
 			_jump_timer /= 3
 			_face(player.global_position)
 		velocity = Vector3(dir.x * 0.15 * size, 0.42, dir.z * 0.15 * size)
-		Sounds.play("mob/slime/" + ("big" if size > 1 else "small"), center(), 0.4 * size, randf_range(0.8, 1.2))
+		Sounds.play("mob/slime/" + ("big" if size > 1 else "small"), center(), 0.4 * size, Sounds.beta_pitch() / 0.8)
 	if player and size > 1 and _attack_cooldown == 0 and player.global_position.distance_to(feet()) < half_width + 0.8:
 		_attack_cooldown = ATTACK_COOLDOWN
 		player.damage(_scaled_damage(size))
@@ -855,7 +860,7 @@ func _living_sound() -> String:
 func _sound(kind: String, volume: float) -> void:
 	var group: String = spec.get("sound", "")
 	if group != "":
-		Sounds.play("mob/%s/%s" % [group, kind], center(), volume, randf_range(0.8, 1.2) * (1.5 if mob_type == "slime" and size == 1 else 1.0))
+		Sounds.play("mob/%s/%s" % [group, kind], center(), volume, Sounds.beta_pitch() * (1.5 if mob_type == "slime" and size == 1 else 1.0))
 
 
 # --- Drawing --------------------------------------------------------------------------

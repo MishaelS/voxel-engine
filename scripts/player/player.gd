@@ -810,7 +810,7 @@ func damage(amount: int, always: bool = false) -> void:
 		_last_damage = amount
 		_invulnerable = INVULNERABLE_TICKS
 		hurt_ticks = HURT_TICKS
-	Sounds.play("damage/hurt", null, 1.0, randf_range(0.8, 1.2))
+	Sounds.play("damage/hurt", null, 1.0, Sounds.beta_pitch())
 	if health == 0:
 		_die()
 
@@ -989,7 +989,7 @@ static func reflection(id: int) -> float:
 
 
 func _update_acoustics() -> void:
-	if eyes_in_water() or dead:
+	if eyes_in_water() or dead or not Settings.get_value("cave_echo"):
 		Sounds.set_space(0.0, 0.3)
 		return
 	var eye := eye_position()
@@ -1139,7 +1139,10 @@ func _track_fall() -> void:
 		_fall_distance += dropped
 	if on_ground:
 		if _fall_distance > SAFE_FALL:
-			damage(ceili(_fall_distance - SAFE_FALL))
+			var harm := ceili(_fall_distance - SAFE_FALL)
+			damage(harm)
+			# Beta: a thud by the height (when the files are there).
+			Sounds.play("damage/fallbig" if harm > 4 else "damage/fallsmall", Vector3(_x, _y, _z), 1.0, 1.0)
 		if _fall_distance > 0.75 and world:
 			# Landing on farmland tramples it.
 			FarmBehavior.trample(world, Vector3i(floori(_x), floori(_y - 0.1), floori(_z)))

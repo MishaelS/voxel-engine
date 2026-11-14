@@ -27,9 +27,12 @@ const SOUNDS_DIR := "res://assets/sounds"
 const MUSIC_DIR := "res://assets/music"
 const VOICES_3D := 24
 const VOICES_2D := 8
-## Distance (blocks) where a sound is at half volume, and the farthest.
-const UNIT_SIZE := 4.0
-const MAX_DISTANCE := 24.0
+## Beta 1.7.3's (paulscode, linear rolloff): a sound fades evenly to
+## nothing at 16 blocks (16 x its volume when that is above 1); worked out
+## every frame from the camera (Godot has no linear model).
+const HEARING := 16.0
+var _voice_volume := PackedFloat32Array()
+var _voice_range := PackedFloat32Array()
 ## Seconds between music tracks (random in this range).
 const MUSIC_PAUSE := Vector2(600.0, 1200.0)
 ## When tracks play (file name without the extension -> part of the day);
@@ -104,11 +107,12 @@ func _ready() -> void:
 	for i in VOICES_3D:
 		var player := AudioStreamPlayer3D.new()
 		player.bus = "Sound"
-		player.unit_size = UNIT_SIZE
-		player.max_distance = MAX_DISTANCE
-		player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED # (volume by distance: _update_voices)
+		player.max_distance = 0.0
 		add_child(player)
 		_players_3d.append(player)
+	_voice_volume.resize(VOICES_3D)
+	_voice_range.resize(VOICES_3D)
 	for i in VOICES_2D:
 		var player := AudioStreamPlayer.new()
 		player.bus = "Sound"
@@ -133,11 +137,14 @@ func play(group: String, position: Variant = null, volume: float = 1.0, pitch: f
 		return
 	var stream: AudioStream = variants[randi() % variants.size()]
 	if position is Vector3:
-		var player := _players_3d[_next_3d]
+		var index := _next_3d
+		var player := _players_3d[index]
 		_next_3d = (_next_3d + 1) % _players_3d.size()
 		player.global_position = position
 		player.stream = stream
-		player.volume_db = linear_to_db(volume)
+		_voice_volume[index] = minf(volume, 1.0) # (Beta: louder ones are heard farther, not louder)
+		_voice_range[index] = HEARING * maxf(volume, 1.0)
+		player.volume_db = _distance_db(index)
 		player.pitch_scale = pitch
 		player.play()
 	else:
@@ -163,11 +170,11 @@ func play_block(kind: String, block_id: int, position: Vector3) -> void:
 			if material == "glass":
 				play("random/glass", position, 1.0, randf_range(0.9, 1.1))
 			else:
-				play("dig/" + material, position, 1.0, 0.8 * randf_range(0.9, 1.1))
+				play("dig/" + material, position, 1.0, 0.8) # (Beta: (volume + 1) / 2, pitch x 0.8)
 		"place":
 			play("dig/" + (material if material != "glass" else "stone"), position, 1.0, 0.8)
 		"step":
-			play("step/" + (material if material != "glass" else "stone"), position, 0.3, 1.0)
+			play("step/" + (material if material != "glass" else "stone"), position, 0.15, 1.0) # (Beta: volume x 0.15)
 		"hit":
 			play("step/" + (material if material != "glass" else "stone"), position, 0.25, 0.5)
 
@@ -207,7 +214,30 @@ func _set_muffle(amount: float) -> void:
 	AudioServer.set_bus_effect_enabled(sound_bus, 1, amount > 0.001)
 
 
+## Beta's pitch spread for creatures, the player and many sounds:
+## (random - random) x 0.2 + 1, mostly near 1.
+static func beta_pitch() -> float:
+	return (randf() - randf()) * 0.2 + 1.0
+
+
+## The volume of 3D voice `index` where the camera is (linear rolloff).
+func _distance_db(index: int) -> float:
+	var camera := get_viewport().get_camera_3d()
+	var gain := _voice_volume[index]
+	if camera:
+		var distance := camera.global_position.distance_to(_players_3d[index].global_position)
+		gain *= clampf(1.0 - distance / _voice_range[index], 0.0, 1.0)
+	return linear_to_db(maxf(gain, 0.0001))
+
+
+func _update_voices() -> void:
+	for i in _players_3d.size():
+		if _players_3d[i].playing:
+			_players_3d[i].volume_db = _distance_db(i)
+
+
 func _process(delta: float) -> void:
+	_update_voices()
 	var target := 1.0 if Time.get_ticks_msec() < _underwater_until else 0.0
 	if not is_equal_approx(_muffle, target):
 		_set_muffle(move_toward(_muffle, target, delta * 4.0)) # (a quarter second in or out)

@@ -13,6 +13,18 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Creatures make footstep sounds like Beta's (a step of the block underfoot every block walked, snow on a snow layer), and every creature and the player thud when a fall hurts (damage/fallbig above 4, damage/fallsmall).
+- Options -> Audio: Echo in Caves (on by default); off, no rays are cast and nothing echoes.
+- assets/sounds/MISSING_SOUNDS.md lists the sounds still missing; each has a silent placeholder with its name (fire/ignite, damage/fallbig, damage/fallsmall) to replace with the real file.
+
+### Changed
+- Sounds fade with distance like Beta 1.7.3's: evenly to nothing at 16 blocks (farther for louder ones, an explosion 64), instead of a falloff that was too quiet near and too loud far.
+- Footsteps at Beta's volume (0.15, were twice as loud), breaking a block at Beta's pitch (0.8, no random), creatures' and the player's sounds at Beta's pitch spread (mostly near 1).
+
+### Removed
+- The generated placeholder sound for flint and steel (only the sounds added by hand are left).
+
 ## [0.0.17] - 2026-11-14
 
 ### Added

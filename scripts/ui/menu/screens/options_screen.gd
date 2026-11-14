@@ -45,7 +45,7 @@ const VIDEO_GROUPS := [
 	["performance", "Performance"], ["animations", "Animations"],
 ]
 ## Settings of the "general" store category shown under Audio instead.
-const AUDIO_KEYS := ["music_volume", "sound_volume"]
+const AUDIO_KEYS := ["music_volume", "sound_volume", "cave_echo"]
 
 ## The category shown last (opening the screen again shows it).
 static var _last_category := "general"
