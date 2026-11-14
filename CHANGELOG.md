@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-11-14
+
 ### Changed
 - The creeper about to explode like Beta's RenderCreeper: it swells hardly at first and fast at the end (+40% wide, +10% tall, trembling) and a faint white (at most 20%, mixed like Beta's) blinks over its skin every tenth of the fuse, instead of turning white.
 - The boat's texture in the colors of oak planks.
@@ -578,7 +580,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.13...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.14...HEAD
+[0.0.14]: https://github.com/MishaelS/voxel-engine/compare/v0.0.13...v0.0.14
 [0.0.13]: https://github.com/MishaelS/voxel-engine/compare/v0.0.12...v0.0.13
 [0.0.12]: https://github.com/MishaelS/voxel-engine/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/MishaelS/voxel-engine/compare/v0.0.10...v0.0.11
