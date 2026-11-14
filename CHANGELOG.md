@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.23] - 2026-11-14
+
 ### Added
 - Release builds for Windows, Linux (x86_64 and ARM64) and macOS with one command, `tools/build.sh all`; the native library for Linux and Windows is built in Docker (native/docker/), the macOS one locally; an optional GitHub Actions workflow does the same. How: BUILDING.md.
 - Create Server in Multiplayer: pick a world, a password and internet access; the game starts a server in the background, joins it and makes you its operator, and asks whether to stop it when you leave.
@@ -677,7 +679,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.22...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.23...HEAD
+[0.0.23]: https://github.com/MishaelS/voxel-engine/compare/v0.0.22...v0.0.23
 [0.0.22]: https://github.com/MishaelS/voxel-engine/compare/v0.0.21...v0.0.22
 [0.0.21]: https://github.com/MishaelS/voxel-engine/compare/v0.0.20...v0.0.21
 [0.0.20]: https://github.com/MishaelS/voxel-engine/compare/v0.0.19...v0.0.20
