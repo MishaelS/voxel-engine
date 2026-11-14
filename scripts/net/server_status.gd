@@ -55,9 +55,9 @@ var _next_ask := 0.0
 var _asks := {}
 
 
-## Splits "host" or "host:port" (the default port is Net.PORT).
+## Splits "host", "host:port" or an invite code (the default port is Net.PORT).
 static func split_address(address: String) -> Array:
-	var text := address.strip_edges()
+	var text := InviteCode.to_address(address)
 	var port := Net.PORT
 	if text.count(":") == 1:
 		port = int(text.get_slice(":", 1))

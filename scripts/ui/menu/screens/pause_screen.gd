@@ -32,9 +32,13 @@ func build() -> void:
 	gap.custom_minimum_size = Vector2(0, 20 * P) # (the game's 48 pixels between the rows)
 	column.add_child(gap)
 	var game := Game.find(menu.get_tree())
-	var lan := _half("Open to LAN", func() -> void: menu.push(OpenToLanScreen.new()))
-	# Like the classic game's "Open to LAN": others can join this world.
-	lan.disabled = not (game and game.is_saved() and not Net.is_online())
+	var lan: Button
+	if Net.is_host(): # then how to invite (the code, the addresses)
+		lan = _half("Invite Friends", func() -> void: menu.push(InviteScreen.new()))
+	else:
+		# Like the classic game's "Open to LAN": others can join this world.
+		lan = _half("Open to LAN", func() -> void: menu.push(OpenToLanScreen.new()))
+		lan.disabled = not (game and game.is_saved() and not Net.is_online())
 	column.add_child(_row([_half("Options...", func() -> void: menu.push(OptionsScreen.new())), lan]))
 	if game:
 		column.add_child(_wide("Save and Quit to Title" if game.is_saved() else "Quit to Title",

@@ -206,6 +206,8 @@ func _entries(id: String) -> Array:
 			result.append({"group": "Other"})
 			for setting: Setting in Settings.in_category("other"):
 				result.append(_setting_entry(setting))
+			result.append({"label": "Open Game Folder", "build": func() -> Control:
+				return _wide_button("Open Game Folder", GameFolder.open)})
 		"audio":
 			result.append({"group": "Volume"})
 			for key: String in AUDIO_KEYS:

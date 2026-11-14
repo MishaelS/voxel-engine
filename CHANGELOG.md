@@ -13,6 +13,14 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Playing over the internet without setup: Open to LAN -> Allow Internet Access asks the router (UPnP) to open the game port and shows an invite code (VE-XXXX-XXXX: the address and a checksum) with a Copy button; the friend pastes it in Direct Connect or Add Server. The ports are closed again when hosting stops. If the router doesn't do UPnP or the provider shares one address (CGNAT), it says so and suggests a VPN (Radmin VPN, ZeroTier). The pause menu's Invite Friends and the /invite command show the code and the LAN addresses again.
+- Help & News on the title screen (top left): What's New (from this changelog), Features, Play Together (LAN, internet, VPN, port forwarding), Controls (the current keys) and Game Folder.
+- Open Game Folder (title screen help, Options -> General): saves, texture packs, shader packs, screenshots and a mods folder (for later: mods aren't supported yet) are made on start if missing.
+
+### Changed
+- A new picture for the game's own texture pack (pack.png).
+
 ## [0.0.20] - 2026-11-14
 
 ### Added

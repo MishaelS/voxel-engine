@@ -43,6 +43,11 @@ extends Node
 ## Responder answers small UDP asks on the game port + 1 with the players
 ## in, the most, the version, the host's name and the world's name (the
 ## protocol and its limits are in server_status.gd).
+##
+## Playing over the internet: "Allow Internet Access" in Open to LAN opens
+## the ports on the home router (PortForward, UPnP) and gives an invite code
+## (InviteCode: the router's address, short and typo-proof) that joining
+## takes wherever an address goes.
 
 signal players_changed
 signal lan_games_changed
@@ -75,13 +80,19 @@ var mode := Mode.OFFLINE
 ## it on joining) and the game mode new players get.
 var cheats := false
 var lan_game_mode := 0
+## Open to LAN's "Allow Internet Access": host() opens the router's ports.
+var internet := false
+## The router's ports while hosting with internet access.
+var port_forward := PortForward.new()
+## The port the host listens on.
+var host_port := PORT
 ## Commands that change the world (or reach other players): a client's run
 ## on the host (Commands not listed here run on the player's own side).
 const HOST_COMMANDS: Array[String] = ["time", "weather", "gamerule", "tick", "setblock", "fill", "clone", "summon",
 	"kill", "damage", "execute", "setworldspawn", "difficulty", "msg", "tell", "w"]
 ## Commands always allowed (no cheats needed).
 const FREE_COMMANDS: Array[String] = ["help", "seed", "say", "players", "kick", "ban", "pardon", "list", "me",
-	"msg", "tell", "w"]
+	"msg", "tell", "w", "invite"]
 var player_name := ""
 var last_address := "127.0.0.1"
 ## Peer id -> {"name": String, "ping": ms (-1 unknown)}, everyone in the
@@ -150,6 +161,13 @@ func _ready() -> void:
 	multiplayer.connected_to_server.connect(_on_connected)
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
+	port_forward.changed.connect(_on_forward_changed)
+
+
+func _notification(what: int) -> void:
+	# Quitting: nothing stays open on the router.
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
+		port_forward.close_now()
 
 
 func is_online() -> bool:
@@ -222,15 +240,45 @@ func host(port: int = PORT) -> String:
 	_lan_out = PacketPeerUDP.new()
 	_lan_out.set_broadcast_enabled(true)
 	_lan_out.set_dest_address("255.255.255.255", LAN_PORT)
+	host_port = port
+	if internet:
+		port_forward.open(port)
 	players_changed.emit()
 	return ""
 
 
-## Connects to a host ("address" or "address:port"). The game starts when the
-## host answers (welcome).
+## Opens the router's ports for a game already hosted (Invite Friends).
+func allow_internet() -> void:
+	internet = true
+	if is_host() and port_forward.state != PortForward.State.WORKING:
+		port_forward.open(host_port)
+
+
+## The invite code while the router's ports are open, else "".
+func invite_code() -> String:
+	if not is_host() or port_forward.state != PortForward.State.OPEN:
+		return ""
+	return InviteCode.encode(port_forward.external_ip, port_forward.port)
+
+
+func _on_forward_changed() -> void:
+	if not is_host():
+		return
+	match port_forward.state:
+		PortForward.State.OPEN:
+			_message(Lang.t("Open to the internet. Invite code: %s (/invite copies it)") % invite_code())
+		PortForward.State.FAILED:
+			_message(Lang.t("Can't open the world to the internet: %s") % Lang.t(port_forward.error))
+			_message(Lang.t("Friends can still join over a VPN: Game Menu > Invite Friends"))
+
+
+## Connects to a host ("address", "address:port" or an invite code). The
+## game starts when the host answers (welcome).
 func join(address: String) -> String:
 	leave()
-	var host_name := address.strip_edges()
+	if InviteCode.looks_like_code(address) and InviteCode.decode(address) == "":
+		return "This invite code has a typo"
+	var host_name := InviteCode.to_address(address)
 	var port := PORT
 	if host_name.contains(":"):
 		port = int(host_name.get_slice(":", 1))
@@ -280,6 +328,8 @@ func leave() -> void:
 	if _status_responder:
 		_status_responder.close()
 	_status_responder = null
+	internet = false
+	port_forward.close()
 	players_changed.emit()
 
 

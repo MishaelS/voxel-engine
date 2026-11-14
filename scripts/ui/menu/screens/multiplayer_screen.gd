@@ -307,7 +307,8 @@ class ServerEntry:
 	func show_server(server_name: String, address: String) -> void:
 		_lines[0].text = server_name
 		_lines[1].text = Lang.t("Pinging...")
-		_lines[2].text = address
+		var decoded := InviteCode.decode(address)
+		_lines[2].text = "%s (%s)" % [address, decoded] if decoded != "" else address
 		_ping = ServerStatus.new(address)
 		_bars.row = SignalBars.PINGING
 		_update_ping()

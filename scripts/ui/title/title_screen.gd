@@ -3,9 +3,10 @@ extends Node3D
 ## The title screen: a live, slightly blurred panorama (a floating island
 ## building itself out of a generated world) behind the logo,
 ## a pulsing splash text and the main buttons (Singleplayer, Options,
-## Quit). Singleplayer opens the world list (or world creation when there
-## are no worlds yet). Playing a world fades to black and loads the game
-## scene, which shows the loading screen.
+## Quit) with "Help & News" in the top left corner. Singleplayer opens the
+## world list (or world creation when there are no worlds yet). Playing a
+## world fades to black and loads the game scene, which shows the loading
+## screen.
 ## On the first start the studio logo is shown for a moment (click or any
 ## key skips it).
 
@@ -41,6 +42,7 @@ func _ready() -> void:
 	GameInput.reset()
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	GameFolder.ensure()
 	add_child(TitlePanorama.new())
 
 	var layer := CanvasLayer.new()
@@ -142,6 +144,11 @@ func _build_main() -> void:
 	row.add_child(_button("Quit Game", 98 * P, func() -> void: get_tree().quit()))
 	buttons.add_child(row)
 
+	# The top left corner: Help & News (the screen with the changes, the
+	# features, how to play together, the keys and the game folder).
+	var help := _help_button()
+	help.position = Vector2(2, 2) * P
+	_main.add_child(help)
 	var version := Label.new()
 	version.text = "%s %s" % [ProjectSettings.get_setting("application/config/name"),
 		ProjectSettings.get_setting("application/config/version", "dev")]
@@ -195,6 +202,30 @@ func _scaled_logo() -> Texture2D:
 	var texture := ImageTexture.create_from_image(image)
 	texture.set_size_override(Vector2i(LOGO_WIDTH, roundi(image.get_height() / screen_scale)))
 	return texture
+
+
+## A small "?" button and the "Help & News" link next to it.
+func _help_button() -> Control:
+	var open_help := func() -> void: _menu.push(HelpScreen.new())
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 3 * P)
+	var mark := _button("?", UiTheme.BUTTON_HEIGHT, open_help)
+	row.add_child(mark)
+	var link := Button.new()
+	link.text = "Help & News"
+	link.flat = true
+	link.focus_mode = Control.FOCUS_NONE
+	link.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	link.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+	for state in ["hover", "pressed", "hover_pressed", "focus"]:
+		link.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	link.pressed.connect(open_help)
+	# Hovering either one lights both up.
+	for button: Button in [mark, link]:
+		button.mouse_entered.connect(func() -> void: link.add_theme_color_override("font_color", UiTheme.HOVER_TEXT_COLOR))
+		button.mouse_exited.connect(func() -> void: link.remove_theme_color_override("font_color"))
+	row.add_child(link)
+	return row
 
 
 func _button(text: String, width: float, on_pressed: Callable) -> Button:
