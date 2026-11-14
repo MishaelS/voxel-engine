@@ -24,6 +24,11 @@ extends Entity
 ## Wolves are neutral like Beta's: a wild one turns on whoever hits it (and
 ## the pack around with it); a tame one follows its player, sits on a click
 ## and goes after what hurts the player or what the player hits.
+## Some of modern's ways on top: hurt animals panic (run off away from the
+## attacker for a while); animals follow a player holding their food, and
+## fed they fall in love and breed (babies: small, big-headed, following a
+## grown-up, growing up in a day); burning undead look for shade; monsters
+## must see a player to notice it, and notice a sneaking one less far.
 
 ## type -> spec. speed: walking speed in blocks per tick; hostile: attacks
 ## the player; damage: per hit (Normal); drops: [item, min, max].
@@ -125,6 +130,55 @@ const STAY := 2.5
 const TELEPORT := 12.0
 ## Wild wolves join a fight of their pack within this distance.
 const PACK := 16.0
+## Monsters notice a sneaking player from this share of SIGHT (modern's
+## visibility); farther than NOTICE_BLIND they must see the player first.
+const SNEAK_SIGHT := 0.8
+const NOTICE_BLIND := 3.0
+## Hurt animals run (modern's PanicGoal) this long, this much faster.
+const PANIC_TICKS := 100
+const PANIC_SPEED := 1.5
+## Burning undead look for shade (modern's FleeSunGoal): random spots this
+## far (horizontal, vertical), now and then, and go there faster; a zombie
+## fights on instead when its player is this close.
+const SHADE_RANGE := Vector2i(10, 3)
+const SHADE_TRIES := 10
+const SHADE_SPEED := 1.3
+const FIGHT_IN_SUN := 5.0
+## Each animal's food (Release 1.0's: pigs ate wheat before carrots came):
+## held, it draws them (TEMPT, stopping TEMPT_STOP away); fed, they breed.
+const FOODS := {"cow": "wheat", "sheep": "wheat", "pig": "wheat", "chicken": "seeds"}
+const TEMPT := 10.0
+const TEMPT_STOP := 2.5
+## Breeding like modern: in love this long, looking for a partner within
+## LOVE_RANGE; together (BREED_CLOSE) for BREED_TICKS gives a baby, then
+## both rest BREED_COOLDOWN. A baby grows up in GROW_TICKS (each feeding
+## takes a tenth off), following a grown-up of its kind.
+const LOVE_TICKS := 600
+const LOVE_RANGE := 8.0
+const BREED_CLOSE := 3.0
+const BREED_TICKS := 60
+const BREED_COOLDOWN := 6000
+const GROW_TICKS := 24000
+const PARENT_RANGE := 8.0
+const PARENT_LOST := 16.0
+## Babies: half the size, the head drawn this much bigger (modern's).
+const BABY_SCALE := 0.5
+const BABY_HEAD := 1.5
+
+## Ticks left as a baby (0: grown up), in love, before it can breed again.
+var baby_ticks := 0
+var love_ticks := 0
+var breed_cooldown := 0
+var _partner: Mob
+var _breed_timer := 0
+var _parent: Mob
+## Where a burning undead goes for shade (Vector3i.MAX: nowhere known),
+## when it looks next; the fire it has from the sun (put out in shade).
+var _shade := Vector3i.MAX
+var _shade_timer := 0
+var _sunburn := false
+## How long it has been going to its panic or wander spot.
+var _goal_age := 0
 
 
 static func create(type: String) -> Mob:
@@ -205,9 +259,21 @@ func _apply_size() -> void:
 		height *= size
 		max_health = size * size
 		scale *= size
+	if is_baby():
+		half_width *= BABY_SCALE
+		height *= BABY_SCALE
+		shadow_size *= BABY_SCALE
+		scale *= BABY_SCALE
 	_base_scale = scale
 	if not _model.is_empty():
 		_model.root.scale = Vector3.ONE * scale
+		for part: Dictionary in _model.spec.parts:
+			if part.get("role", "") == "head" and _model.parts.has(part.name):
+				(_model.parts[part.name] as Node3D).scale = Vector3.ONE * (BABY_HEAD if is_baby() else 1.0)
+
+
+func is_baby() -> bool:
+	return baby_ticks > 0
 
 
 func _ai_tick() -> void:
@@ -221,6 +287,7 @@ func _ai_tick() -> void:
 	_panic = maxi(_panic - 1, 0)
 	if no_ai:
 		return
+	_breeding_tick()
 	var player = _player()
 	if is_hostile() and _despawn(player):
 		return
@@ -266,8 +333,9 @@ func _ai_tick() -> void:
 		_egg_timer -= 1
 		if _egg_timer <= 0:
 			_egg_timer = randi_range(6000, 12000)
-			world.items.spawn(Items.id_of("egg"), 1, center(), Vector3(0, 0.1, 0))
-			_sound("plop", 1.0)
+			if not is_baby(): # (chicks lay none)
+				world.items.spawn(Items.id_of("egg"), 1, center(), Vector3(0, 0.1, 0))
+				_sound("plop", 1.0)
 	if mob_type == "sheep" and sheared and randi_range(0, 999) == 0:
 		_eat_grass()
 	if in_water:
@@ -317,31 +385,253 @@ func _despawn(_player_near) -> bool:
 	return false
 
 
+## Animals (and calm monsters, wild wolves): run when hurt (panic), go to
+## their partner when in love, follow food held near, a baby its grown-up,
+## else wander and look at the player now and then.
 func _animal_tick(player) -> void:
+	_goal_age += 1
 	if _panic > 0:
-		# Runs away: from what hurt it (else anywhere), a new spot now and then.
-		if _wander == Vector3.INF or _path.is_empty() or randi_range(0, 19) == 0:
-			var away := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
-			if _flee_from != Vector3.INF:
-				away = (feet() - _flee_from) * Vector3(1, 0, 1)
-				away = away.normalized() * 8.0 + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3))
-			else:
-				away = away.normalized() * 8.0
-			_wander = feet() + away
-		_navigate(_wander, spec.speed * 1.6, false, 150)
+		_panic_tick()
 		return
 	_flee_from = Vector3.INF
+	if mob_type in ANIMALS and (_love_tick() or _tempt_tick() or _follow_parent_tick()):
+		return
 	if player and randi_range(0, 49) == 0 and player.global_position.distance_to(feet()) < 6.0:
 		_look_at = player.eye_position()
 		_look_ticks = randi_range(20, 60) # like the game: looks for a while
 	if _wander == Vector3.INF and randi_range(0, 119) == 0:
-		_wander = feet() + Vector3(randf_range(-10, 10), 0, randf_range(-10, 10))
+		_wander = _wander_spot()
+		_goal_age = 0
 	if _wander != Vector3.INF:
-		if Vector2(_wander.x - _x, _wander.z - _z).length() < 1.0 or randi_range(0, 199) == 0:
+		if _walk_over(_wander) or randi_range(0, 199) == 0:
 			_wander = Vector3.INF
 			_path.clear()
 		else:
 			_navigate(_wander, spec.speed, false, 150)
+
+
+## Modern's PanicGoal: off to spots away from what hurt it (water first when
+## burning), a new one when there, out of reach or after a while.
+func _panic_tick() -> void:
+	if _wander == Vector3.INF or _walk_over(_wander) or _goal_age > 60:
+		_wander = _panic_spot()
+		_goal_age = 0
+	_navigate(_wander, spec.speed * PANIC_SPEED, false, 150)
+
+
+## Whether walking to `goal` is over: there, its path ran out short of it
+## (out of reach), or it keeps bumping into something close to it.
+func _walk_over(goal: Vector3) -> bool:
+	if Vector2(goal.x - _x, goal.z - _z).length() < 1.0:
+		return true
+	var near := goal.distance_to(feet()) < PATH_FROM
+	if _goal_age > 5 and not near and _path.is_empty() and _path_goal == Vector3i(goal.floor()):
+		return true
+	return _goal_age > 20 and near and horizontal_collision
+
+
+## A spot 4-8 blocks away from the attacker (anywhere without one), the
+## best of a few tries: farthest from it, on the ground (no walls, no
+## cliffs: Pathfinder.standable), not in water unless burning.
+func _panic_spot() -> Vector3:
+	var away := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
+	if _flee_from != Vector3.INF:
+		away = (feet() - _flee_from) * Vector3(1, 0, 1)
+	away = away.normalized() if away.length_squared() > 1e-4 else Vector3.FORWARD.rotated(Vector3.UP, randf() * TAU)
+	var water_bonus := 6.0 if fire_ticks > 0 else -6.0
+	var best := Vector3.INF
+	var best_score := -INF
+	for attempt in 10:
+		var offset := away.rotated(Vector3.UP, randf_range(-1.2, 1.2)) * randf_range(4.0, 8.0)
+		var cell := _ground_near(Vector3i(floori(_x + offset.x), floori(_y + 0.01), floori(_z + offset.z)), 3)
+		if cell == Vector3i.MAX:
+			continue
+		var spot := Vector3(cell) + Vector3(0.5, 0.0, 0.5)
+		var score := spot.distance_to(_flee_from) if _flee_from != Vector3.INF else randf() * 4.0
+		if _water_at(cell):
+			score += water_bonus
+		if score > best_score:
+			best_score = score
+			best = spot
+	return best if best != Vector3.INF else feet() + away * 6.0
+
+
+## A wander goal up to 10 blocks off, on the ground; the undead keep to the
+## shade by day (INF: stays for now).
+func _wander_spot() -> Vector3:
+	var cell := _ground_near(_feet_cell() + Vector3i(randi_range(-10, 10), 0, randi_range(-10, 10)), 3)
+	if cell == Vector3i.MAX or (_fears_sun() and not _shaded(cell)):
+		return Vector3.INF
+	return Vector3(cell) + Vector3(0.5, 0.0, 0.5)
+
+
+## The cell nearest `cell`'s height in its column (up to `vertical` up or
+## down) where it can stand; Vector3i.MAX if none.
+func _ground_near(cell: Vector3i, vertical: int) -> Vector3i:
+	var tall := _tall()
+	for i in vertical * 2 + 1:
+		var dy := (i + 1) / 2 * (1 if i % 2 == 1 else -1)
+		var here := cell + Vector3i(0, dy, 0)
+		if Pathfinder.standable(world, here, tall):
+			return here
+	return Vector3i.MAX
+
+
+func _water_at(cell: Vector3i) -> bool:
+	return Blocks.liquid_table[world.get_block(cell)] == 1
+
+
+# --- Animals: food, love and babies ----------------------------------------------------
+
+## The food this animal follows and breeds with (-1: none).
+func _food_id() -> int:
+	return Items.id_of(FOODS[mob_type]) if FOODS.has(mob_type) else -1
+
+
+## Modern's TemptGoal: the nearest player within TEMPT holding its food
+## (creative too) draws it, to TEMPT_STOP away, looking at them.
+func _tempt_tick() -> bool:
+	var food := _food_id()
+	var best = null
+	var best_distance := TEMPT
+	for who in _players():
+		if who == null or who.dead or who.held_block() != food:
+			continue
+		var distance: float = (who.global_position as Vector3).distance_to(feet())
+		if distance < best_distance:
+			best_distance = distance
+			best = who
+	if best == null:
+		return false
+	_wander = Vector3.INF
+	_look_at = best.eye_position()
+	_look_ticks = 5
+	if best_distance > TEMPT_STOP:
+		_navigate(best.global_position, spec.speed)
+	else:
+		_path.clear()
+		_face(best.global_position)
+	return true
+
+
+## In love (fed): goes to the nearest one of its kind in love within
+## LOVE_RANGE; after BREED_TICKS together, close, a baby (modern's BreedGoal).
+func _love_tick() -> bool:
+	if love_ticks <= 0 or is_baby():
+		return false
+	if not _can_mate(_partner) and age % 10 == 0:
+		_partner = null
+		var best_distance := LOVE_RANGE
+		for entity in world.entities.near(center(), LOVE_RANGE):
+			var distance := entity.center().distance_to(center())
+			if entity != self and _can_mate(entity as Mob) and distance < best_distance:
+				best_distance = distance
+				_partner = entity as Mob
+	if not _can_mate(_partner):
+		_breed_timer = 0
+		return false
+	var goal := _partner.feet()
+	_look_at = _partner.center()
+	_look_ticks = 5
+	if goal.distance_to(feet()) > 1.2:
+		_navigate(goal, spec.speed)
+	_breed_timer += 1
+	if _breed_timer >= BREED_TICKS and goal.distance_to(feet()) < BREED_CLOSE:
+		_breed(_partner)
+	return true
+
+
+func _can_mate(other: Mob) -> bool:
+	return other != null and is_instance_valid(other) and other != self and not other.removed and not other.is_dead() \
+		and other.mob_type == mob_type and other.love_ticks > 0 and not other.is_baby()
+
+
+## A baby between the two (a lamb's wool from one of them); both rest.
+func _breed(partner: Mob) -> void:
+	var child := Mob.create(mob_type)
+	child.baby_ticks = GROW_TICKS
+	if mob_type == "sheep":
+		child.wool_color = wool_color if randi_range(0, 1) == 0 else partner.wool_color
+	world.entities.spawn(child, (feet() + partner.feet()) * 0.5)
+	child._yaw = randf() * TAU
+	for parent: Mob in [self, partner]:
+		parent.love_ticks = 0
+		parent.breed_cooldown = BREED_COOLDOWN
+		parent._breed_timer = 0
+		parent._partner = null
+	world.particles.hearts(child.center() + Vector3(0, 0.3, 0))
+
+
+## Modern's FollowParentGoal: a baby keeps near a grown-up of its kind (the
+## nearest within PARENT_RANGE, until PARENT_LOST away), wandering when close.
+func _follow_parent_tick() -> bool:
+	if not is_baby():
+		return false
+	var lost := _parent == null or not is_instance_valid(_parent) or _parent.removed or _parent.is_dead() \
+		or _parent.feet().distance_to(feet()) > PARENT_LOST
+	if lost or age % 20 == 0:
+		_parent = null
+		var best_distance := PARENT_RANGE
+		for entity in world.entities.near(center(), PARENT_RANGE):
+			if entity is Mob and (entity as Mob).mob_type == mob_type and not (entity as Mob).is_baby():
+				var distance := entity.feet().distance_to(feet())
+				if distance < best_distance:
+					best_distance = distance
+					_parent = entity as Mob
+	if _parent == null or _parent.feet().distance_to(feet()) < 3.0:
+		return false
+	_wander = Vector3.INF
+	_navigate(_parent.feet(), spec.speed * 1.1)
+	return true
+
+
+## Every tick (host): a baby grows, love and the rest after breeding wear
+## off; hearts now and then while in love.
+func _breeding_tick() -> void:
+	if baby_ticks > 0:
+		baby_ticks -= 1
+		if baby_ticks == 0:
+			_apply_size() # grown up
+	breed_cooldown = maxi(breed_cooldown - 1, 0)
+	if love_ticks > 0:
+		love_ticks -= 1
+		if love_ticks % 10 == 0:
+			_love_heart()
+
+
+func _love_heart() -> void:
+	if world and world.particles:
+		world.particles.heart(center() + Vector3(randf_range(-half_width, half_width), height * 0.5 + randf() * 0.5, randf_range(-half_width, half_width)))
+
+
+## Fed its food: a baby grows a tenth of the way faster; a grown-up that
+## can breed falls in love. Returns true if it took the food.
+func _feed(player) -> bool:
+	if is_baby():
+		baby_ticks = maxi(baby_ticks - baby_ticks / 10, 1)
+	elif love_ticks == 0 and breed_cooldown == 0:
+		love_ticks = LOVE_TICKS
+		_partner = null
+		world.particles.hearts(center() + Vector3(0, height * 0.5, 0))
+	else:
+		return false
+	if not player.is_creative():
+		player.inventory.take(player.selected_slot)
+	return true
+
+
+# --- Monsters ---------------------------------------------------------------------------
+
+## Whether a monster notices `player` to go after it: closer than SIGHT (a
+## sneaking one SNEAK_SIGHT of that) and seen, unless right next to it.
+func _notices(player) -> bool:
+	if player == null:
+		return false
+	var sneaking: bool = player.is_sneaking() if player.has_method("is_sneaking") else bool(player.get("sneaking"))
+	var distance: float = (player.global_position as Vector3).distance_to(feet())
+	if distance >= SIGHT * (SNEAK_SIGHT if sneaking else 1.0):
+		return false
+	return distance < NOTICE_BLIND or _sees(player)
 
 
 func _sees(player) -> bool:
@@ -355,15 +645,21 @@ func _sees(player) -> bool:
 	return not hit.get("hit", false)
 
 
-## Zombies, spiders and creepers: walk at the player they can see, hit it
-## when close (spiders leap).
+## Zombies, spiders and creepers: go after the player they notice (seen
+## within 16 blocks, like Beta's; less far while it sneaks), following it
+## along paths even out of sight until twice as far; hit it when close
+## (spiders leap). Burning undead go for shade first.
 func _monster_tick(player) -> void:
 	if mob_type == "spider" and not angry and world.get_combined_light(Vector3i(center().floor())) > 7:
 		target = null
-	elif player and player.global_position.distance_to(feet()) < SIGHT:
-		target = player # (like Beta's monsters: within 16 blocks, seen or not; the path goes around)
-	elif target and _is_player(target) and target.dead:
-		target = null
+	else:
+		if target and _is_player(target) and (target.dead or target.is_creative() \
+				or (target.global_position as Vector3).distance_to(feet()) > SIGHT * 2.0):
+			target = null
+		if player and player != target and (target == null or _is_player(target)) and _notices(player):
+			target = player
+	if _flee_sun():
+		return
 	if target == null:
 		_animal_tick(null)
 		return
@@ -411,7 +707,9 @@ func _creeper_tick(player) -> void:
 
 ## Skeletons keep their distance and shoot.
 func _skeleton_tick(player) -> void:
-	target = player if _sees(player) else null
+	target = player if _sees(player) and (target == player or _notices(player)) else null
+	if _flee_sun():
+		return
 	if target == null:
 		_animal_tick(null)
 		return
@@ -549,11 +847,79 @@ func _squid_tick() -> void:
 		velocity.z *= 0.5
 
 
+## The undead catch fire under the open sky by day (like Beta's); out of it
+## (shade, water) the sun's fire goes out (not other fire: lava's is longer).
 func _burn_in_daylight() -> void:
+	if fire_ticks > 160:
+		_sunburn = false
+	if _fears_sun() and not is_wet() and world.get_light(Vector3i((center() + Vector3(0, height * 0.4, 0)).floor())) >= SkyLight.MAX:
+		if fire_ticks <= 0:
+			fire_ticks = 160 # (set only when out: kept up every tick, it never reached a 20th tick to hurt)
+		_sunburn = true
+	elif _sunburn:
+		_sunburn = false
+		fire_ticks = 0
+
+
+func _daylight() -> float:
 	var atmosphere := Atmosphere.find(world.get_tree())
-	var daylight := atmosphere.daylight if atmosphere else 1.0
-	if daylight > 0.5 and not is_wet() and world.get_light(Vector3i((center() + Vector3(0, height * 0.4, 0)).floor())) >= SkyLight.MAX:
-		fire_ticks = maxi(fire_ticks, 160)
+	return atmosphere.daylight if atmosphere else 1.0
+
+
+func _fears_sun() -> bool:
+	return is_undead() and _daylight() > 0.5
+
+
+## Out of the sun at `cell` (feet): its head has no open sky above (a tree,
+## an overhang, a roof), or it is in water.
+func _shaded(cell: Vector3i) -> bool:
+	return _water_at(cell) or world.get_light(cell + Vector3i(0, floori(height * 0.9), 0)) < SkyLight.MAX
+
+
+## Modern's FleeSunGoal: burning in the sun, an undead looks for shade now
+## and then (SHADE_TRIES random spots within SHADE_RANGE: the nearest
+## shaded one) and hurries there; true while it goes. A zombie with its
+## player close fights on instead.
+func _flee_sun() -> bool:
+	if not _sunburn or fire_ticks <= 0:
+		_shade = Vector3i.MAX
+		return false
+	if mob_type == "zombie" and target and (target as Node3D).global_position.distance_to(feet()) < FIGHT_IN_SUN:
+		return false
+	if _shade != Vector3i.MAX and not _shaded(_shade):
+		_shade = Vector3i.MAX
+	if _shade == Vector3i.MAX:
+		_shade_timer -= 1
+		if _shade_timer > 0:
+			return false
+		_shade_timer = randi_range(20, 40)
+		_shade = _find_shade()
+		if _shade == Vector3i.MAX:
+			return false
+		_path.clear()
+	var goal := Vector3(_shade) + Vector3(0.5, 0.0, 0.5)
+	_look_ticks = 0
+	_navigate(goal, spec.speed * SHADE_SPEED, false, 200)
+	return true
+
+
+func _find_shade() -> Vector3i:
+	var base := _feet_cell()
+	var best := Vector3i.MAX
+	var best_distance := INF
+	for attempt in SHADE_TRIES:
+		# (spread around it, denser close by)
+		var angle := randf() * TAU
+		var radius := randf_range(1.0, float(SHADE_RANGE.x))
+		var column := base + Vector3i(roundi(cos(angle) * radius), 0, roundi(sin(angle) * radius))
+		var cell := _ground_near(column, SHADE_RANGE.y)
+		if cell == Vector3i.MAX or not _shaded(cell):
+			continue
+		var distance := Vector3(cell - base).length()
+		if distance < best_distance:
+			best_distance = distance
+			best = cell
+	return best
 
 
 ## Walks toward a point like Beta's creatures: turns to it and pushes
@@ -655,9 +1021,11 @@ func interact(player, item_id: int) -> bool:
 	if is_dead():
 		return false
 	var item_name := Items.name_of(item_id) if item_id != Blocks.AIR else ""
+	if item_name != "" and FOODS.get(mob_type, "") == item_name and _feed(player):
+		return true
 	match mob_type:
 		"sheep":
-			if item_name == "shears" and not sheared:
+			if item_name == "shears" and not sheared and not is_baby():
 				sheared = true
 				_update_wool()
 				var wool := Blocks.id_of(wool_color + "_wool")
@@ -674,7 +1042,7 @@ func interact(player, item_id: int) -> bool:
 					player.inventory.take(player.selected_slot)
 				return true
 		"pig":
-			if not saddled and item_name == "saddle":
+			if not saddled and item_name == "saddle" and not is_baby():
 				saddled = true
 				_update_wool()
 				if not player.is_creative():
@@ -684,7 +1052,7 @@ func interact(player, item_id: int) -> bool:
 				player.mount(self)
 				return true
 		"cow":
-			if item_name == "bucket":
+			if item_name == "bucket" and not is_baby():
 				if not player.is_creative():
 					var slot: int = player.selected_slot
 					if player.inventory.count_at(slot) == 1:
@@ -768,8 +1136,9 @@ func damage(amount: int, from: Variant = null) -> bool:
 	if hurt and not is_dead():
 		_sound("hurt", 1.0)
 		if not is_hostile():
-			_panic = 60 # (monsters don't run, like Beta's)
+			_panic = PANIC_TICKS # (monsters don't run, like Beta's)
 			_wander = Vector3.INF
+			love_ticks = 0
 		if from is Vector3:
 			_flee_from = from
 	return hurt
@@ -830,8 +1199,8 @@ func _on_death() -> void:
 			child.size = size / 2
 			world.entities.spawn(child, feet() + Vector3(randf_range(-0.5, 0.5), 0.5, randf_range(-0.5, 0.5)))
 		return
-	if not GameRules.flag(world, "doMobLoot"):
-		return
+	if not GameRules.flag(world, "doMobLoot") or is_baby():
+		return # (babies drop nothing, like modern's)
 	for drop: Array in spec.drops:
 		var count := randi_range(drop[1], drop[2])
 		var item: String = drop[0]
@@ -997,7 +1366,8 @@ func _turn_head(node: Node3D) -> void:
 
 func net_state() -> Dictionary:
 	var state := super()
-	state.merge({"fuse": _fuse, "angry": angry, "sheared": sheared, "sitting": sitting, "saddled": saddled, "tamed": tamed})
+	state.merge({"fuse": _fuse, "angry": angry, "sheared": sheared, "sitting": sitting, "saddled": saddled, "tamed": tamed,
+		"baby": is_baby(), "love": love_ticks > 0})
 	return state
 
 
@@ -1011,6 +1381,10 @@ func apply_net_state(at: Vector3, yaw: float, state: Dictionary) -> void:
 	sitting = bool(state.get("sitting", false))
 	saddled = bool(state.get("saddled", false))
 	tamed = bool(state.get("tamed", false))
+	love_ticks = LOVE_TICKS if bool(state.get("love", false)) else 0
+	if bool(state.get("baby", false)) != is_baby():
+		baby_ticks = GROW_TICKS if not is_baby() else 0
+		_apply_size() # (born or grown up on the host)
 	if bool(state.get("sheared", false)) != sheared:
 		sheared = not sheared
 		_update_wool()
@@ -1018,7 +1392,8 @@ func apply_net_state(at: Vector3, yaw: float, state: Dictionary) -> void:
 
 func save_state() -> Dictionary:
 	var state := super()
-	state.merge({"sheared": sheared, "wool": wool_color, "size": size, "tamed": tamed, "sitting": sitting, "saddled": saddled, "no_ai": no_ai})
+	state.merge({"sheared": sheared, "wool": wool_color, "size": size, "tamed": tamed, "sitting": sitting, "saddled": saddled, "no_ai": no_ai,
+		"baby": baby_ticks, "love": love_ticks, "breed_cooldown": breed_cooldown})
 	return state
 
 
@@ -1026,6 +1401,8 @@ func save_state() -> Dictionary:
 func puppet_tick() -> void:
 	_prev_yaw = _yaw
 	super()
+	if love_ticks > 0 and age % 10 == 0:
+		_love_heart()
 
 
 func load_state(saved: Dictionary) -> void:
@@ -1039,6 +1416,9 @@ func load_state(saved: Dictionary) -> void:
 	sitting = saved.get("sitting", false)
 	saddled = saved.get("saddled", false)
 	no_ai = saved.get("no_ai", false)
+	baby_ticks = saved.get("baby", 0)
+	love_ticks = saved.get("love", 0)
+	breed_cooldown = saved.get("breed_cooldown", 0)
 	_update_wool()
 	_apply_size()
 	health = mini(saved.get("health", max_health), max_health)

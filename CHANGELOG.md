@@ -13,6 +13,18 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Breeding like the modern game: feed two cows, sheep or pigs wheat (chickens seeds) and they fall in love (hearts), find each other and have a baby - half size with a big head, following the adults, grown up after 20 minutes (feeding it speeds that up); parents rest 5 minutes before the next one. Babies drop nothing and can't be sheared, milked or saddled; a lamb takes a parent's wool color.
+- Animals follow a player holding their food (wheat, chickens seeds) from 10 blocks and stop 2.5 blocks away, looking at them.
+- Zombies and skeletons burning in daylight look for shade or water nearby (under a tree, an overhang, a roof) and stay in the shade by day; a zombie with its player close keeps fighting.
+
+### Changed
+- Hurt animals panic properly: 5 seconds of running away from the attacker, faster, to reachable spots (not into walls or off cliffs, into water only when burning).
+- Monsters notice a player within 16 blocks, 12.8 while the player sneaks; beyond 3 blocks only one they can see; they give up past 32 blocks or when the player goes creative.
+
+### Fixed
+- Sunburn did no damage (the fire was relit every tick and never reached its damage tick); now 1 a second like Beta.
+
 ## [0.0.19] - 2026-11-14
 
 ### Added

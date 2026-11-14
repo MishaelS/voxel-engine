@@ -79,6 +79,16 @@ func is_sleeping() -> bool:
 	return _flags & 8 != 0
 
 
+## Sneaking (creatures notice it from less far, Mob._notices).
+func is_sneaking() -> bool:
+	return _flags & 1 != 0
+
+
+## The item in its hand (animals follow their food, Mob._tempter).
+func held_block() -> int:
+	return maxi(_held_id, Blocks.AIR)
+
+
 func damage(amount: int, _always: bool = false) -> void:
 	if not dead and not is_creative():
 		Net.hurt_peer(peer_id, amount, Vector3.INF)

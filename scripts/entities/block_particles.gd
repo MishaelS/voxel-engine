@@ -364,6 +364,11 @@ func hearts(point: Vector3) -> void:
 		_add_picture(start, Vector3(0, 0.02, 0), HEART, 0.2, Color.WHITE, 25, 0.0)
 
 
+## One heart rising (an animal in love, now and then).
+func heart(point: Vector3) -> void:
+	_add_picture(point, Vector3(0, 0.02, 0), HEART, 0.2, Color.WHITE, 25, 0.0)
+
+
 ## A torch's tip: a wisp of smoke and a small flame.
 func torch(tip: Vector3) -> void:
 	var gray := _rng.randf_range(0.15, 0.3)
