@@ -261,6 +261,14 @@ static func _register_all() -> bool:
 		register(_top_slab(material))
 	for facing in [4, 5]:
 		register(_vertical_dispenser(facing))
+	# Stairs corners, like the modern game (StairsBehavior; appended: ids
+	# stay stable): in each stairs family after its 4 straight facings,
+	# 4 facings per corner shape.
+	for material: Array in STAIR_MATERIALS:
+		for upside_down: bool in [false, true]:
+			for shape in range(1, StairsBehavior.SHAPES.size()):
+				for facing in 4:
+					register(_stairs(material[0], material[1], facing, upside_down, shape))
 	_set_flammability()
 	return true
 
@@ -846,31 +854,46 @@ static func _register_building_blocks() -> void:
 
 ## Stairs; `upside_down` ones ("<material>_stairs_top", placed against a
 ## ceiling or the upper half of a side, like the modern game) have the full
-## half on top.
-static func _stairs(material: String, tile: int, facing: int, upside_down: bool = false) -> BlockType:
+## half on top. `shape` (StairsBehavior.SHAPES) is the corner the stairs
+## make with the stairs around them: the corners are states of the same
+## family ("oak_stairs_outer_left_west"), not in the catalog.
+static func _stairs(material: String, tile: int, facing: int, upside_down: bool = false, shape: int = 0) -> BlockType:
 	var family := material + ("_stairs_top" if upside_down else "_stairs")
-	var block := BlockType.cube(family if facing == 0 else "%s_%s" % [family, FACING_NAMES[facing]], tile) \
+	var state := family if shape == 0 else "%s_%s" % [family, StairsBehavior.SHAPES[shape]]
+	var block := BlockType.cube(state if facing == 0 else "%s_%s" % [state, FACING_NAMES[facing]], tile) \
 		.set_hardness(2.0).set_tool("pickaxe" if material == "cobblestone" else "axe", 0 if material == "cobblestone" else -1) \
-		.set_height(0.999).set_light_opacity(0)
+		.set_height(0.999).set_light_opacity(0).set_on_update(Callable(StairsBehavior, "on_update"))
 	# Like Beta, stairs give back their material.
 	block.drops = [{"item": "cobblestone" if material == "cobblestone" else material + "_planks"}]
 	block.family = family
 	block.facing = facing
-	if facing != 0 or upside_down:
+	if facing != 0 or upside_down or shape != 0:
 		block.item = material + "_stairs"
 		block.in_catalog = false
-	# Facing south: the low step in front (+Z), the high part behind.
+	# Facing south: the low step in front (+Z), the high part behind (-Z),
+	# so the modern game's "left" (its facing turned counterclockwise) is
+	# west (-X). Outer corners keep a quarter of the high part, inner ones
+	# add a quarter in front.
 	var faces := {}
 	for face in 6:
 		faces[face] = {"layer": tile}
-	var parts := [[Vector3(0, 0, 0), Vector3(16, 8, 16)], [Vector3(0, 8, 0), Vector3(16, 16, 8)]]
-	if upside_down:
-		parts = [[Vector3(0, 8, 0), Vector3(16, 16, 16)], [Vector3(0, 0, 0), Vector3(16, 8, 8)]]
+	var steps: Array = [
+		[[Vector3(0, 0, 0), Vector3(16, 8, 8)]], # straight
+		[[Vector3(0, 0, 0), Vector3(16, 8, 8)], [Vector3(0, 0, 8), Vector3(8, 8, 16)]], # inner left
+		[[Vector3(0, 0, 0), Vector3(16, 8, 8)], [Vector3(8, 0, 8), Vector3(16, 8, 16)]], # inner right
+		[[Vector3(0, 0, 0), Vector3(8, 8, 8)]], # outer left
+		[[Vector3(8, 0, 0), Vector3(16, 8, 8)]], # outer right
+	][shape]
+	# Upside down: the slab on top, the step under it (mirrored vertically).
+	var lift := Vector3(0, 0 if upside_down else 8, 0)
+	var parts := [[Vector3(0, 8 - lift.y, 0), Vector3(16, 16 - lift.y, 16)]]
+	for step: Array in steps:
+		parts.append([step[0] + lift, step[1] + lift])
 	var boxes := []
 	for part: Array in parts:
 		boxes.append({"from": part[0], "to": part[1], "faces": faces})
 	block.shape = BlockType.Shape.MODEL
-	block.model = BlockModel.register(boxes, facing)
+	block.model = BlockModel.register(boxes, facing, true) # (uvlock: the planks keep their way)
 	var turn := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
 	for box: Array in parts:
 		block.collision_boxes.append(_turned_box(box[0] / 16.0, box[1] / 16.0, turn))

@@ -13,6 +13,15 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Stairs take corner shapes like the modern game's (inner and outer corners from the stairs around them, both halves), updated as neighbors change.
+
+### Changed
+- The debug world's time and weather stand still (always noon, clear), so every water and lava level stays as shown.
+- The selection outline follows only the outer edges of a block's shape (no lines between the parts of stairs, fences, slabs...).
+- Stairs keep their texture's direction whichever way they face (like the game's uvlock): the planks line up as if cut from a block.
+- Fences join full solid blocks next to them (stone, planks, glass...), not only other fences; not leaves or pumpkins, like the modern game.
+
 ## [0.0.14] - 2026-11-14
 
 ### Changed

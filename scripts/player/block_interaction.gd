@@ -561,7 +561,9 @@ func _place_block(id: int) -> void:
 		return # not inside the player
 	# Oriented blocks (chest, furnace, pumpkins, stairs) look at the player.
 	var family := Blocks.family_of(id)
-	if Blocks.family_ids(family).size() == 4 and Blocks.facing_table[id] >= 0:
+	# (Stairs families also hold their corner shapes, StairsBehavior: placed
+	# straight, the shape follows from the neighbors once placed.)
+	if (Blocks.family_ids(family).size() == 4 or StairsBehavior.is_stairs(id)) and Blocks.facing_table[id] >= 0:
 		id = Blocks.variant(family, Blocks.facing_toward(player.look_direction()))
 	# Like the modern game: stairs and slabs against a ceiling or the upper
 	# half of a side go upside down / on top; logs lie along the clicked
@@ -847,9 +849,9 @@ static var _outline_material: ShaderMaterial
 static var _outline_meshes := {} # block id -> ArrayMesh
 
 
-## The outline of a block: the 12 edges of each of its boxes (a little
-## bigger, so they don't flicker into the faces), as screen-width lines
-## (shaders/outline.gdshader).
+## The outline of a block: the edges of its boxes taken together
+## (_outline_edges; a little out of the faces, so they don't flicker into
+## them), as screen-width lines (shaders/outline.gdshader).
 static func _outline_mesh(id: int) -> ArrayMesh:
 	if _outline_meshes.has(id):
 		return _outline_meshes[id]
@@ -861,22 +863,17 @@ static func _outline_mesh(id: int) -> ArrayMesh:
 	var ends := PackedVector2Array()
 	var others := PackedVector2Array()
 	var indices := PackedInt32Array()
-	for box: AABB in boxes:
-		var grown := box.grow(0.002)
-		for a in 8:
-			for bit in [1, 2, 4]:
-				if a & bit:
-					continue
-				var p := grown.get_endpoint(a)
-				var q := grown.get_endpoint(a | bit)
-				var start := vertices.size()
-				for corner: Array in [[p, q, -1.0], [p, q, 1.0], [q, p, 1.0], [q, p, -1.0]]:
-					var at: Vector3 = corner[0]
-					var other: Vector3 = corner[1]
-					vertices.append(at)
-					ends.append(Vector2(other.x, other.y))
-					others.append(Vector2(other.z, corner[2]))
-				indices.append_array(PackedInt32Array([start, start + 1, start + 2, start, start + 2, start + 3]))
+	for edge: Array in _outline_edges(boxes):
+		var p: Vector3 = edge[0]
+		var q: Vector3 = edge[1]
+		var start := vertices.size()
+		for corner: Array in [[p, q, -1.0], [p, q, 1.0], [q, p, 1.0], [q, p, -1.0]]:
+			var at: Vector3 = corner[0]
+			var other: Vector3 = corner[1]
+			vertices.append(at)
+			ends.append(Vector2(other.x, other.y))
+			others.append(Vector2(other.z, corner[2]))
+		indices.append_array(PackedInt32Array([start, start + 1, start + 2, start, start + 2, start + 3]))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -889,6 +886,78 @@ static func _outline_mesh(id: int) -> ArrayMesh:
 	mesh.custom_aabb = AABB(Vector3(-0.1, -0.1, -0.1), Vector3(1.2, 1.7, 1.2))
 	_outline_meshes[id] = mesh
 	return mesh
+
+
+## The edges of the solid that boxes make together, like the modern game's
+## shape outlines: where boxes meet flat (a stairs' step on its slab, a
+## fence bar on its post) no line is drawn. Worked out on the grid of the
+## boxes' own coordinates: a grid line is an edge where the 4 cells around
+## it are neither all alike nor two side by side (a flat face). Each edge
+## [from, to] is pushed 0.002 out of the solid and made that much longer;
+## a single box keeps its 12 edges.
+static func _outline_edges(boxes: Array) -> Array:
+	var lines: Array = [[], [], []] # per axis: the boxes' coordinates, sorted
+	for box: AABB in boxes:
+		for axis in 3:
+			for v: float in [box.position[axis], box.end[axis]]:
+				if not (lines[axis] as Array).any(func(known: float) -> bool: return absf(known - v) < 0.0001):
+					lines[axis].append(v)
+	for axis_lines: Array in lines:
+		axis_lines.sort()
+	var cells := Vector3i(lines[0].size() - 1, lines[1].size() - 1, lines[2].size() - 1)
+	var solid := PackedByteArray()
+	solid.resize(cells.x * cells.y * cells.z)
+	for i in cells.x:
+		for j in cells.y:
+			for k in cells.z:
+				var middle := Vector3((lines[0][i] + lines[0][i + 1]) * 0.5, (lines[1][j] + lines[1][j + 1]) * 0.5,
+					(lines[2][k] + lines[2][k + 1]) * 0.5)
+				for box: AABB in boxes:
+					if box.has_point(middle):
+						solid[(i * cells.y + j) * cells.z + k] = 1
+						break
+	var edges := []
+	for axis in 3:
+		var u := (axis + 1) % 3
+		var w := (axis + 2) % 3
+		for a in (lines[u] as Array).size():
+			for b in (lines[w] as Array).size():
+				var run_start := -1
+				var run_push := Vector2.ZERO
+				for i in cells[axis] + 1: # one past the end flushes the last run
+					var push := Vector2.ZERO
+					var edge := false
+					if i < cells[axis]:
+						var count := 0
+						var sides := Vector2.ZERO # sum of the filled cells' sides
+						for du in [-1, 0]:
+							for dw in [-1, 0]:
+								var cell := Vector3i.ZERO
+								cell[axis] = i
+								cell[u] = a + du
+								cell[w] = b + dw
+								if cell[u] < 0 or cell[w] < 0 or cell[u] >= cells[u] or cell[w] >= cells[w]:
+									continue
+								if solid[(cell.x * cells.y + cell.y) * cells.z + cell.z] == 1:
+									count += 1
+									sides += Vector2(du * 2 + 1, dw * 2 + 1)
+						# Two filled cells side by side: a flat face (their sides sum
+						# along one axis only); diagonal ones sum to zero: an edge.
+						edge = count == 1 or count == 3 or (count == 2 and sides == Vector2.ZERO)
+						push = -sides.sign() * 0.002
+					if edge and run_start >= 0 and push == run_push:
+						continue
+					if run_start >= 0:
+						var from := Vector3.ZERO
+						from[axis] = lines[axis][run_start] - 0.002
+						from[u] = lines[u][a] + run_push.x
+						from[w] = lines[w][b] + run_push.y
+						var to := from
+						to[axis] = lines[axis][i] + 0.002
+						edges.append([from, to])
+					run_start = i if edge else -1
+					run_push = push
+	return edges
 
 
 ## The crack texture multiplied over a block, made on first use.

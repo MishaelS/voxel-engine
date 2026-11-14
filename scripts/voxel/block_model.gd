@@ -30,8 +30,11 @@ static var _models: Array = [] # index -> Array of quads
 
 
 ## Registers a model (its boxes turned for `facing`) and returns its index.
-static func register(boxes: Array, facing: int = 0) -> int:
-	_models.append(_build(boxes, FACING_TURNS[facing]))
+## `uvlock`, like the game's block states: the texture is not turned with
+## the model but laid by where each face ends up in the block (stairs: the
+## planks run the same way whichever way they face, as if cut from a block).
+static func register(boxes: Array, facing: int = 0, uvlock: bool = false) -> int:
+	_models.append(_build(boxes, FACING_TURNS[facing], uvlock))
 	return _models.size() - 1
 
 
@@ -48,7 +51,7 @@ static func quads(index: int) -> Array:
 	return _models[index]
 
 
-static func _build(boxes: Array, degrees: float) -> Array:
+static func _build(boxes: Array, degrees: float, uvlock: bool = false) -> Array:
 	var rotation := Basis(Vector3.UP, deg_to_rad(degrees))
 	var middle := Vector3(0.5, 0.0, 0.5)
 	var result := []
@@ -78,8 +81,30 @@ static func _build(boxes: Array, degrees: float) -> Array:
 				var point := Vector3(lerpf(from.x, to.x, corner.x), lerpf(from.y, to.y, corner.y), lerpf(from.z, to.z, corner.z))
 				point = tilt * (point - pivot) + pivot
 				corners.append(rotation * (point - middle) + middle)
-			result.append([corners, rotation * (tilt * ChunkMesher.FACE_NORMALS[face]), uvs, int(spec.layer)])
+			var normal := rotation * (tilt * ChunkMesher.FACE_NORMALS[face])
+			if uvlock and not box.has("rotation") and not spec.has("uv") and not spec.has("uv_turn") \
+					and not spec.get("mirror_u", false) and not spec.get("flip_v", false):
+				uvs = PackedVector2Array()
+				for point: Vector3 in corners:
+					uvs.append(_locked_uv(point, normal))
+			result.append([corners, normal, uvs, int(spec.layer)])
 	return result
+
+
+## Where in the texture (0..1) a point of a face pointing `normal` falls,
+## the same projection as _auto_uv but from the turned model's own place.
+static func _locked_uv(point: Vector3, normal: Vector3) -> Vector2:
+	if normal.y > 0.5:
+		return Vector2(point.x, point.z)
+	if normal.y < -0.5:
+		return Vector2(point.x, 1.0 - point.z)
+	if normal.z > 0.5:
+		return Vector2(point.x, 1.0 - point.y)
+	if normal.z < -0.5:
+		return Vector2(1.0 - point.x, 1.0 - point.y)
+	if normal.x > 0.5:
+		return Vector2(1.0 - point.z, 1.0 - point.y)
+	return Vector2(point.z, 1.0 - point.y)
 
 
 ## The texture part a face shows by default (pixels): the box's own extent

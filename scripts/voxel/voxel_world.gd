@@ -424,6 +424,15 @@ func generate() -> void:
 		Generator.DEBUG:
 			world_generator = DebugGenerator.new(world_seed)
 			random_tick_speed = 0 # (the blocks stay as shown)
+			# Always noon and clear, like the game's debug world: time and
+			# weather stand still (every water level stays as shown too).
+			clock.daylight_cycle = false
+			clock.day_time = 6000.0
+			weather.cycle = false
+			weather.raining = false
+			weather.thundering = false
+			weather.rain_strength = 0.0
+			weather.thunder_strength = 0.0
 
 	if player:
 		var player_state: Dictionary = save.state.get("player", {}) if save else {}
