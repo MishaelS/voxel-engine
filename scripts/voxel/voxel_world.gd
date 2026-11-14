@@ -650,6 +650,8 @@ func _update_streaming() -> void:
 	_player_column = center
 	if moved:
 		_remesh_leaf_ring()
+		if open_edges:
+			_refresh_edges() # the drawn area moves with the player
 	_mesh_scan_needed = true
 	_light_scan_needed = true
 	_wake_deferred()
@@ -2258,18 +2260,31 @@ func _apply_mesh(job: MeshJob) -> void:
 	instance.mesh = mesh
 
 
-# --- Edges (isometric screenshots) -----------------------------------------------
+# --- Edges (world diorama) -----------------------------------------------------
+
+## Radius in chunks of the drawn area while the edges are open (the world
+## diorama's Area; -1: the render distance). Chunks beyond it are hidden.
+var edge_radius := -1
+## The edge columns last re-meshed with walls (to restore when they move).
+var _open_edge_columns: Array[Vector2i] = []
+
+
+func _edge_radius() -> int:
+	return render_distance if edge_radius < 0 else mini(edge_radius, render_distance)
+
 
 func _in_render_radius(column: Vector2i) -> bool:
-	return absi(column.x - _player_column.x) <= render_distance and absi(column.y - _player_column.y) <= render_distance
+	var radius := _edge_radius()
+	return absi(column.x - _player_column.x) <= radius and absi(column.y - _player_column.y) <= radius
 
 
 ## Columns on the edge of the drawn area.
 func _edge_columns() -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
-	for dx in range(-render_distance, render_distance + 1):
-		for dz in range(-render_distance, render_distance + 1):
-			if maxi(absi(dx), absi(dz)) == render_distance:
+	var radius := _edge_radius()
+	for dx in range(-radius, radius + 1):
+		for dz in range(-radius, radius + 1):
+			if maxi(absi(dx), absi(dz)) == radius:
 				result.append(_player_column + Vector2i(dx, dz))
 	return result
 
@@ -2281,12 +2296,49 @@ func set_open_edges(open: bool) -> void:
 		# The isometric view shows the ground cut open: every chunk is needed.
 		for column: Vector2i in _deferred.keys():
 			_wake_column(column)
-	for column in _edge_columns():
+	_refresh_edges()
+
+
+## Changes the drawn area's radius (see edge_radius).
+func set_edge_radius(radius: int) -> void:
+	if radius == edge_radius:
+		return
+	edge_radius = radius
+	if open_edges:
+		_refresh_edges()
+
+
+## Re-meshes the old and the new edge columns (walls on or off) and shows
+## or hides the chunks beyond the edge.
+func _refresh_edges() -> void:
+	var columns: Array[Vector2i] = _open_edge_columns.duplicate()
+	_open_edge_columns.clear()
+	if open_edges:
+		_open_edge_columns = _edge_columns()
+	columns.append_array(_edge_columns())
+	for column: Vector2i in columns:
 		for k in WorldGenerator.HEIGHT_CHUNKS:
 			var coord := Vector3i(column.x, k, column.y)
 			if _chunks.has(coord):
 				_dirty[coord] = true
 	_mesh_scan_needed = true
+	_cull_dirty = true
+	_cull_timer = 0.0
+
+
+## Lowest and highest block y of the non-empty chunks in the drawn area.
+func edge_height_range() -> Vector2i:
+	var radius := _edge_radius()
+	var low := height
+	var high := 0
+	for dx in range(-radius, radius + 1):
+		for dz in range(-radius, radius + 1):
+			for k in WorldGenerator.HEIGHT_CHUNKS:
+				var chunk: ChunkData = _chunks.get(Vector3i(_player_column.x + dx, k, _player_column.y + dz))
+				if chunk and chunk.air_count < ChunkData.VOLUME:
+					low = mini(low, k * ChunkData.SIZE)
+					high = maxi(high, (k + 1) * ChunkData.SIZE)
+	return Vector2i(0, height) if high <= low else Vector2i(low, high)
 
 
 ## Edge chunks still waiting for their new mesh.
@@ -2336,8 +2388,9 @@ func _update_culling(delta: float) -> void:
 	_cull_timer = CULL_INTERVAL
 	if not culling_enabled or not Settings.get_value("cave_culling") or camera_chunk.y < 0 \
 			or camera_chunk.y >= WorldGenerator.HEIGHT_CHUNKS or not _chunks.has(camera_chunk):
-		for node: Node3D in _chunk_nodes.values():
-			node.visible = true
+		for coord: Vector3i in _chunk_nodes:
+			# (with the edges open, only the drawn area)
+			(_chunk_nodes[coord] as Node3D).visible = not open_edges or _in_render_radius(Vector2i(coord.x, coord.z))
 		culled_chunks = 0
 		return
 	_cull_job = {"connectivity": _connectivity.duplicate(), "camera": camera_chunk, "column": _player_column,

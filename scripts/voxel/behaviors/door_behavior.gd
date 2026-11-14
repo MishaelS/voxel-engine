@@ -22,8 +22,9 @@ static func door_id(kind: String, half: String, open: bool, facing: int) -> int:
 
 
 ## Places a door with its lower half at `pos` facing `facing` (the panel on
-## that side when closed). Returns false if there is no room.
-static func place(world: VoxelWorld, pos: Vector3i, kind: String, facing: int) -> bool:
+## that side when closed); `hit`: where in the cell (x, z, 0..1) the
+## cursor pointed, for the hinge. Returns false if there is no room.
+static func place(world: VoxelWorld, pos: Vector3i, kind: String, facing: int, hit := Vector2(0.5, 0.5)) -> bool:
 	for cell: Vector3i in [pos, pos + Vector3i.UP]:
 		var there := world.get_block(cell)
 		if not world.is_inside(cell) or (there != Blocks.AIR and Blocks.replaceable_table[there] == 0):
@@ -31,7 +32,7 @@ static func place(world: VoxelWorld, pos: Vector3i, kind: String, facing: int) -
 	if Blocks.is_opaque_table[world.get_block(pos + Vector3i.DOWN)] == 0:
 		return false
 	var open := false
-	if hinge_flipped(world, pos, facing):
+	if hinge_flipped(world, pos, facing, hit):
 		# Like the game's: the door hinged on the other side is an open door
 		# turned a quarter (its panel lies on the same edge).
 		facing = (facing + 3) % 4
@@ -48,18 +49,32 @@ static func hinge_side(facing: int) -> Vector3i:
 
 
 ## Whether a door placed at `pos` gets its hinges on the other side, like
-## the game's: a door already on its hinge side makes a double door (the two
-## meet in the middle); otherwise it is hinged on the side with more solid
-## blocks.
-static func hinge_flipped(world: VoxelWorld, pos: Vector3i, facing: int) -> bool:
+## the modern game's (DoorBlock.getHinge): away from a lower door next to it
+## (a double door, the two meet in the middle) or on the side with more
+## full blocks; else on the half of the cell the cursor pointed at (`hit`:
+## x, z in the cell).
+static func hinge_flipped(world: VoxelWorld, pos: Vector3i, facing: int, hit := Vector2(0.5, 0.5)) -> bool:
 	var side := hinge_side(facing)
-	var door_at_hinge := is_door(world.get_block(pos + side)) or is_door(world.get_block(pos + side + Vector3i.UP))
-	var door_across := is_door(world.get_block(pos - side)) or is_door(world.get_block(pos - side + Vector3i.UP))
-	if door_at_hinge and not door_across:
+	var solid_hinge := _full(world, pos + side) + _full(world, pos + side + Vector3i.UP)
+	var solid_across := _full(world, pos - side) + _full(world, pos - side + Vector3i.UP)
+	var door_at_hinge := _lower_door(world, pos + side)
+	var door_across := _lower_door(world, pos - side)
+	if (door_at_hinge and not door_across) or solid_across > solid_hinge:
 		return true
-	var solid_hinge := Blocks.is_opaque_table[world.get_block(pos + side)] + Blocks.is_opaque_table[world.get_block(pos + side + Vector3i.UP)]
-	var solid_across := Blocks.is_opaque_table[world.get_block(pos - side)] + Blocks.is_opaque_table[world.get_block(pos - side + Vector3i.UP)]
-	return solid_across > solid_hinge
+	if (door_across and not door_at_hinge) or solid_hinge > solid_across:
+		return false
+	return Vector2(side.x, side.z).dot(hit - Vector2(0.5, 0.5)) < 0.0
+
+
+## 1 for a full solid cube (glass too), else 0.
+static func _full(world: VoxelWorld, pos: Vector3i) -> int:
+	var id := world.get_block(pos)
+	return 1 if Blocks.collides_table[id] == 1 and Blocks.shape_table[id] == BlockType.Shape.CUBE and Blocks.height_table[id] >= 1.0 else 0
+
+
+static func _lower_door(world: VoxelWorld, pos: Vector3i) -> bool:
+	var id := world.get_block(pos)
+	return is_door(id) and parts(id)[1] == "lower"
 
 
 ## Opens or closes the door that `pos` is part of. Returns true if it did.

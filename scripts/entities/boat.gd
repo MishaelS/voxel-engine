@@ -224,6 +224,9 @@ static func place(world: VoxelWorld, player: Player) -> Boat:
 		return null
 	var boat := Boat.new()
 	world.entities.spawn(boat, at)
-	boat.rotation.y = player.rotation.y
-	boat._yaw = player.rotation.y
+	# Nose along the player's look (yaw 0 = toward +Z, as it moves), so it
+	# doesn't turn around when rowed off.
+	var look := player.look_direction()
+	boat._yaw = atan2(look.x, look.z)
+	boat.rotation.y = boat._yaw
 	return boat

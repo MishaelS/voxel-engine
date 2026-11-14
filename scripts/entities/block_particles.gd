@@ -9,7 +9,10 @@ extends Node3D
 ##   fight (hurt hearts, critical hits, the sword's sweep) are pictures of
 ##   the particle atlas (textures/extra/particles-atlas.png, the game's), animated
 ##   frame by frame like the game's (smoke shrinks as it rises, the sweep
-##   swings, explosion puffs fade).
+##   swings);
+## - a creature gone and explosions: poofs of white-gray smoke and the big
+##   explosion clouds, from textures/extra/explosion.png (our own pixel art,
+##   tools/make_explosion_texture.py), put into the atlas at EXPLOSION_AT.
 ## - lava bubbles (embers, pops), rain and snow hiss into steam on lava, fire
 ##   and torches, items burn up in lava and fire, rain and snow splash on
 ##   water and the ground;
@@ -32,6 +35,10 @@ enum Kind { TILE, ITEM, PLAIN }
 
 const ATLAS_PATH := "res://assets/textures/extra/particles-atlas.png"
 const ATLAS_SIZE := Vector2(512, 256)
+const EXPLOSION_PATH := "res://assets/textures/extra/explosion.png"
+## Where explosion.png goes in the atlas (an empty place): 4 x 4 explosion
+## frames of 16 x 16, under them 8 poof frames of 8 x 8 (small to big).
+const EXPLOSION_AT := Vector2i(320, 0)
 ## Picture size codes (particle.gdshader): 8 x 8, 16 x 16, 32 x 16 pixels.
 enum Picture { SMALL, BIG, WIDE }
 ## Single pictures of the atlas: [x, y, size code].
@@ -45,13 +52,17 @@ const DAMAGE := [192, 208, Picture.SMALL]
 const CRIT := [184, 208, Picture.SMALL]
 ## Animations: frames [x, y] of one size code, played over the particle's
 ## life. ANIMS order: GENERIC (smoke, big to small), SWEEP, BIG_SMOKE (big to
-## small), SPLASH.
-enum Anim { GENERIC, SWEEP, BIG_SMOKE, SPLASH }
+## small), SPLASH, POOF (shaded smoke, big to small), EXPLOSION (the big
+## cloud, bursting and breaking up).
+enum Anim { GENERIC, SWEEP, BIG_SMOKE, SPLASH, POOF, EXPLOSION }
 const ANIMS := [
 	[Picture.SMALL, [[272, 184], [272, 176], [272, 168], [272, 160], [272, 152], [272, 144], [272, 136], [272, 128]]],
 	[Picture.WIDE, [[160, 168], [192, 168], [224, 168], [0, 200], [32, 200], [64, 200], [96, 200], [128, 200]]],
 	[Picture.BIG, [[0, 224], [16, 224], [32, 224], [48, 224], [64, 224], [80, 224], [96, 224], [112, 224]]],
 	[Picture.SMALL, [[288, 128], [288, 136], [288, 144], [288, 152]]],
+	[Picture.SMALL, [[376, 64], [368, 64], [360, 64], [352, 64], [344, 64], [336, 64], [328, 64], [320, 64]]],
+	[Picture.BIG, [[320, 0], [336, 0], [352, 0], [368, 0], [320, 16], [336, 16], [352, 16], [368, 16],
+		[320, 32], [336, 32], [352, 32], [368, 32], [320, 48], [336, 48], [352, 48], [368, 48]]],
 ]
 
 ## Where Beta 1.7.3's particles.png has the pictures the atlas has (a
@@ -63,17 +74,21 @@ const BETA_CELLS := [
 	[[272, 152], 3], [[272, 144], 2], [[272, 136], 1], [[272, 128], 0],
 	[[288, 128], 19], [[288, 136], 20], [[288, 144], 21], [[288, 152], 22], # rain splashes
 	[[272, 48], 48], [[272, 216], 49], [[272, 232], 64], [[272, 200], 80], # flame, lava, note, heart
+	[[376, 64], 7], [[368, 64], 6], [[360, 64], 5], [[352, 64], 4], # poof (Beta's "explode": the smoke cells)
+	[[344, 64], 3], [[336, 64], 2], [[328, 64], 1], [[320, 64], 0],
 ]
 
 
-## The atlas: the game's, with a texture pack's particles.png pictures put
-## in at their places (BETA_CELLS); the game's own (critical hits, the
-## sweep, big smoke) stay.
+## The atlas: the game's with explosion.png at EXPLOSION_AT, and a texture
+## pack's particles.png pictures put in at their places (BETA_CELLS); the
+## game's own (critical hits, the sweep, big smoke, explosions) stay.
 static func atlas_texture() -> Texture2D:
+	var atlas := TexturePacks.load_image(ATLAS_PATH)
+	var sheet := TexturePacks.load_image(EXPLOSION_PATH)
+	atlas.blit_rect(sheet, Rect2i(Vector2i.ZERO, sheet.get_size()), EXPLOSION_AT)
 	var pack := TexturePacks.pack_image("particles.png")
 	if pack == null:
-		return TexturePacks.load_texture(ATLAS_PATH)
-	var atlas := TexturePacks.load_image(ATLAS_PATH)
+		return ImageTexture.create_from_image(atlas)
 	for entry: Array in BETA_CELLS:
 		var cell: int = entry[1]
 		var at := Vector2i(entry[0][0], entry[0][1])
@@ -100,6 +115,8 @@ var _native: Object
 var _multimesh: MultiMesh
 var _material: ShaderMaterial
 var _rng := RandomNumberGenerator.new()
+## Explosion clouds still going off: [center, power, ticks left].
+var _bursts: Array[Array] = []
 
 
 func _ready() -> void:
@@ -192,6 +209,25 @@ func smoke(point: Vector3, amount: int = 8) -> void:
 			Color(gray, gray, gray), _rng.randi_range(15, 30), -0.01, 0.0)
 
 
+## A poof (a creature gone): 20 puffs of white-gray smoke over its box,
+## drifting up and shrinking, like the game's "explode" particle.
+func poof(box: AABB, amount: int = 20) -> void:
+	for i in amount:
+		var start := box.position + Vector3(_rng.randf() * 2.0 - 0.5, _rng.randf(), _rng.randf() * 2.0 - 0.5) * box.size
+		var velocity := Vector3(_rng.randfn(), _rng.randfn(), _rng.randfn()) * 0.02
+		_puff(start, velocity)
+
+
+## One of the game's "explode" puffs: gray 0.7..1, 0.2..1.4 blocks, lives
+## 18..82 ticks, slows down and drifts up.
+func _puff(start: Vector3, velocity: Vector3) -> void:
+	var gray := _rng.randf() * 0.3 + 0.7
+	var size := 0.2 * (_rng.randf() * _rng.randf() * 6.0 + 1.0)
+	var life := int(16.0 / (_rng.randf() * 0.8 + 0.2)) + 2
+	velocity += Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * 0.01
+	_add_anim(start, velocity, Anim.POOF, size, Color(gray, gray, gray), life, -0.02, 0.1)
+
+
 ## Steam: rain or snow hissing on lava, fire or a torch: pale puffs rising
 ## fast and fading.
 func steam(point: Vector3, amount: int = 3) -> void:
@@ -220,18 +256,47 @@ func burn(point: Vector3, in_lava: bool) -> void:
 		embers(point + Vector3(0, 0.1, 0), 4)
 
 
-## An explosion: big puffs of smoke all around and a flash.
+## An explosion: big bright clouds going off around the middle for 8
+## ticks (the game's "hugeexplosion"), white puffs and dark smoke thrown
+## out of the blast (Beta's "explode" and "smoke").
 func explosion(center: Vector3, power: float) -> void:
-	for i in int(power * 16):
-		var offset := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * power * 0.8
-		var gray := _rng.randf_range(0.5, 0.85)
-		_add_anim(center + offset, offset * 0.03 + Vector3(0, 0.02, 0), Anim.BIG_SMOKE, _rng.randf_range(0.6, 1.2),
-			Color(gray, gray, gray), _rng.randi_range(12, 30), -0.01)
-	for i in int(power * 8):
-		var offset := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * power * 0.5
-		var gray := _rng.randf_range(0.3, 0.6)
-		_add_anim(center + offset, offset * 0.05, Anim.GENERIC, _rng.randf_range(0.2, 0.4), Color(gray, gray, gray),
-			_rng.randi_range(10, 25), -0.01)
+	_bursts.append([center, power, 8])
+	_burst_clouds(_bursts[-1])
+	for i in int(power * 40):
+		var point := center + _in_ball() * power
+		var away := point - center
+		var distance := maxf(away.length(), 0.01)
+		var speed := minf(0.5 / (distance / power + 0.1) * (_rng.randf() * _rng.randf() + 0.3), 0.5) * 0.2
+		var velocity := away / distance * speed
+		_puff((point + center) / 2.0, velocity)
+		var gray := _rng.randf() * 0.3
+		_add_anim(point, velocity * 0.5, Anim.GENERIC, _size(0.75), Color(gray, gray, gray),
+			int(8.0 / (_rng.randf() * 0.8 + 0.2)), -0.02, 0.0)
+
+
+## One tick of an explosion's clouds: big unlit puffs at random around the
+## middle, smaller as it ends; false when it is over.
+func _burst_clouds(burst: Array) -> bool:
+	var center: Vector3 = burst[0]
+	var power: float = burst[1]
+	var left: int = burst[2]
+	for i in 6:
+		var offset := Vector3(_rng.randf() - _rng.randf(), _rng.randf() - _rng.randf(), _rng.randf() - _rng.randf()) * power
+		var gray := _rng.randf() * 0.6 + 0.4
+		var size := 4.0 * (1.0 - (8 - left) / 8.0 * 0.5) * clampf(power / 4.0, 0.5, 1.0)
+		_add_anim(center + offset, Vector3.ZERO, Anim.EXPLOSION, size, Color(gray, gray, gray),
+			6 + _rng.randi_range(0, 3), 0.0)
+	burst[2] = left - 1
+	return left > 1
+
+
+## A random point in a ball of radius 1.
+func _in_ball() -> Vector3:
+	while true:
+		var point := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1))
+		if point.length_squared() <= 1.0:
+			return point
+	return Vector3.ZERO
 
 
 ## Redstone dust glowing (wire, torches, lit ore): a red speck, brighter
@@ -348,6 +413,12 @@ func sweep(point: Vector3) -> void:
 # --- Simulation ----------------------------------------------------------------------
 
 func _tick(_tick_index: int) -> void:
+	var b := 0
+	while b < _bursts.size():
+		if _burst_clouds(_bursts[b]):
+			b += 1
+		else:
+			_bursts.remove_at(b)
 	if _native:
 		var cells: PackedInt32Array = _native.call("cells_needed")
 		var looked_up := world.cells_for_particles(cells) if world else [PackedInt32Array(), PackedFloat32Array()]

@@ -13,6 +13,22 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Blocks placed like the modern game's: logs lie along the axis of the clicked side (new lying oak, birch and spruce logs), stairs and slabs go upside down / on top when placed against a ceiling or the upper half of a side (new upside-down stairs and top slabs; a slab clicked on its open face or into a cell with the same slab makes a double slab), dispensers face up or down when looking steeply.
+- World Diorama (F6, was the isometric view): the area around the player cut out as a block on a sky background, with Close, Center Camera, Area, Zoom, Tilt, Time, Fog, Clouds, Players, Mobs, Lighting and screenshot size/background on the right; drag to move, right-drag to turn, wheel to zoom, < > to turn by 90°, Take Screenshot and a button opening the screenshots folder.
+- In bed: a Leave Bed button at the bottom, Enter opens the chat; the bed's refusals show over the hotbar.
+
+### Changed
+- The Options screen: categories with icons on the left (General, Player, Audio, Video, Controls, Texture Packs, Language, World in a world, Search), the chosen category's settings on the right, each with a line to its control, ON/OFF switches, sliders, a reset arrow when changed and folding groups.
+- A creature's death is a puff of white and gray clouds rising over it, and explosions a big white-gray cloud breaking into puffs with dark specks (new explosion pictures, assets/textures/extra/explosion.png).
+- A door goes on the edge of the half of the block the cursor points at; a placed boat faces where the player looks.
+- The view in bed is fixed (no turning the head); the chat sits above the hotbar and hearts instead of over them.
+- Opening the pause menu closes the chat being typed.
+
+### Fixed
+- The sleep darkness, the flames when burning and the pumpkin's view were drawn over the menus.
+- Turned and upside-down cobblestone stairs and stone slabs had weak blast resistance.
+
 ## [0.0.12] - 2026-11-13
 
 ### Added

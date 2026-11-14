@@ -39,7 +39,7 @@ static func _has_log_near(world: VoxelWorld, start: Vector3i) -> bool:
 				if not world.is_inside(other):
 					return true # unloaded: don't decay
 				var name := Blocks.get_type(world.get_block(other)).name
-				if name.ends_with("_log"):
+				if Blocks.family_of(world.get_block(other)).ends_with("_log"): # lying logs too
 					return true
 				if name.ends_with("_leaves") or name.ends_with("_leaves_placed"):
 					next.append(other)

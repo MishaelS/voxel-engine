@@ -106,15 +106,22 @@ func _register_all() -> void:
 	# Other.
 	define("other", Setting.toggle("debug_screen", "Debug Screen (F3)", false))
 	define("other", Setting.toggle("background_fps", "Reduce FPS in Background", true))
-	# Isometric camera (F6) and isometric screenshots (F7).
-	define("isometric", Setting.choice("iso_angle", "View Angle",
-		PackedStringArray(["Classic (30°)", "True Isometric (35°)", "Steep (45°)"]), 0))
-	define("isometric", Setting.choice("iso_facing", "Facing",
-		PackedStringArray(["North-East", "South-East", "South-West", "North-West"]), 0))
-	define("isometric", Setting.range_of("iso_zoom", "Zoom", 16, 256, 64, 8) \
+	# World Diorama (F6) and its screenshots (F7); the controls are in its view.
+	define("isometric", Setting.range_of("iso_area", "Area", 1, 16, 4) \
+		.format_with(func(v: float) -> String: return Lang.t("%d×%d chunks") % [int(v) * 2 + 1, int(v) * 2 + 1]))
+	define("isometric", Setting.range_of("iso_zoom", "Zoom", 16, 512, 96, 8) \
 		.format_with(func(v: float) -> String: return Lang.t("%d blocks") % int(v)))
+	define("isometric", Setting.range_of("iso_tilt", "Tilt", 10, 80, 30) \
+		.format_with(func(v: float) -> String: return "%d°" % int(v)))
+	define("isometric", Setting.range_of("iso_rotation", "Rotation", 0, 359, 45) \
+		.format_with(func(v: float) -> String: return "%d°" % int(v)))
+	define("isometric", Setting.range_of("iso_time", "Time", -1, 23, -1) \
+		.format_with(func(v: float) -> String: return Lang.t("Current") if v < 0 else "%02d:00" % int(v)))
+	define("isometric", Setting.range_of("iso_fog_amount", "Fog", 0, 100, 0, 5) \
+		.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0 else "%d%%" % int(v)))
 	define("isometric", Setting.toggle("iso_clouds", "Clouds", false))
-	define("isometric", Setting.toggle("iso_fog", "Fog", false))
+	define("isometric", Setting.toggle("iso_players", "Players", true))
+	define("isometric", Setting.toggle("iso_mobs", "Mobs", true))
 	define("isometric", Setting.choice("iso_render_size", "Screenshot Size",
 		PackedStringArray(["2048 px", "4096 px", "8192 px"]), 1))
 	define("isometric", Setting.choice("iso_background", "Screenshot Background",

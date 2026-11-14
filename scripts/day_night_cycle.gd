@@ -29,6 +29,9 @@ const MAX_SKY_DARKNESS := 11.0
 ## Time of day in ticks (0 = sunrise, 6000 = noon) and the day number.
 var day_time := 1000.0
 var day := 0
+## Time of day shown instead of the world's (ticks; the world diorama's
+## Time), -1: the world's. Only the look changes, not the world clock.
+static var shown_time := -1.0
 
 @export_group("Light")
 @export var sun_energy: float = 1.2
@@ -67,6 +70,8 @@ func _process(delta: float) -> void:
 			time += TickLoop.alpha
 		day = floori(time / WorldClock.TICKS_PER_DAY)
 		day_time = fposmod(time, WorldClock.TICKS_PER_DAY)
+	if shown_time >= 0.0:
+		day_time = shown_time
 	_apply()
 
 

@@ -73,10 +73,12 @@ static func resistance(id: int) -> float:
 		return 500.0
 	if block.hardness < 0.0:
 		return 3600000.0
-	match block.name:
+	# By family: turned and upside-down stairs, top slabs count as their block.
+	match Blocks.family_of(id):
 		"obsidian":
 			return 6000.0
-		"stone", "cobblestone", "mossy_cobblestone", "bricks", "cobblestone_stairs", "cobblestone_slab", \
-				"stone_slab", "double_stone_slab", "double_cobblestone_slab":
+		"stone", "cobblestone", "mossy_cobblestone", "bricks", "cobblestone_stairs", "cobblestone_stairs_top", \
+				"cobblestone_slab", "cobblestone_slab_top", "stone_slab", "stone_slab_top", "double_stone_slab", \
+				"double_cobblestone_slab":
 			return 30.0
 	return block.hardness * 5.0

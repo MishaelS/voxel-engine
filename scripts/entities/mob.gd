@@ -957,7 +957,7 @@ func _process(delta: float) -> void:
 
 func _death_puff() -> void:
 	if world:
-		world.particles.smoke(center(), 20)
+		world.particles.poof(hit_box(), 20)
 
 
 func _turn_head(node: Node3D) -> void:

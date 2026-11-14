@@ -10,9 +10,9 @@ extends Node3D
 ##   (stone and ores need a pickaxe, iron ore a stone one, diamonds an
 ##   iron one). Tools wear out. Drops fall out as items.
 ## - RMB: use the targeted block (crafting table, chest, furnace, bed;
-##   not while sneaking), else use the item in hand: place a block (chests
-##   and furnaces face the player), place a bed, fill / empty a bucket,
-##   or eat (hold for 1.6 s). Holding repeats placing every 4 ticks.
+##   not while sneaking), else use the item in hand: place a block (turned
+##   like the modern game, see _place_block), place a bed, fill / empty a
+##   bucket, or eat (hold for 1.6 s). Holding repeats placing every 4 ticks.
 ##   RMB on a mob uses it (shear or dye a sheep, milk a cow, tame a wolf);
 ##   a bow shoots an arrow, a sword's weapons hit (Items.attack_damage).
 ## - LMB on a creature (closer than the block) hits it: knockback, swords
@@ -511,17 +511,69 @@ func _place_cell() -> Variant:
 	return pos
 
 
+## Where the targeted block was hit (world units).
+func _hit_point() -> Vector3:
+	return player.eye_position() + player.look_direction().normalized() * float(target.get("distance", 0.0))
+
+
+## Whether a block placed now takes the upper half of its cell (top slabs,
+## upside-down stairs), like the modern game: against a ceiling, or against
+## the upper half of a side.
+func _upper_placement() -> bool:
+	if Blocks.replaceable_table[target.block] == 1:
+		return false
+	var normal: Vector3i = target.normal
+	if normal == Vector3i.DOWN:
+		return true
+	return normal.y == 0 and normal != Vector3i.ZERO and _hit_point().y - float(target.pos.y) > 0.5
+
+
+## A slab put to the other half of the same slab makes a double slab, like
+## the modern game: the open face of the slab clicked, or the cell it is in
+## pointed into from a neighbor's face. Returns true if it did.
+func _merge_slab(id: int) -> bool:
+	var family := Blocks.family_of(id)
+	if not family.ends_with("_slab") or family.begins_with("double_") or not target.get("hit", false):
+		return false
+	var halves: Array[int] = [Blocks.id_of(family), Blocks.id_of(family + "_top")]
+	var pos: Vector3i = target.pos
+	var normal: Vector3i = target.normal
+	if not ((target.block == halves[0] and normal == Vector3i.UP) or (target.block == halves[1] and normal == Vector3i.DOWN)):
+		pos = target.pos + normal
+		if normal == Vector3i.ZERO or not world.get_block(pos) in halves or player.intersects_block(pos):
+			return false
+	world.set_block(pos, Blocks.id_of("double_" + family))
+	Sounds.play_block("place", id, Vector3(pos) + Vector3(0.5, 0.5, 0.5))
+	player.swing()
+	if not player.is_creative():
+		player.inventory.take(player.selected_slot)
+	return true
+
+
 func _place_block(id: int) -> void:
+	if _merge_slab(id):
+		return
 	var cell: Variant = _place_cell()
 	if cell == null:
 		return
 	var pos: Vector3i = cell
 	if Blocks.collides_table[id] == 1 and player.intersects_block(pos):
 		return # not inside the player
-	# Oriented blocks (chest, furnace) look at the player.
+	# Oriented blocks (chest, furnace, pumpkins, stairs) look at the player.
 	var family := Blocks.family_of(id)
 	if Blocks.family_ids(family).size() == 4 and Blocks.facing_table[id] >= 0:
 		id = Blocks.variant(family, Blocks.facing_toward(player.look_direction()))
+	# Like the modern game: stairs and slabs against a ceiling or the upper
+	# half of a side go upside down / on top; logs lie along the clicked
+	# side's axis.
+	if (family.ends_with("_stairs") or (family.ends_with("_slab") and not family.begins_with("double_"))) \
+			and _upper_placement():
+		id = Blocks.variant(family + "_top", maxi(Blocks.facing_table[id], 0)) # "oak_stairs_top", "stone_slab_top"
+	if family.ends_with("_log") and Blocks.replaceable_table[target.block] == 0 and target.normal.y == 0:
+		if target.normal.x != 0:
+			id = Blocks.id_of(family + "_x")
+		elif target.normal.z != 0:
+			id = Blocks.id_of(family + "_z")
 	var block := Blocks.get_type(id)
 	if block.on_update == Callable(NatureBehavior, "on_update"):
 		if not NatureBehavior.can_stay(world, pos, id):
@@ -540,15 +592,6 @@ func _place_block(id: int) -> void:
 			if not TorchBehavior.can_hold(world, pos - normal):
 				return
 			id = Blocks.variant("wall_torch", Blocks.FACING_DIRECTIONS.find(normal))
-	if family.ends_with("_slab") and not family.begins_with("double_") and target.normal == Vector3i.UP \
-			and Blocks.family_of(target.block) == family:
-		# A slab on the same slab: a double slab.
-		world.set_block(target.pos, Blocks.id_of("double_" + family))
-		Sounds.play_block("place", id, Vector3(target.pos) + Vector3(0.5, 0.5, 0.5))
-		player.swing()
-		if not player.is_creative():
-			player.inventory.take(player.selected_slot)
-		return
 	if family == "wheat_crop" and not FarmBehavior.is_farmland(world.get_block(pos + Vector3i.DOWN)):
 		return # seeds only on farmland
 	if family == "cake" and Blocks.is_opaque_table[world.get_block(pos + Vector3i.DOWN)] == 0:
@@ -568,6 +611,10 @@ func _place_block(id: int) -> void:
 		id = redstone
 	if family == "piston" or family == "sticky_piston":
 		id = PistonBehavior.base_id(PistonBehavior.facing_for(player.look_direction()), false, family == "sticky_piston")
+	if family == "dispenser":
+		# Toward the player, or up / down when looked at steeply (modern game).
+		var front := PistonBehavior.facing_for(player.look_direction())
+		id = Blocks.variant(family, 4 if front == Vector3i.UP else (5 if front == Vector3i.DOWN else Blocks.FACING_DIRECTIONS.find(front)))
 	if block.placed_as != "":
 		id = Blocks.id_of(block.placed_as) # placed leaves never decay
 	if world.get_block(pos) != Blocks.AIR:
@@ -612,15 +659,27 @@ func _place_bed() -> void:
 		player.inventory.take(player.selected_slot)
 
 
-## A door stands on the clicked top face, its panel on the far side.
+## A door stands in the cell in front of the clicked face (on solid ground),
+## its panel on the edge of the half of the cell the cursor points at, hinged
+## as DoorBehavior.hinge_flipped picks (the cursor's half of the cell when
+## the neighbors don't decide).
 func _place_door(kind: String) -> void:
-	if not target.get("hit", false) or target.normal != Vector3i.UP:
+	var cell: Variant = _place_cell()
+	if cell == null:
 		return
-	var pos: Vector3i = target.pos + Vector3i.UP
-	var facing := (Blocks.facing_toward(player.look_direction()) + 2) % 4
+	var pos: Vector3i = cell
+	var facing := Blocks.facing_toward(player.look_direction())
 	if player.intersects_block(pos) or player.intersects_block(pos + Vector3i.UP):
 		return
-	if DoorBehavior.place(world, pos, kind, facing):
+	var hit := _hit_point() - Vector3(pos)
+	# The panel goes on the edge of the half of the cell the cursor points
+	# at (split across the way the player looks): the far half puts it on
+	# the far edge, the near half on the near one.
+	var look := player.look_direction()
+	var along := Vector2(signf(look.x), 0.0) if absf(look.x) > absf(look.z) else Vector2(0.0, signf(look.z))
+	if (Vector2(hit.x, hit.z) - Vector2(0.5, 0.5)).dot(along) > 0.0:
+		facing = (facing + 2) % 4
+	if DoorBehavior.place(world, pos, kind, facing, Vector2(hit.x, hit.z)):
 		Sounds.play_block("place", world.get_block(pos), Vector3(pos) + Vector3(0.5, 0.5, 0.5))
 		player.swing()
 		if not player.is_creative():

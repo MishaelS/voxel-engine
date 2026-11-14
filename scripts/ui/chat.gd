@@ -25,8 +25,14 @@ const CLOSED_LINES := 10
 const OPEN_LINES := 20
 const MAX_SUGGESTIONS := 10
 const HISTORY_SIZE := 100
+## The input line's bottom edge: over the hotbar, the health row and the air
+## bubbles (43 texture pixels), so the chat never covers the HUD.
+const INPUT_BOTTOM := 44.0 * UiTheme.PIXEL
+## The log's bottom edge: over the input line and the held item's name
+## (60 texture pixels, Hotbar), open or closed.
+const LOG_BOTTOM := 61.0 * UiTheme.PIXEL
 ## Bottom edge of the suggestion list / hint, just above the input line.
-const POPUP_BOTTOM := -(MARGIN + INPUT_HEIGHT + 2.0)
+const POPUP_BOTTOM := -(INPUT_BOTTOM + INPUT_HEIGHT + 2.0)
 
 const KIND_COLORS := {
 	CommandSource.MessageKind.INFO: Color("aaaaaa"),
@@ -374,8 +380,8 @@ func _build_ui() -> void:
 	# Message log, growing upward from just above the input line.
 	_log_panel = PanelContainer.new()
 	_log_panel.add_theme_stylebox_override("panel", _box(Color(0, 0, 0, 0.45)))
-	# Above the hotbar (22 texture pixels + margins), like the classic game.
-	_anchor_bottom_left(_log_panel, MARGIN, -(24 * UiTheme.PIXEL + MARGIN + INPUT_HEIGHT))
+	# Above the hotbar and the health, like the classic game.
+	_anchor_bottom_left(_log_panel, MARGIN, -LOG_BOTTOM)
 	_log = RichTextLabel.new()
 	_log.bbcode_enabled = true
 	_log.fit_content = true
@@ -387,7 +393,7 @@ func _build_ui() -> void:
 	_log_panel.add_child(_log)
 	add_child(_log_panel)
 
-	# Input line across the bottom.
+	# Input line across the screen, over the HUD.
 	_input = LineEdit.new()
 	_input.anchor_left = 0.0
 	_input.anchor_right = 1.0
@@ -395,8 +401,8 @@ func _build_ui() -> void:
 	_input.anchor_bottom = 1.0
 	_input.offset_left = MARGIN
 	_input.offset_right = -MARGIN
-	_input.offset_top = -(MARGIN + INPUT_HEIGHT)
-	_input.offset_bottom = -MARGIN
+	_input.offset_top = -(INPUT_BOTTOM + INPUT_HEIGHT)
+	_input.offset_bottom = -INPUT_BOTTOM
 	_input.max_length = 256
 	_input.context_menu_enabled = false
 	_input.caret_blink = true
@@ -417,8 +423,8 @@ func _build_ui() -> void:
 	_ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ghost.anchor_top = 1.0
 	_ghost.anchor_bottom = 1.0
-	_ghost.offset_top = -(MARGIN + INPUT_HEIGHT)
-	_ghost.offset_bottom = -MARGIN
+	_ghost.offset_top = -(INPUT_BOTTOM + INPUT_HEIGHT)
+	_ghost.offset_bottom = -INPUT_BOTTOM
 	_ghost.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_ghost.visible = false
 	add_child(_ghost)

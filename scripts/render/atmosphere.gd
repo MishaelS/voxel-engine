@@ -30,8 +30,8 @@ var daylight := 1.0
 ## True while the eyes are in water.
 var underwater := false
 var in_lava := false
-## The isometric camera is in use / an isometric screenshot is being
-## rendered: fog and clouds follow the Isometric Camera settings.
+## The World Diorama is open / its screenshot is being rendered: fog and
+## clouds follow the diorama's settings.
 var isometric := false
 ## Light levels sky light loses now (Classic pack at night), for the block
 ## in hand.
@@ -163,17 +163,19 @@ func _update_fog(to_sun: Vector3) -> void:
 	# The fog ends at the far terrain's edge when it is on (FarTerrain).
 	var distance := float(maxi(int(Settings.get_value("render_distance")), FarTerrain.radius_setting())) * ChunkData.SIZE
 	environment.fog_enabled = Settings.get_value("fog")
-	if isometric or snapshot:
-		environment.fog_enabled = Settings.get_value("iso_fog") and not snapshot
 	var view := -player.camera.global_basis.z if player and player.camera else Vector3.FORWARD
 	environment.fog_light_color = horizon_color(to_sun, view)
 	environment.fog_depth_begin = distance * Settings.get_value("fog_distance") / 100.0
 	environment.fog_depth_end = distance
 	if from_far:
-		# Measured from the isometric camera, which hangs DISTANCE blocks away:
-		# the world around the player stays clear, its far edge fades.
-		environment.fog_depth_begin = IsometricCamera.DISTANCE + distance * 0.3
-		environment.fog_depth_end = IsometricCamera.DISTANCE + distance * 1.1
+		# Measured from the diorama's camera, DISTANCE blocks from the area's
+		# middle: Fog thickens from the far side of the area toward the near.
+		var amount: float = Settings.get_value("iso_fog_amount") / 100.0
+		var area := mini(int(Settings.get_value("iso_area")), world.render_distance if world else 8)
+		var extent := (area + 0.5) * ChunkData.SIZE * sqrt(2.0)
+		environment.fog_enabled = amount > 0.0
+		environment.fog_depth_begin = IsometricCamera.DISTANCE + extent * (1.0 - 1.8 * amount)
+		environment.fog_depth_end = environment.fog_depth_begin + extent * (2.4 - 1.6 * amount)
 		return
 	_void_fog(environment)
 
@@ -208,7 +210,7 @@ func _update_clouds(to_sun: Vector3) -> void:
 	var clouds: int = Settings.get_value("clouds") # OFF, Fast, Fancy
 	_clouds.visible = clouds > 0
 	if isometric or snapshot:
-		_clouds.visible = _clouds.visible and Settings.get_value("iso_clouds") and not snapshot
+		_clouds.visible = _clouds.visible and Settings.get_value("iso_clouds")
 	if not _clouds.visible:
 		return
 	_clouds.set_fancy(clouds == 2)

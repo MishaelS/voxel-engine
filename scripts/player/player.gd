@@ -23,6 +23,8 @@ signal game_mode_changed(mode: GameMode)
 signal died
 ## A message for the chat ("You can only sleep at night").
 signal message(text: String)
+## A short note over the hotbar (the action bar: "You can only sleep at night").
+signal status_message(text: String)
 
 enum GameMode { SURVIVAL, CREATIVE }
 
@@ -136,7 +138,6 @@ var _eye_asleep := false
 ## icon, the third-person arms and the view zooming in.
 var bow_pull := -1.0
 var _bed := Vector3i.ZERO
-var _sleep_fade: ColorRect
 var _fire: TextureRect
 var _pumpkin_view: TextureRect
 
@@ -183,7 +184,6 @@ func _ready() -> void:
 	_yaw = rotation.y
 	rotation = Vector3(0, _yaw, 0)
 	_teleported()
-	# Falling asleep darkens the screen.
 	var layer := CanvasLayer.new()
 	layer.layer = 5
 	add_child(layer)
@@ -192,11 +192,11 @@ func _ready() -> void:
 	layer.add_child(map_view)
 	layer.add_child(PlayerList.new()) # Tab in a network game
 	layer.add_child(AchievementToast.new())
-	_sleep_fade = ColorRect.new()
-	_sleep_fade.color = Color(0.03, 0.03, 0.06, 0.0)
-	_sleep_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_sleep_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(_sleep_fade)
+	# The view's own overlays (flames, the pumpkin) under the HUD and the
+	# menus (the UI layer is 1): they used to cover the pause menu.
+	var view_layer := CanvasLayer.new()
+	view_layer.layer = 0
+	add_child(view_layer)
 	# Burning: flames rise from the bottom of the screen.
 	var gradient := Gradient.new()
 	gradient.set_color(0, Color(1.0, 0.85, 0.2, 0.0))
@@ -212,7 +212,7 @@ func _ready() -> void:
 	_fire.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_fire.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fire.visible = false
-	layer.add_child(_fire)
+	view_layer.add_child(_fire)
 	# Wearing a carved pumpkin: looking out through its eyes (first person).
 	_pumpkin_view = TextureRect.new()
 	_pumpkin_view.texture = TexturePacks.load_texture("res://assets/textures/misc/pumpkinblur.png")
@@ -221,8 +221,7 @@ func _ready() -> void:
 	_pumpkin_view.stretch_mode = TextureRect.STRETCH_SCALE
 	_pumpkin_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_pumpkin_view.visible = false
-	layer.add_child(_pumpkin_view)
-	layer.move_child(_pumpkin_view, 0) # under the HUD
+	view_layer.add_child(_pumpkin_view)
 	var save := WorldSave.current
 	if save:
 		game_mode = save.game_mode as GameMode
@@ -300,13 +299,13 @@ func sleep_in(bed: Vector3i) -> void:
 	if world == null or sleeping or dead:
 		return
 	if not DayNightCycle.is_night(world.clock.day_time):
-		message.emit(Lang.t("You can only sleep at night"))
+		status_message.emit(Lang.t("You can only sleep at night"))
 		return
 	if Vector3(bed).distance_to(global_position) > 3.0:
-		message.emit(Lang.t("You may not rest now, the bed is too far away"))
+		status_message.emit(Lang.t("You may not rest now, the bed is too far away"))
 		return
 	if Nightmares.monsters_near(world, bed):
-		message.emit(Lang.t("You may not rest now, there are monsters nearby"))
+		status_message.emit(Lang.t("You may not rest now, there are monsters nearby"))
 		return
 	sleeping = true
 	Stats.grant("sleepyhead")
@@ -316,6 +315,15 @@ func sleep_in(bed: Vector3i) -> void:
 	velocity = Vector3.ZERO
 	global_position = Vector3(bed) + Vector3(0.5, Blocks.height_table[world.get_block(bed)], 0.5)
 	_teleported()
+	# Lying on the back, the view fixed along the bed toward its foot (the
+	# mouse doesn't turn it, see _unhandled_input); the cursor is for the
+	# sleep screen (SleepScreen).
+	var bed_id := world.get_block(bed)
+	var toward_foot := -Vector3(Blocks.FACING_DIRECTIONS[Blocks.facing_table[bed_id]])
+	_yaw = atan2(-toward_foot.x, -toward_foot.z)
+	_pitch = 0.0
+	rotation = Vector3(0, _yaw, 0)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func wake_up() -> void:
@@ -323,7 +331,15 @@ func wake_up() -> void:
 		return
 	sleeping = false
 	sleep_ticks = 0
-	_sleep_fade.color.a = 0.0
+	if not dead and not GameInput.is_blocked() and not get_tree().paused:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED # back to playing
+
+
+## How dark the screen is while falling asleep (0..0.95), for SleepScreen.
+func sleep_darkness() -> float:
+	if not sleeping:
+		return 0.0
+	return clampf((sleep_ticks + _accumulator / TICK) / SLEEP_TICKS, 0.0, 1.0) * 0.95
 
 
 ## Arm swing (breaking, placing), shown by the block in hand; `continuous`
@@ -364,10 +380,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if GameInput.is_blocked():
 		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not sleeping:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			get_viewport().set_input_as_handled() # this click only captures
-	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not sleeping:
 		var sensitivity: float = MOUSE_SENSITIVITY * Settings.get_value("mouse_sensitivity") / 100.0
 		var invert := -1.0 if Settings.get_value("invert_mouse") else 1.0
 		_yaw -= event.relative.x * sensitivity
@@ -408,7 +424,6 @@ func _process(delta: float) -> void:
 	_last_rendered = global_position
 	rotation = Vector3(0, _yaw, 0)
 	_update_camera(alpha, delta)
-	_sleep_fade.color.a = clampf((sleep_ticks + alpha) / SLEEP_TICKS, 0.0, 1.0) * 0.95 if sleeping else 0.0
 	_pumpkin_view.visible = not third_person and not dead and armor.count_at(0) > 0 \
 		and Items.is_block(armor.id_at(0)) and Items.armor_slot_of(armor.id_at(0)) == 0
 	_fire.visible = fire_ticks > 0 and not dead

@@ -23,7 +23,9 @@ static func scheduled_tick(world: VoxelWorld, pos: Vector3i) -> void:
 	if entity.is_empty():
 		return
 	var inventory: Inventory = entity.inventory
-	var front := Blocks.FACING_DIRECTIONS[Blocks.facing_table[id]]
+	var facing := Blocks.facing_table[id]
+	# 4 / 5: facing up / down (placed looking down / up, like the modern game).
+	var front := Blocks.FACING_DIRECTIONS[facing] if facing < 4 else (Vector3i.UP if facing == 4 else Vector3i.DOWN)
 	var filled: Array[int] = []
 	for slot in inventory.size():
 		if inventory.count_at(slot) > 0:

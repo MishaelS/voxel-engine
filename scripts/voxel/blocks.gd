@@ -249,6 +249,18 @@ static func _register_all() -> bool:
 	for facing in [4, 5]:
 		for pressed in [false, true]:
 			register(_button(facing, pressed))
+	# Placed like the modern game (appended: ids stay stable): logs lying
+	# along x / z, upside-down stairs, top slabs, dispensers facing up / down.
+	for wood: Array in [["oak", 20], ["birch", 117], ["spruce", 116]]:
+		for axis: String in ["x", "z"]:
+			register(_lying_log(wood[0], wood[1], axis))
+	for material: Array in STAIR_MATERIALS:
+		for facing in 4:
+			register(_stairs(material[0], material[1], facing, true))
+	for material: Array in SLAB_MATERIALS:
+		register(_top_slab(material))
+	for facing in [4, 5]:
+		register(_vertical_dispenser(facing))
 	_set_flammability()
 	return true
 
@@ -832,8 +844,11 @@ static func _register_building_blocks() -> void:
 	register(snow_layer)
 
 
-static func _stairs(material: String, tile: int, facing: int) -> BlockType:
-	var family := material + "_stairs"
+## Stairs; `upside_down` ones ("<material>_stairs_top", placed against a
+## ceiling or the upper half of a side, like the modern game) have the full
+## half on top.
+static func _stairs(material: String, tile: int, facing: int, upside_down: bool = false) -> BlockType:
+	var family := material + ("_stairs_top" if upside_down else "_stairs")
 	var block := BlockType.cube(family if facing == 0 else "%s_%s" % [family, FACING_NAMES[facing]], tile) \
 		.set_hardness(2.0).set_tool("pickaxe" if material == "cobblestone" else "axe", 0 if material == "cobblestone" else -1) \
 		.set_height(0.999).set_light_opacity(0)
@@ -841,23 +856,69 @@ static func _stairs(material: String, tile: int, facing: int) -> BlockType:
 	block.drops = [{"item": "cobblestone" if material == "cobblestone" else material + "_planks"}]
 	block.family = family
 	block.facing = facing
-	if facing != 0:
-		block.item = family
+	if facing != 0 or upside_down:
+		block.item = material + "_stairs"
 		block.in_catalog = false
 	# Facing south: the low step in front (+Z), the high part behind.
 	var faces := {}
 	for face in 6:
 		faces[face] = {"layer": tile}
-	var boxes := [
-		{"from": Vector3(0, 0, 0), "to": Vector3(16, 8, 16), "faces": faces},
-		{"from": Vector3(0, 8, 0), "to": Vector3(16, 16, 8), "faces": faces},
-	]
+	var parts := [[Vector3(0, 0, 0), Vector3(16, 8, 16)], [Vector3(0, 8, 0), Vector3(16, 16, 8)]]
+	if upside_down:
+		parts = [[Vector3(0, 8, 0), Vector3(16, 16, 16)], [Vector3(0, 0, 0), Vector3(16, 8, 8)]]
+	var boxes := []
+	for part: Array in parts:
+		boxes.append({"from": part[0], "to": part[1], "faces": faces})
 	block.shape = BlockType.Shape.MODEL
 	block.model = BlockModel.register(boxes, facing)
 	var turn := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
-	for box: Array in [[Vector3(0, 0, 0), Vector3(16, 8, 16)], [Vector3(0, 8, 0), Vector3(16, 16, 8)]]:
+	for box: Array in parts:
 		block.collision_boxes.append(_turned_box(box[0] / 16.0, box[1] / 16.0, turn))
 	block.selection_box = AABB(Vector3.ZERO, Vector3.ONE)
+	return block
+
+
+## A log lying along `axis` ("x" / "z"; placed against a side, like the
+## modern game): the rings on the two ends, the bark around with its grain
+## turned along the log. Same item and drops as the upright log (its family).
+static func _lying_log(wood: String, bark: int, axis: String) -> BlockType:
+	var block := BlockType.cube("%s_log_%s" % [wood, axis], bark).set_hardness(2.0).set_tool("axe")
+	block.family = wood + "_log"
+	block.item = wood + "_log"
+	block.in_catalog = false
+	for face: int in ([2, 3] if axis == "x" else [4, 5]):
+		block.tiles[face] = 21
+	for face: int in ([0, 1, 4, 5] if axis == "x" else [2, 3]):
+		block.uv_modes[face] = 1 # the grain along the log
+	return block
+
+
+## The upper half slab ("<material>_slab_top"), placed against a ceiling or
+## the upper half of a side like the modern game; its item is the slab.
+static func _top_slab(material: Array) -> BlockType:
+	var family: String = material[0] + "_slab"
+	var wooden: bool = material[0] == "wooden"
+	var block := BlockType.column(family + "_top", material[1], material[2], material[3]).set_height(0.999) \
+		.set_hardness(2.0).set_tool("axe" if wooden else "pickaxe", -1 if wooden else 0).set_light_opacity(0) \
+		.set_item(family).hidden_from_catalog()
+	var faces := {}
+	for face in 6:
+		faces[face] = {"layer": block.tiles[face]}
+	block.shape = BlockType.Shape.MODEL
+	block.model = BlockModel.register([{"from": Vector3(0, 8, 0), "to": Vector3(16, 16, 16), "faces": faces}])
+	block.collision_boxes.append(AABB(Vector3(0, 0.5, 0), Vector3(1, 0.5, 1)))
+	return block
+
+
+## A dispenser facing up (4) or down (5), like the modern game's: its mouth
+## on that face, the furnace top all around.
+static func _vertical_dispenser(facing: int) -> BlockType:
+	var block := BlockType.cube("dispenser_" + ("up" if facing == 4 else "down"), 62).set_hardness(3.5).set_tool("pickaxe", 0) \
+		.set_on_update(Callable(DispenserBehavior, "on_update")) \
+		.set_scheduled_tick(Callable(DispenserBehavior, "scheduled_tick")).set_item("dispenser").hidden_from_catalog()
+	block.tiles[0 if facing == 4 else 1] = 46
+	block.family = "dispenser"
+	block.facing = facing
 	return block
 
 
@@ -1071,8 +1132,8 @@ static func _set_flammability() -> void:
 		var n := block.name
 		if n.ends_with("_planks"):
 			block.set_flammable(5, 20)
-		elif n.ends_with("_log"):
-			block.set_flammable(5, 5)
+		elif family_of(block.id).ends_with("_log"):
+			block.set_flammable(5, 5) # upright and lying logs
 		elif n.contains("_leaves") or n.ends_with("_wool"):
 			block.set_flammable(30, 60)
 		elif n in ["tall_grass", "fern", "dead_bush", "dandelion", "rose"]:

@@ -48,7 +48,12 @@ func _place() -> void:
 	if _top_spacer == null or list_area == null:
 		return
 	var below_title := list_area.get_global_rect().position.y - get_global_rect().position.y
-	_top_spacer.custom_minimum_size.y = maxf(size.y / 4.0 + 8 * P - below_title, 0.0)
+	var wanted := maxf(size.y / 4.0 + 8 * P - below_title, 0.0)
+	# Never so far down that the last buttons leave the screen (small
+	# windows, big GUI scale): at most the room the buttons leave free.
+	var column := _top_spacer.get_parent() as Control
+	var buttons := column.get_combined_minimum_size().y - _top_spacer.custom_minimum_size.y
+	_top_spacer.custom_minimum_size.y = clampf(wanted, 0.0, maxf(list_area.size.y - buttons - ROW_GAP, 0.0))
 
 
 func _wide(text: String, on_pressed: Callable) -> Button:

@@ -15,7 +15,7 @@ Controls
 * Crafting table: 3x3 recipes (sticks, tools, chest, furnace, bed, bucket, ...); furnace: smelts ores, sand, cobblestone and logs with coal, charcoal or wood
 * Beds skip the night (only at night) and set the respawn point; dropped items are picked up by walking over them
 * F3: debug screen (the full one in debug builds; in a release build: version, FPS, memory and the world's size on disk; the coordinates are on the map); F4: toggle VSync
-* F1: hide GUI; F2: screenshot; F6: isometric camera (Z / X turn, wheel zooms); F7: isometric screenshot of the whole area
+* F1: hide GUI; F2: screenshot; F6: World Diorama (the area around you cut out of the world: drag to move, right-drag to rotate, wheel to zoom, Z / X turn by 90°); F7: diorama screenshot
 * Esc: menu (pauses the game): Options - video, controls (key rebinding), world
 * WASD: walk; Space: jump (creative: double-tap to fly, then Space / Shift up and down)
 * Ctrl or double-tap W: sprint; Shift: sneak (slower, doesn't fall off edges)

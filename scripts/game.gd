@@ -31,9 +31,27 @@ func _ready() -> void:
 		Settings.forced["difficulty"] = 3 # Hard, and it stays
 	Stats.add("saves_loaded")
 	get_tree().auto_accept_quit = false # save first (NOTIFICATION_WM_CLOSE_REQUEST)
+	_add_sleep_screen()
 	var loading := LoadingScreen.new()
 	loading.world = world
 	add_child(loading)
+
+
+## The in-bed screen goes into the UI layer over the HUD (hotbar, health)
+## and under the death screen, the chat and the menus.
+func _add_sleep_screen() -> void:
+	var ui := get_node_or_null("UI")
+	if ui == null or player == null:
+		return
+	var sleep_screen := SleepScreen.new()
+	sleep_screen.name = "SleepScreen"
+	sleep_screen.player = player
+	sleep_screen.chat = ui.get_node_or_null("Chat") as Chat
+	sleep_screen.menu = ui.get_node_or_null("Menu") as Menu
+	var below := ui.get_node_or_null("DeathScreen")
+	ui.add_child(sleep_screen)
+	if below:
+		ui.move_child(sleep_screen, below.get_index())
 
 
 func _exit_tree() -> void:

@@ -1,17 +1,17 @@
 class_name IsometricCamera
 extends Camera3D
-## The isometric camera (F6), like the old game's isometric view: an
-## orthographic camera looking down at the player from a fixed angle,
-## facing one of the four diagonals. Z / X turn it by 90 degrees, the mouse
-## wheel zooms. Angle, facing and zoom are Isometric Camera settings.
+## The World Diorama's camera (F6): an orthographic camera looking down at
+## the area around the player from far away. Rotation, Tilt and Zoom are
+## settings (the diorama's controls change them); `pan` moves it off the
+## player (drag), Center Camera brings it back.
 
-## View angles below the horizon (Classic, True Isometric, Steep).
-const ANGLES: Array[float] = [30.0, 35.264, 45.0]
 const DISTANCE := 600.0
 
 var target: Node3D
+## Offset of the view's center from the player (blocks, on the ground).
+var pan := Vector3.ZERO
 
-var _size := 64.0
+var _size := 96.0
 
 
 func _ready() -> void:
@@ -21,10 +21,15 @@ func _ready() -> void:
 	_size = Settings.get_value("iso_zoom")
 
 
-## Rotation for a facing (0..3, the diagonals) and an angle setting index.
-static func view_basis(facing: int, angle_index: int) -> Basis:
-	var yaw := deg_to_rad(45.0 + 90.0 * facing)
-	return Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -deg_to_rad(ANGLES[angle_index]))
+## Rotation for a yaw (degrees around the area, 45 = the classic north-east
+## diagonal) and a tilt (degrees below the horizon).
+static func view_basis(yaw_degrees: float, tilt_degrees: float) -> Basis:
+	return Basis(Vector3.UP, deg_to_rad(yaw_degrees)) * Basis(Vector3.RIGHT, -deg_to_rad(tilt_degrees))
+
+
+## The view's rotation from the settings.
+static func settings_basis() -> Basis:
+	return view_basis(Settings.get_value("iso_rotation"), Settings.get_value("iso_tilt"))
 
 
 func _process(delta: float) -> void:
@@ -33,14 +38,33 @@ func _process(delta: float) -> void:
 	# Smooth zoom toward the setting.
 	_size = lerpf(_size, Settings.get_value("iso_zoom"), minf(delta * 10.0, 1.0))
 	size = _size
-	basis = view_basis(Settings.get_value("iso_facing"), Settings.get_value("iso_angle"))
-	global_position = target.global_position + Vector3(0, 1.0, 0) + basis.z * DISTANCE
+	basis = settings_basis()
+	global_position = center() + basis.z * DISTANCE
 
 
-func rotate_view(step: int) -> void:
-	Settings.set_value("iso_facing", posmod(int(Settings.get_value("iso_facing")) + step, 4))
+## The point the camera looks at.
+func center() -> Vector3:
+	return target.global_position + Vector3(0, 1.0, 0) + pan
+
+
+## Turns the view by degrees (the < > buttons: 90, dragging: a little).
+func rotate_view(degrees: float) -> void:
+	Settings.set_value("iso_rotation", fposmod(float(Settings.get_value("iso_rotation")) + degrees, 360.0))
 
 
 func zoom(step: int) -> void:
-	var zoom_setting := Settings.get_setting("iso_zoom")
-	Settings.set_value("iso_zoom", float(Settings.get_value("iso_zoom")) + step * zoom_setting.step)
+	# Bigger steps when far out (a step is about an eighth of the view).
+	var now: float = Settings.get_value("iso_zoom")
+	var step_size := Settings.get_setting("iso_zoom").step * maxf(1.0, roundf(now / 64.0))
+	Settings.set_value("iso_zoom", now + step * step_size)
+
+
+## Moves the view by a mouse drag of `pixels` on a screen `screen_height`
+## pixels tall: the ground under the mouse follows it.
+func drag(pixels: Vector2, screen_height: float) -> void:
+	var per_pixel := size / maxf(screen_height, 1.0)
+	var right := Vector3(basis.x.x, 0, basis.x.z).normalized()
+	var forward := Vector3(-basis.z.x, 0, -basis.z.z).normalized()
+	var tilt := deg_to_rad(float(Settings.get_value("iso_tilt")))
+	pan -= right * pixels.x * per_pixel
+	pan += forward * pixels.y * per_pixel / maxf(sin(tilt), 0.2)

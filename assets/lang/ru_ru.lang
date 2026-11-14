@@ -819,3 +819,44 @@ Hardcore=Хардкор
 Game over!=Игра окончена!
 You cannot respawn in Hardcore mode=В режиме «Хардкор» нельзя возродиться
 Delete World=Удалить мир
+Leave Bed=Встать с кровати
+
+# --- Options (categories)
+Audio=Звук
+Video=Графика
+Search=Поиск
+Search...=Поиск...
+Nothing found=Ничего не найдено
+Volume=Громкость
+Mouse=Мышь
+Shader Pack=Пакет шейдеров
+Name=Имя
+Name Color=Цвет ника
+Skin=Скин
+Game Rules=Правила игры
+World Generation=Генерация мира
+Seed=Ключ
+
+# --- World Diorama (F6)
+World Diorama=Диорама мира
+Diorama Screenshot=Снимок диорамы
+Diorama: Rotate Left=Диорама: повернуть влево
+Diorama: Rotate Right=Диорама: повернуть вправо
+Close=Закрыть
+Center Camera=Центрировать камеру
+Area=Область
+%d×%d chunks=%d×%d чанков
+Tilt=Наклон
+Rotation=Поворот
+Time=Время
+Current=Текущее
+Players=Игроки
+Mobs=Мобы
+Lighting=Освещение
+Rotate Left=Повернуть влево
+Rotate Right=Повернуть вправо
+Click and hold to move and rotate=Зажмите кнопку мыши, чтобы двигать и вращать
+Drag: move. Right-drag or Shift+drag: rotate and tilt. Wheel: zoom.=Перетаскивание — сдвиг. Правой кнопкой или с Shift — поворот и наклон. Колесо — масштаб.
+Open Screenshots Folder=Открыть папку скриншотов
+Rendering diorama screenshot...=Создание снимка диорамы...
+Saved to %s=Сохранено: %s

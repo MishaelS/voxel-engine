@@ -50,13 +50,12 @@ static func head_id(direction: Vector3i, sticky: bool) -> int:
 	return Blocks.family_ids("piston_head")[Redstone.DIRS.find(direction) * 2 + (1 if sticky else 0)]
 
 
-## The way a piston placed by someone looking along `look` faces: toward
-## them, or up / down when looked at steeply.
+## The way a piston (or dispenser) placed by someone looking along `look`
+## faces: toward them along the axis they look closest to, like the modern
+## game (up / down once the look is steeper than its horizontal parts).
 static func facing_for(look: Vector3) -> Vector3i:
-	if look.y < -0.8:
-		return Vector3i.UP
-	if look.y > 0.8:
-		return Vector3i.DOWN
+	if absf(look.y) > maxf(absf(look.x), absf(look.z)):
+		return Vector3i.UP if look.y < 0.0 else Vector3i.DOWN
 	if absf(look.x) > absf(look.z):
 		return Vector3i(-1, 0, 0) if look.x > 0.0 else Vector3i(1, 0, 0)
 	return Vector3i(0, 0, -1) if look.z > 0.0 else Vector3i(0, 0, 1)

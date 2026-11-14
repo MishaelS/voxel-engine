@@ -107,6 +107,11 @@ func is_open() -> bool:
 
 
 func open_pause_menu() -> void:
+	# Like the game: pausing closes the chat being typed (its line would
+	# stay over the menu).
+	var chat := get_tree().get_first_node_in_group("chat") as Chat
+	if chat and chat.is_open():
+		chat.close()
 	push(PauseScreen.new())
 
 
