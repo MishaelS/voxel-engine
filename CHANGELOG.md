@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.25] - 2026-11-15
+
 ### Added
 - Zombies and skeletons may spawn in armor, like the modern game's: 3.75 / 7.5 / 11.25% of them on Easy / Normal / Hard, mostly leather or gold, rarely chainmail, iron or diamond, from the helmet down (each further piece stopping 1 in 4, on Hard 1 in 10). It is drawn like the player's (the same armor layers, now MobModels.armor_pieces for both), takes hits and wears out like the player's (Beta's points; a worn-out piece breaks), keeps the sun off with a helmet, is saved and sent to network players, and each piece drops 8.5% of the time when they die.
 - Several texture packs at once (Options -> Texture Packs): click a pack to put it on or off, the arrows set the order; the higher pack's files win and the game's fill in the rest, so a pack can hold only a few files. The pack picked before stays on.
@@ -712,7 +714,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.24...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.25...HEAD
+[0.0.25]: https://github.com/MishaelS/voxel-engine/compare/v0.0.24...v0.0.25
 [0.0.24]: https://github.com/MishaelS/voxel-engine/compare/v0.0.23...v0.0.24
 [0.0.23]: https://github.com/MishaelS/voxel-engine/compare/v0.0.22...v0.0.23
 [0.0.22]: https://github.com/MishaelS/voxel-engine/compare/v0.0.21...v0.0.22
