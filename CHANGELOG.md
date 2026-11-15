@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.27] - 2026-11-15
+
 ### Changed
 - Eating takes holding the right button for 1.6 s (32 ticks) like the modern game instead of Beta's eating at once: the food comes up in front of the mouth and bobs as it is chewed, crumbs and a bite sound every 4 ticks, a burp when it is eaten and heals; letting go sooner eats nothing. Seen from the third person, the hand is at the mouth.
 
@@ -728,7 +730,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.26...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.27...HEAD
+[0.0.27]: https://github.com/MishaelS/voxel-engine/compare/v0.0.26...v0.0.27
 [0.0.26]: https://github.com/MishaelS/voxel-engine/compare/v0.0.25...v0.0.26
 [0.0.25]: https://github.com/MishaelS/voxel-engine/compare/v0.0.24...v0.0.25
 [0.0.24]: https://github.com/MishaelS/voxel-engine/compare/v0.0.23...v0.0.24
