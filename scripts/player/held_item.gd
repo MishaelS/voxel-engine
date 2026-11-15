@@ -10,8 +10,8 @@ extends Node3D
 ##   placed and swung exactly like the classic game's empty hand;
 ## - a map is held in both hands like the classic game's: low in the view
 ##   while looking ahead, rising toward the eyes when looking down, with the
-##   player's marker (textures/misc/mapicons.png) on it and their
-##   coordinates written small across its top (F3 is only in debug builds).
+##   player's marker (textures/misc/mapicons.png) on it (the coordinates
+##   are shown by a compass in the inventory: DebugScreen.item_lines).
 ## It is a child of the camera and is drawn over the world.
 
 ## Ticks of one swing (the game's 6).
@@ -258,9 +258,6 @@ var _map: Node3D
 var _map_arms: Array[MeshInstance3D] = []
 var _map_picture: MeshInstance3D
 var _map_marker: MeshInstance3D
-var _map_coords: Label3D
-## Ink of the coordinates on the parchment.
-const MAP_INK := Color(0.24, 0.16, 0.08)
 var _map_materials: Array[ShaderMaterial] = []
 var _marker_mesh := ImmediateMesh.new()
 
@@ -291,19 +288,6 @@ func _map_node() -> Node3D:
 	_map_marker.mesh = _marker_mesh
 	_map_marker.material_override = _map_material(TexturePacks.load_texture(MAP_ICONS), 103)
 	_map.add_child(_map_marker)
-	# The coordinates: small pixel letters on the parchment above the map.
-	_map_coords = Label3D.new()
-	_map_coords.font = UiTheme.font()
-	_map_coords.font_size = 16
-	_map_coords.pixel_size = 0.3
-	_map_coords.outline_size = 0
-	_map_coords.shaded = false
-	_map_coords.double_sided = true
-	_map_coords.no_depth_test = true
-	_map_coords.render_priority = 104
-	_map_coords.alpha_cut = Label3D.ALPHA_CUT_DISABLED # transparent: drawn after the parchment (render_priority)
-	_map_coords.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	_map.add_child(_map_coords)
 	for child in _map.get_children():
 		(child as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return _map
@@ -376,12 +360,6 @@ func _map_pose() -> void:
 	for material in _map_materials:
 		material.set_shader_parameter("brightness", brightness)
 	_draw_marker(view.marker() if view else [Vector2(64, 64), 0, true])
-	# Map space has y down and faces away from its own +z: the label (y up,
-	# read from +z) is turned half around X, centered over the map's top.
-	var block := Vector3i(player.global_position.floor())
-	_map_coords.text = "X: %d  Y: %d  Z: %d" % [block.x, block.y, block.z]
-	_map_coords.modulate = Color(MAP_INK.r * brightness, MAP_INK.g * brightness, MAP_INK.b * brightness)
-	_map_coords.transform = paper * Transform3D(Basis(Vector3.RIGHT, PI), Vector3(Maps.SIZE / 2.0, 6.0, -0.03))
 
 
 ## The player's icon: the white marker turned the way they look (16 steps,

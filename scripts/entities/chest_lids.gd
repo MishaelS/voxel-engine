@@ -2,7 +2,7 @@ class_name ChestLids
 extends Node3D
 ## Chest lids opening and closing like the modern game's (ChestBlockEntity)
 ## on Beta's full-cube chests: while anyone has a chest open its lid swings
-## back about the back top edge, eased, to 90 degrees in 0.5 s, and swings
+## back about the back top edge, eased, to OPEN_ANGLE in 0.5 s, and swings
 ## shut the same way when the last one closes it; the opening sound plays
 ## as it starts to open, the closing one as it shuts. A large chest's
 ## halves open together as one lid.
@@ -18,7 +18,8 @@ extends Node3D
 ## (set_remote: Net sends it).
 
 const OPEN_SECONDS := 0.5
-const OPEN_ANGLE := PI / 2.0
+## Not quite upright (the game's own look).
+const OPEN_ANGLE := PI * 4.0 / 9.0 # 80 degrees
 ## A shut chest's model stays this long after the block is drawn again,
 ## until the chunk's new mesh is up (built in the background).
 const KEEP_SECONDS := 0.15
@@ -36,6 +37,9 @@ class Lid:
 	var base: MeshInstance3D
 	var hinge: Node3D
 	var axis: Vector3
+	## Where the hinge is shut, and the way to the chest's front.
+	var hinge_at: Vector3
+	var front: Vector3
 	var top: MeshInstance3D
 	## 0 shut .. 1 open, 0.1 a tick like the game's.
 	var openness := 0.0
@@ -123,7 +127,12 @@ func _process(delta: float) -> void:
 		lid.open = open
 		lid.openness = move_toward(lid.openness, 1.0 if open else 0.0, delta / OPEN_SECONDS)
 		var eased := 1.0 - pow(1.0 - lid.openness, 3.0)
-		lid.hinge.basis = Basis(lid.axis, eased * OPEN_ANGLE)
+		var angle := eased * OPEN_ANGLE
+		lid.hinge.basis = Basis(lid.axis, angle)
+		# The hinge slides forward as the lid lifts, so the lid's back edge
+		# stays over the chest's back face and never goes into the block
+		# behind it (it rests on the back of the base instead).
+		lid.hinge.position = lid.hinge_at + lid.front * (ChestModel.LID_PIXELS / 16.0) * sin(angle)
 		if not open and lid.openness <= 0.0:
 			_sound(cell, id, "chest/close")
 			_lids.erase(cell)
@@ -156,9 +165,11 @@ func _build(lid: Lid, cell: Vector3i, id: int) -> void:
 	lid.base.mesh = meshes[0]
 	lid.top.mesh = meshes[1]
 	var hinge := ChestModel.hinge_of(id)
+	lid.hinge_at = hinge[0]
 	lid.hinge.position = hinge[0]
 	lid.top.position = -hinge[0]
 	lid.axis = hinge[1]
+	lid.front = hinge[2]
 
 
 ## A chest's sound, once for a large chest (by its left half, from the

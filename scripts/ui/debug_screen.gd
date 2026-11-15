@@ -6,8 +6,10 @@ extends Control
 ## the "debug_screen" setting).
 ## The full screen is only in debug builds (the editor, debug exports); a
 ## release build shows the game and its version, the frame rate, the memory
-## used and how much the world takes on disk (the player's coordinates are
-## on the map).
+## used and how much the world takes on disk.
+## Without F3 the same corner shows what the player's items tell: the
+## coordinates while a compass is in the inventory, the time of day while a
+## clock is (item_lines).
 
 const LINE_BACKGROUND := Color(0.31, 0.31, 0.31, 0.56)
 const TEXT_COLOR := Color("e0e0e0")
@@ -24,6 +26,7 @@ const FACE_NAMES := {
 @export var interaction: BlockInteraction
 
 var _left: VBoxContainer
+var _items: VBoxContainer
 var _right: VBoxContainer
 var _box: StyleBoxFlat
 var _next_refresh_ms := 0
@@ -37,6 +40,9 @@ static var full := OS.is_debug_build() and not OS.get_cmdline_user_args().has("-
 const DISK_REFRESH_MS := 5000
 var _disk_bytes := -1
 var _next_disk_ms := 0
+## The F3 screen is on (the "debug_screen" setting); off, only the item
+## lines show.
+var shown := false
 
 
 func _ready() -> void:
@@ -68,8 +74,58 @@ func _process(_delta: float) -> void:
 	if now < _next_refresh_ms:
 		return
 	_next_refresh_ms = now + REFRESH_MS
-	_fill(_left, _left_lines(), HORIZONTAL_ALIGNMENT_LEFT)
+	if not shown:
+		_fill(_left, PackedStringArray(), HORIZONTAL_ALIGNMENT_LEFT)
+		_fill(_right, PackedStringArray(), HORIZONTAL_ALIGNMENT_RIGHT)
+		_fill_items(item_lines())
+		return
+	_fill_items(PackedStringArray())
+	var left := _left_lines()
+	if not full: # (the full screen has the coordinates and the time)
+		var items := item_lines()
+		if not items.is_empty():
+			left.append("")
+			left.append_array(items)
+	_fill(_left, left, HORIZONTAL_ALIGNMENT_LEFT)
 	_fill(_right, _right_lines(), HORIZONTAL_ALIGNMENT_RIGHT)
+
+
+## The player's position and the way they face while a compass is in their
+## inventory, the time of day and the day while a clock is.
+func item_lines() -> PackedStringArray:
+	var lines := PackedStringArray()
+	var player := camera.get_parent() as Player if camera else null
+	if player == null or player.dead or world == null:
+		return lines
+	if player.inventory.find(Items.id_of("compass")) >= 0:
+		var at := player.global_position
+		lines.append("x: %.1f y: %.1f z: %.1f" % [at.x, at.y, at.z])
+		var look := player.look_direction()
+		var facing := ("East" if look.x > 0.0 else "West") if absf(look.x) > absf(look.z) else ("South" if look.z > 0.0 else "North")
+		lines.append(Lang.t(facing))
+	if player.inventory.find(Items.id_of("clock")) >= 0:
+		var clock := world.clock
+		# day_time 0 is 06:00
+		var minutes := int(fposmod(clock.day_time + 6000.0, WorldClock.TICKS_PER_DAY) * 1440.0 / WorldClock.TICKS_PER_DAY)
+		lines.append(Lang.t("%d:%02d Day %d") % [minutes / 60, minutes % 60, clock.day() + 1])
+	return lines
+
+
+## The item lines without F3: plain white text with the game's shadow, no
+## background.
+func _fill_items(lines: PackedStringArray) -> void:
+	if _items == null:
+		_items = _column(Control.PRESET_TOP_LEFT, Control.GROW_DIRECTION_END)
+	while _items.get_child_count() < lines.size():
+		var label := Label.new()
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		_items.add_child(label)
+	for i in _items.get_child_count():
+		var label := _items.get_child(i) as Label
+		label.visible = i < lines.size()
+		if label.visible:
+			label.text = lines[i]
 
 
 # --- Content -------------------------------------------------------------------

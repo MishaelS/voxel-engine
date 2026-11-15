@@ -93,9 +93,30 @@ static func _step(world: VoxelWorld, cell: Vector3i, to: Vector2i, tall: int) ->
 	return Vector3i.MAX
 
 
+## NativePath (C++: the same search step by step) when the native library
+## is there.
+static var _native := ClassDB.class_exists("NativePath")
+
+
 ## A path of cells from `start` toward `goal` (the goal itself, or the
 ## nearest cell found); empty if nothing better than standing still.
 static func find(world: VoxelWorld, start: Vector3i, goal: Vector3i, tall: int, max_nodes: int = MAX_NODES) -> Array[Vector3i]:
+	_tables()
+	if not _native:
+		return find_script(world, start, goal, tall, max_nodes)
+	var found: PackedInt32Array = ClassDB.class_call_static("NativePath", "find", world.get("_chunks"), start, goal, tall,
+		max_nodes, _solid, _floor, _harmful, Blocks.liquid_table)
+	var result: Array[Vector3i] = []
+	var visited := found[0]
+	last_visited = visited
+	_budget -= visited
+	for i in range(1, found.size(), 3):
+		result.append(Vector3i(found[i], found[i + 1], found[i + 2]))
+	return result
+
+
+## find() in GDScript (no native library).
+static func find_script(world: VoxelWorld, start: Vector3i, goal: Vector3i, tall: int, max_nodes: int = MAX_NODES) -> Array[Vector3i]:
 	_tables()
 	var result: Array[Vector3i] = []
 	if start == goal:

@@ -200,8 +200,6 @@ func _apply_hud() -> void:
 		if node == null:
 			continue
 		var shown := not hud_hidden and not isometric
-		if name == "DebugScreen":
-			shown = shown and Settings.get_value("debug_screen")
 		node.visible = shown
 	if player and player.held_item:
 		player.held_item.hidden = isometric or hud_hidden

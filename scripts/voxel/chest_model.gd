@@ -30,7 +30,7 @@ static func lid_meshes(world: VoxelWorld, cell: Vector3i, id: int) -> Array[Arra
 	var cut := BASE_PIXELS / 16.0
 	var top_light := Color(1, 1, 1, 1)
 	var top_glow := 0.0
-	var arrays: Array = _cube_arrays(world, cell).get(Blocks.Layer.OPAQUE, [])
+	var arrays: Array = _cube_arrays(world, cell, Cube.AS_IS).get(Blocks.Layer.OPAQUE, [])
 	if not arrays.is_empty():
 		var positions: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
@@ -57,6 +57,7 @@ static func lid_meshes(world: VoxelWorld, cell: Vector3i, id: int) -> Array[Arra
 					corners.append(vertex)
 				base.add_polygon(_clip(corners, cut, true))
 				lid.add_polygon(_clip(corners, cut, false))
+	_add_hidden_faces(world, cell, base, lid, cut)
 	var inside := Color(0, 0, 0, top_light.a)
 	var outside := Color(1, 1, 1, top_light.a)
 	var boxes := _inside_boxes(Blocks.chest_part_table[id])
@@ -68,15 +69,100 @@ static func lid_meshes(world: VoxelWorld, cell: Vector3i, id: int) -> Array[Arra
 
 
 ## The hinge of a chest's lid in its cell (the back top edge of the base)
-## and the axis the lid opens about (by a positive angle).
+## the axis the lid opens about (by a positive angle) and the way to the
+## chest's front.
 static func hinge_of(id: int) -> Array[Vector3]:
 	var front := Vector3(Blocks.FACING_DIRECTIONS[Blocks.facing_table[id]])
-	return [Vector3(0.5, BASE_PIXELS / 16.0, 0.5) - front * 0.5, front.cross(Vector3.UP)]
+	return [Vector3(0.5, BASE_PIXELS / 16.0, 0.5) - front * 0.5, front.cross(Vector3.UP), front]
+
+
+## The faces the closed chest and the blocks around it hide from each
+## other, seen once the lid lifts: the lid's sides against a block beside
+## it (meshed as if those blocks were air), and the sides of those blocks
+## facing into the chest above the seam (meshed as if the chest were air;
+## the base still covers the rest). Not between a large chest's halves,
+## nor with the floor.
+static func _add_hidden_faces(world: VoxelWorld, cell: Vector3i, base: _Mesh, lid: _Mesh, cut: float) -> void:
+	var walled := false
+	for direction in [Vector3i.LEFT, Vector3i.RIGHT, Vector3i.FORWARD, Vector3i.BACK]:
+		if _hides(world, cell + direction):
+			walled = true
+	if not walled:
+		return
+	# The lid's sides against such blocks.
+	var arrays: Array = _cube_arrays(world, cell, Cube.NO_NEIGHBORS).get(Blocks.Layer.OPAQUE, [])
+	for quad in _quads(arrays):
+		var normal: Vector3 = quad[1]
+		var local: Vector3 = quad[0] - Vector3.ONE
+		if absf(normal.y) > 0.5 or not _on_cell(local) or normal.dot(local - Vector3(0.5, 0.5, 0.5)) <= 0.0:
+			continue
+		if not _hides(world, cell + Vector3i(normal.round())):
+			continue
+		for corners: Array in _triangles(arrays, quad[2]):
+			lid.add_polygon(_clip(corners, cut, false))
+	# Those blocks' sides facing into the chest.
+	arrays = _cube_arrays(world, cell, Cube.NO_CHEST).get(Blocks.Layer.OPAQUE, [])
+	for quad in _quads(arrays):
+		var normal: Vector3 = quad[1]
+		var local: Vector3 = quad[0] - Vector3.ONE
+		if absf(normal.y) > 0.5 or not _on_cell(local) or normal.dot(local - Vector3(0.5, 0.5, 0.5)) >= 0.0:
+			continue
+		if not _hides(world, cell - Vector3i(normal.round())):
+			continue
+		for corners: Array in _triangles(arrays, quad[2]):
+			base.add_polygon(_clip(corners, cut, false))
+
+
+## Whether the block at `pos` and a chest beside it hide each other's
+## faces (an opaque block other than a chest).
+static func _hides(world: VoxelWorld, pos: Vector3i) -> bool:
+	var id := world.get_block(pos)
+	return Blocks.is_opaque_table[id] == 1 and not ChestBehavior.is_chest(id)
+
+
+## Whether a point (in the chest cell's coordinates) is on its surface.
+static func _on_cell(local: Vector3) -> bool:
+	return AABB(Vector3(-0.01, -0.01, -0.01), Vector3(1.02, 1.02, 1.02)).has_point(local)
+
+
+## Every face of mesher arrays: [middle, normal, quad index].
+static func _quads(arrays: Array) -> Array:
+	var result := []
+	if arrays.is_empty():
+		return result
+	var positions: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	for quad in positions.size() / 4:
+		var middle := Vector3.ZERO
+		for c in 4:
+			middle += positions[quad * 4 + c] / 4.0
+		result.append([middle, (arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array)[quad * 4], quad])
+	return result
+
+
+## A face's two triangles as vertices (_vertex) in the cell's coordinates.
+static func _triangles(arrays: Array, quad: int) -> Array:
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var result := []
+	for triangle in 2:
+		var corners: Array = []
+		for k in 3:
+			var vertex := _vertex(arrays, indices[quad * 6 + triangle * 3 + k])
+			vertex[0] -= Vector3.ONE
+			corners.append(vertex)
+		result.append(corners)
+	return result
+
+
+## What _cube_arrays meshes: the blocks as they are, the blocks beside the
+## chest (not a chest, not above or below) as air, or the chest as air.
+enum Cube { AS_IS, NO_NEIGHBORS, NO_CHEST }
 
 
 ## The chunk mesher's surfaces for the chest at `cell` alone with its 26
-## neighbors (meshed too; their faces are sorted out by lid_meshes).
-static func _cube_arrays(world: VoxelWorld, cell: Vector3i) -> Dictionary:
+## neighbors (meshed too; their faces are sorted out by lid_meshes). A cell
+## made air takes the light of the one over the chest (an opaque block's
+## own is dark).
+static func _cube_arrays(world: VoxelWorld, cell: Vector3i, cube: Cube) -> Dictionary:
 	var P := ChunkMesher.P
 	var blocks := PackedInt32Array()
 	blocks.resize(ChunkMesher.PADDED_VOLUME)
@@ -93,6 +179,12 @@ static func _cube_arrays(world: VoxelWorld, cell: Vector3i) -> Dictionary:
 				blocks[i] = world.get_block(at)
 				light[i] = world.get_light(at)
 				glow[i] = world.get_block_light(at)
+				var cleared := (cube == Cube.NO_CHEST and at == cell) \
+					or (cube == Cube.NO_NEIGHBORS and dy == 0 and at != cell and not ChestBehavior.is_chest(blocks[i]))
+				if cleared:
+					blocks[i] = Blocks.AIR
+					light[i] = world.get_light(cell + Vector3i.UP)
+					glow[i] = world.get_block_light(cell + Vector3i.UP)
 	return ChunkMesher.build(blocks, light, PackedColorArray(), PackedColorArray(), null, glow)
 
 

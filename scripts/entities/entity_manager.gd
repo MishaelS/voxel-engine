@@ -18,6 +18,11 @@ var spawner: MobSpawner
 
 func _ready() -> void:
 	TickLoop.add_listener(_tick, TickLoop.Phase.ENTITIES)
+	# Every creature's model made once now, while the world loads (its
+	# meshes and textures are kept): the first of a kind to spawn stalled
+	# a tick building them.
+	for type: String in Mob.TYPES:
+		MobModels.build(type).root.free()
 
 
 func _exit_tree() -> void:

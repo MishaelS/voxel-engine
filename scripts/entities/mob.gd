@@ -226,6 +226,11 @@ func is_hostile() -> bool:
 
 
 var _held: MeshInstance3D
+## Worn armor (zombies and skeletons: Mob.equip), helmet first; worn out by
+## hits like the player's.
+var armor := Inventory.new(4)
+var _armor_meshes: Array[MeshInstance3D] = []
+var _armor_remainder := 0
 
 
 func _ready() -> void:
@@ -244,6 +249,101 @@ func _ready() -> void:
 	_egg_timer = randi_range(6000, 12000)
 	_say_timer = randi_range(80, 400)
 	_update_wool()
+	armor.changed.connect(_update_armor)
+	_update_armor()
+
+
+# --- Armor -----------------------------------------------------------------------------
+
+## Who may spawn in armor (like the modern game's zombies and skeletons).
+const ARMORED := ["zombie", "skeleton"]
+## The chance a natural spawn wears armor by difficulty (the modern game:
+## 0.15 times how hard the place is).
+const ARMOR_CHANCE := [0.0, 0.0375, 0.075, 0.1125]
+## Materials from the worst (the modern game's armor levels).
+const ARMOR_LEVELS := ["leather", "golden", "chainmail", "iron", "diamond"]
+## The chance each worn piece drops when it dies (the modern game's).
+const ARMOR_DROP := 0.085
+
+
+## Dresses a zombie or skeleton that spawns naturally, like the modern
+## game's setEquipmentBasedOnDifficulty: sometimes (more on harder
+## difficulties) armor of one material - mostly leather or gold, rarely
+## better (3 tries of 9.5% for each level up) - from the helmet down, each
+## further piece stopping there 1 in 4 (Hard: 1 in 10).
+func equip() -> void:
+	if not ARMORED.has(mob_type):
+		return
+	var difficulty: int = Settings.get_value("difficulty")
+	if randf() >= ARMOR_CHANCE[clampi(difficulty, 0, 3)]:
+		return
+	var level := randi_range(0, 1)
+	for i in 3:
+		if randf() < 0.095:
+			level += 1
+	var stop := 0.1 if difficulty == 3 else 0.25
+	for slot in 4:
+		if slot > 0 and randf() < stop:
+			break
+		armor.set_slot(slot, Items.id_of("%s_%s" % [ARMOR_LEVELS[mini(level, 4)], Items.ARMOR_PIECES[slot]]), 1)
+
+
+var _armor_shown := PackedInt32Array()
+
+
+func _update_armor() -> void:
+	if _model.is_empty():
+		return
+	var shown := PackedInt32Array()
+	for slot in armor.size():
+		shown.append(armor.id_at(slot) if armor.count_at(slot) > 0 else Blocks.AIR)
+	if shown == _armor_shown:
+		return # (only worn more)
+	_armor_shown = shown
+	for mesh in _armor_meshes:
+		_model.meshes.erase(mesh)
+		mesh.queue_free()
+	_armor_meshes = MobModels.armor_pieces(_model, armor)
+	_model.meshes.append_array(_armor_meshes) # (lit with the body)
+
+
+## The armor's points like the player's (Beta: the same for every
+## material, less as it wears out).
+func armor_value() -> int:
+	var points := 0
+	var left := 0
+	var total := 0
+	for slot in armor.size():
+		var item := Items.get_type(armor.id_at(slot))
+		if armor.count_at(slot) <= 0 or item == null or item.armor_slot < 0:
+			continue
+		points += item.armor
+		total += item.durability
+		left += item.durability - armor.damage_at(slot)
+	if total == 0:
+		return 0
+	return (points - 1) * left / total + 1
+
+
+## Armor takes (armor value) / 25 of each hit and wears by it, like the
+## player's (Entity.damage).
+func _absorb(amount: int) -> int:
+	var value := armor_value()
+	if value <= 0:
+		return amount
+	for slot in armor.size():
+		if armor.count_at(slot) > 0:
+			# (worn here, not by Inventory.wear: that counts the player's
+			# stats and plays at the player)
+			var damaged := armor.damage_at(slot) + amount
+			if damaged >= Items.durability(armor.id_at(slot)):
+				armor.set_slot(slot, Blocks.AIR, 0)
+				Sounds.play("random/break", center(), 0.8, randf_range(0.8, 1.2))
+			else:
+				armor.set_slot(slot, armor.id_at(slot), 1, damaged)
+	var scaled := amount * (25 - value) + _armor_remainder
+	_armor_remainder = scaled % 25
+	return scaled / 25
 
 
 # --- Behavior --------------------------------------------------------------------------
@@ -709,24 +809,50 @@ func _creeper_tick(player) -> void:
 		_fuse = maxi(_fuse - 1, 0)
 
 
-## Skeletons keep their distance and shoot.
+## Skeletons like Beta's (EntitySkeleton.attackEntity in EntityCreature):
+## they go after the player they notice and keep it until it is gone (out
+## of sight too, walking its way); within 10 blocks and in sight they shoot
+## every 30 ticks, face the player and keep walking the path they had (no
+## new one: so they step about while shooting), now and then (1 in 100)
+## dropping it.
+const SKELETON_RANGE := 10.0
+const SKELETON_RELOAD := 30
+
+
 func _skeleton_tick(player) -> void:
-	target = player if _sees(player) and (target == player or _notices(player)) else null
+	if target and _is_player(target) and (target.dead or target.is_creative() \
+			or (target.global_position as Vector3).distance_to(feet()) > SIGHT * 2.0):
+		target = null
+	var noticed := false
+	if player and player != target and (target == null or _is_player(target)) and not player.is_creative() \
+			and _sees(player) and _notices(player):
+		target = player
+		noticed = true
 	if _flee_sun():
 		return
 	if target == null:
 		_animal_tick(null)
 		return
-	_look_at = player.eye_position()
-	_look_ticks = 5
-	var distance: float = player.global_position.distance_to(feet())
-	if distance > 10.0:
-		_navigate(player.global_position, spec.speed)
+	var goal: Vector3 = target.global_position
+	var distance := goal.distance_to(feet())
+	if noticed:
+		# (Beta: a path to the player found the moment it is noticed)
+		_path_goal = Vector3i.MAX
+		_navigate(goal, spec.speed)
+	elif distance < SKELETON_RANGE and _sees(target):
+		if randi_range(0, 99) == 0:
+			_path.clear()
+		_follow_path(spec.speed)
+		_face(goal)
+		_look_at = target.eye_position()
+		_look_ticks = 5
+		if _attack_cooldown == 0:
+			_attack_cooldown = SKELETON_RELOAD
+			Arrow.shoot(world, center() + Vector3(0, height * 0.3, 0), target.eye_position() - Vector3(0, 0.4, 0), 0.6 * 1.6, 12.0, self)
 	else:
-		_face(player.global_position)
-	if _attack_cooldown == 0 and distance < 16.0:
-		_attack_cooldown = 60
-		Arrow.shoot(world, center() + Vector3(0, height * 0.3, 0), player.eye_position() - Vector3(0, 0.4, 0), 0.6 * 1.6, 12.0, self)
+		_look_at = target.eye_position()
+		_look_ticks = 5
+		_navigate(goal, spec.speed)
 
 
 ## Slimes hop toward the player (or about) and hurt it on touch (big ones).
@@ -871,7 +997,8 @@ func _daylight() -> float:
 
 
 func _fears_sun() -> bool:
-	return is_undead() and _daylight() > 0.5
+	# (a helmet keeps the sun off, like the modern game's)
+	return is_undead() and _daylight() > 0.5 and armor.count_at(0) <= 0
 
 
 ## Out of the sun at `cell` (feet): its head has no open sky above (a tree,
@@ -992,19 +1119,27 @@ func _navigate(goal: Vector3, speed: float, moving: bool = true, reach: int = Pa
 	if _path.is_empty():
 		_walk_toward(goal, speed)
 		return
+	_follow_path(speed)
+
+
+## One step along the path there is (none: stands); false if there is none.
+func _follow_path(speed: float) -> bool:
+	if _path.is_empty():
+		return false
 	var next := _path[0]
 	var point := Vector3(next.x + 0.5, next.y, next.z + 0.5)
 	var flat := Vector2(point.x - _x, point.z - _z).length()
 	if flat < 0.35 and absf(_y - next.y) < 1.0:
 		_path.remove_at(0)
 		if _path.is_empty():
-			return
+			return true
 		next = _path[0]
 		point = Vector3(next.x + 0.5, next.y, next.z + 0.5)
 		flat = Vector2(point.x - _x, point.z - _z).length()
 	_walk_toward(point, speed)
 	if next.y > floori(_y + 0.01) and on_ground and flat < 1.4:
 		velocity.y = 0.42 # up a block
+	return true
 
 
 func _eat_grass() -> void:
@@ -1214,6 +1349,10 @@ func _on_death() -> void:
 			world.items.spawn(Items.id_of(item), count, center(), Vector3(randf_range(-0.1, 0.1), 0.2, randf_range(-0.1, 0.1)))
 	if mob_type == "sheep" and not sheared:
 		world.items.spawn(Blocks.id_of(wool_color + "_wool"), 1, center(), Vector3(0, 0.2, 0))
+	for slot in armor.size():
+		if armor.count_at(slot) > 0 and randf() < ARMOR_DROP:
+			world.items.spawn(armor.id_at(slot), 1, center(), Vector3(randf_range(-0.1, 0.1), 0.2, randf_range(-0.1, 0.1)),
+				ItemEntities.PICKUP_DELAY, armor.damage_at(slot))
 
 
 
@@ -1398,6 +1537,8 @@ func save_state() -> Dictionary:
 	var state := super()
 	state.merge({"sheared": sheared, "wool": wool_color, "size": size, "tamed": tamed, "sitting": sitting, "saddled": saddled, "no_ai": no_ai,
 		"baby": baby_ticks, "love": love_ticks, "breed_cooldown": breed_cooldown})
+	if not armor.is_empty():
+		state["armor"] = armor.save_state()
 	return state
 
 
@@ -1423,6 +1564,8 @@ func load_state(saved: Dictionary) -> void:
 	baby_ticks = saved.get("baby", 0)
 	love_ticks = saved.get("love", 0)
 	breed_cooldown = saved.get("breed_cooldown", 0)
+	if saved.has("armor") and saved.armor is Dictionary:
+		armor.load_state(saved.armor)
 	_update_wool()
 	_apply_size()
 	health = mini(saved.get("health", max_health), max_health)

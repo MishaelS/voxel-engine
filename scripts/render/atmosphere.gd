@@ -42,6 +42,7 @@ var snapshot := false
 
 var _clouds: Clouds
 var _overlay: ColorRect
+var _water_picture := false # (a texture pack's misc/water.png)
 var _sky: ShaderMaterial
 
 
@@ -74,6 +75,15 @@ func _ready() -> void:
 	overlay_material.shader = preload("res://shaders/screen_overlay.gdshader")
 	_overlay.material = overlay_material
 	layer.add_child(_overlay)
+	# A texture pack's vignette and under-water picture, like Beta's.
+	var vignette_image := TexturePacks.pack_image("misc/vignette.png")
+	if vignette_image:
+		overlay_material.set_shader_parameter("use_vignette_map", true)
+		overlay_material.set_shader_parameter("vignette_map", ImageTexture.create_from_image(vignette_image))
+	var water_image := TexturePacks.pack_image("misc/water.png")
+	if water_image:
+		overlay_material.set_shader_parameter("water_map", ImageTexture.create_from_image(water_image))
+		_water_picture = true
 
 
 ## Night Brightness option of the Classic pack: 5% = the classic darkness
@@ -236,6 +246,12 @@ func _update_overlay(eye: Vector3) -> void:
 	if in_lava:
 		tint = LAVA_TINT # glows: no night darkening
 	material.set_shader_parameter("tint", tint)
+	if _water_picture:
+		var brightness := 0.3 + 0.7 * daylight
+		material.set_shader_parameter("water_overlay", brightness if underwater and not in_lava else 0.0)
+		if player and player.camera:
+			var turn := player.camera.global_rotation
+			material.set_shader_parameter("water_offset", Vector2(-turn.y / TAU * 4.0, turn.x / TAU * 4.0))
 	_overlay.visible = strength > 0.0 or underwater or in_lava
 
 

@@ -42,4 +42,4 @@ func _apply(key: String, value: Variant) -> void:
 			ShaderPackApplier.apply_brightness(world_environment.environment if world_environment else null, value)
 		"debug_screen":
 			if hud:
-				hud.visible = value
+				hud.shown = value

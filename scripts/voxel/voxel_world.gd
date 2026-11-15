@@ -391,10 +391,14 @@ func generate() -> void:
 		node.queue_free()
 	_chunks.clear()
 	_columns.clear()
+	_unload_queue.clear()
+	_random_dirty = true
+	_random_tick_queue.clear()
 	_heightmaps.clear()
 	_column_colors.clear()
 	_lit.clear()
 	_chunk_nodes.clear()
+	_culled.clear()
 	_chunk_faces.clear()
 	_dirty.clear()
 	_relight_columns.clear()
@@ -673,7 +677,35 @@ func _player_column_now() -> Vector2i:
 
 ## When the player enters another column: list columns to generate (nearest
 ## first) and unload the ones that are too far.
+## Columns out of range, unloaded a few a frame (a whole row of them at
+## once, each with its chunks' meshes, stalled the frame the player crossed
+## into another column).
+var _unload_queue: Array[Vector2i] = []
+const UNLOADS_PER_FRAME := 4
+
+
+func _unload_far_columns() -> void:
+	var done := 0
+	while done < UNLOADS_PER_FRAME and not _unload_queue.is_empty():
+		var column: Vector2i = _unload_queue.pop_back()
+		if _columns.has(column) and _out_of_range(column):
+			_unload_column(column)
+			done += 1
+
+
+## Beyond the unload distance of this player and the network game's others.
+func _out_of_range(column: Vector2i) -> bool:
+	var unload_radius := render_distance + 4
+	if absi(column.x - _player_column.x) <= unload_radius and absi(column.y - _player_column.y) <= unload_radius:
+		return false
+	for other in _remote_centers:
+		if absi(column.x - other.x) <= remote_radius + 2 and absi(column.y - other.y) <= remote_radius + 2:
+			return false
+	return true
+
+
 func _update_streaming() -> void:
+	_unload_far_columns()
 	var center := _player_column_now()
 	var others: Array[Vector2i] = []
 	if Net.is_host():
@@ -711,14 +743,10 @@ func _update_streaming() -> void:
 				if not _columns.has(column) and not _wanted_columns.has(column):
 					_wanted_columns.append(column)
 
-	var unload_radius := render_distance + 4
+	_unload_queue.clear()
 	for column: Vector2i in _columns.keys():
-		if absi(column.x - center.x) > unload_radius or absi(column.y - center.y) > unload_radius:
-			var near_other := false
-			for other in _remote_centers:
-				near_other = near_other or (absi(column.x - other.x) <= remote_radius + 2 and absi(column.y - other.y) <= remote_radius + 2)
-			if not near_other:
-				_unload_column(column)
+		if _out_of_range(column):
+			_unload_queue.append(column)
 
 
 ## The biome's grass (kind 1) or foliage (kind 2) color at a block column
@@ -800,6 +828,7 @@ func _finish_generation_jobs() -> void:
 
 func _add_column(job: GenerationJob) -> void:
 	_columns[job.column] = job.chunks # the column's chunks, bottom to top
+	_add_random_chunks(job.column)
 	var lowest := WorldGenerator.HEIGHT
 	for height in job.heights:
 		lowest = mini(lowest, height)
@@ -822,6 +851,7 @@ func _unload_column(column: Vector2i) -> void:
 	if _modified.has(column):
 		_save_column(column, true)
 	_columns.erase(column)
+	_random_columns.erase(column)
 	_relight_columns.erase(column)
 	_deferred.erase(column)
 	_surface_min.erase(column)
@@ -839,6 +869,7 @@ func _unload_column(column: Vector2i) -> void:
 		if node:
 			node.queue_free()
 			_chunk_nodes.erase(coord)
+			_culled.erase(coord)
 
 
 ## A chunk can be meshed once its column and all columns around it are lit.
@@ -1456,6 +1487,9 @@ func set_block(pos: Vector3i, id: int, notify: bool = true) -> void:
 	elif Net.is_host():
 		Net.block_changed(pos, id)
 	data.set_block(local.x, local.y, local.z, id)
+	if Blocks.ticks_randomly[id] == 1 and not _random_chunk_set.has(coord) and _in_random_reach(Vector2i(coord.x, coord.z)):
+		_random_chunks.append(coord) # (a chunk with nothing that ticked before)
+		_random_chunk_set[coord] = true
 	if _block_entities.has(pos) and _block_entities[pos].type != _entity_type(id):
 		if _block_entities[pos].type == "sign":
 			sign_texts.remove(pos)
@@ -1917,7 +1951,7 @@ func _tick(_tick_index: int) -> void:
 	_wake_springs()
 	_mood_tick()
 	var t5 := Time.get_ticks_usec()
-	tick_times = {"weather": t1 - t0, "scheduled": t2 - t1, "random": t3 - t2, "block_entities": t4 - t3, "display": t5 - t4}
+	tick_times = {"weather": t1 - t0, "scheduled": t2 - t1, "random": t3 - t2, "random_queue": random_queue_us, "block_entities": t4 - t3, "display": t5 - t4}
 
 
 ## Cave sounds like the game's mood sounds: every 6000-18000 ticks a spot
@@ -2069,35 +2103,102 @@ const RANDOM_TICK_RADIUS := 8
 const RANDOM_TICK_BUDGET_US := 2000
 
 var _random_tick_queue: Array[Vector3i] = []
+## The chunks random ticks go through, kept between rounds and kept up to
+## date as things change: a column loaded in reach adds its chunks, a player
+## moving to another column adds the columns come into reach and drops the
+## ones left behind, a block that ticks placed in a chunk not on the list
+## adds it. (Scanning every column's chunks each round was most of the
+## cost.) Only a new world gathers them all again (_random_dirty).
+var _random_chunks: Array[Vector3i] = []
+var _random_chunk_set := {}
+var _random_columns := {} # Vector2i -> true: columns gone through
+var _random_dirty := true
+var _random_centers: Array[Vector2i] = []
+var _random_radii := PackedInt32Array()
+
+
+## Whether random ticks reach the column (around one of the players).
+func _in_random_reach(column: Vector2i) -> bool:
+	for c in _random_centers.size():
+		var center := _random_centers[c]
+		if absi(column.x - center.x) <= _random_radii[c] and absi(column.y - center.y) <= _random_radii[c]:
+			return true
+	return false
+
+
+## A column just loaded joins the list if it is in reach of a player (an
+## unloaded one's chunks are just skipped: not in _chunks).
+func _add_random_chunks(column: Vector2i) -> void:
+	if _in_random_reach(column):
+		_add_random_column(column)
+
+
+func _add_random_column(column: Vector2i) -> void:
+	_random_columns[column] = true
+	var cy := 0
+	for data: ChunkData in _columns[column]:
+		var coord := Vector3i(column.x, cy, column.y)
+		if data.tickable_count > 0 and not _random_chunk_set.has(coord):
+			_random_chunks.append(coord)
+			_random_chunk_set[coord] = true
+		cy += 1
+
+
+## Main-thread time gathering the chunks last tick (profiling).
+var random_queue_us := 0
 
 
 func _run_random_ticks() -> void:
 	if random_tick_speed <= 0:
 		return
+	var queue_started := Time.get_ticks_usec()
 	if _random_tick_queue.is_empty():
 		# A new round: the chunks with something that ticks, near the
 		# players (this one, and the network game's others on the host).
-		var queued := {}
+		var centers: Array[Vector2i] = []
+		var radii := PackedInt32Array()
 		for at in player_positions(false):
-			var center := Vector2i(floori(at.x) >> 4, floori(at.z) >> 4)
-			var radius := RANDOM_TICK_RADIUS if player and at == player.global_position else mini(RANDOM_TICK_RADIUS, remote_radius)
-			for cx in range(center.x - radius, center.x + radius + 1):
-				for cz in range(center.y - radius, center.y + radius + 1):
-					var column_chunks: Variant = _columns.get(Vector2i(cx, cz))
-					if column_chunks == null or queued.has(Vector2i(cx, cz)):
-						continue
-					queued[Vector2i(cx, cz)] = true
-					var cy := 0
-					for data: ChunkData in column_chunks:
-						if data.tickable_count > 0:
-							_random_tick_queue.append(Vector3i(cx, cy, cz))
-						cy += 1
+			centers.append(Vector2i(floori(at.x) >> 4, floori(at.z) >> 4))
+			radii.append(RANDOM_TICK_RADIUS if player and at == player.global_position else mini(RANDOM_TICK_RADIUS, remote_radius))
+		if _random_dirty:
+			_random_dirty = false
+			_random_chunks.clear()
+			_random_chunk_set.clear()
+			_random_columns.clear()
+			_random_centers.clear()
+		if centers != _random_centers or radii != _random_radii:
+			_random_centers = centers
+			_random_radii = radii
+			# Out of reach now: dropped.
+			var kept: Array[Vector3i] = []
+			for coord in _random_chunks:
+				if _in_random_reach(Vector2i(coord.x, coord.z)):
+					kept.append(coord)
+				else:
+					_random_chunk_set.erase(coord)
+			_random_chunks = kept
+			for column: Vector2i in _random_columns.keys():
+				if not _in_random_reach(column):
+					_random_columns.erase(column)
+			# Come into reach: added.
+			for c in centers.size():
+				var center := centers[c]
+				for cx in range(center.x - radii[c], center.x + radii[c] + 1):
+					for cz in range(center.y - radii[c], center.y + radii[c] + 1):
+						var column := Vector2i(cx, cz)
+						if _columns.has(column) and not _random_columns.has(column):
+							_add_random_column(column)
+		_random_tick_queue = _random_chunks.duplicate()
 	var ticks_randomly := Blocks.ticks_randomly
 	var started := Time.get_ticks_usec()
+	random_queue_us = started - queue_started
+	if _native_ticks:
+		_random_ticks_native(started)
+		return
 	while not _random_tick_queue.is_empty():
 		var coord: Vector3i = _random_tick_queue.pop_back()
 		var data: ChunkData = _chunks.get(coord)
-		if data == null:
+		if data == null or data.tickable_count == 0:
 			continue
 		var blocks := data.blocks
 		var origin: Vector3i = coord * ChunkData.SIZE
@@ -2109,6 +2210,33 @@ func _run_random_ticks() -> void:
 			Blocks.get_type(id).random_tick.call(self, origin + Vector3i(index & 15, index >> 8, (index >> 4) & 15))
 		if Time.get_ticks_usec() - started > RANDOM_TICK_BUDGET_US:
 			break
+
+
+## The round's picking in C++ (NativePath.random_ticks): only the tries that
+## hit a block that ticks come back to run here.
+static var _native_ticks := ClassDB.class_exists("NativePath")
+
+
+func _random_ticks_native(started: int) -> void:
+	var arrays := []
+	var origins: Array[Vector3i] = []
+	while not _random_tick_queue.is_empty():
+		var coord: Vector3i = _random_tick_queue.pop_back()
+		var data: ChunkData = _chunks.get(coord)
+		if data == null or data.tickable_count == 0:
+			continue
+		arrays.append(data.blocks)
+		origins.append(coord * ChunkData.SIZE)
+	var hits: PackedInt32Array = ClassDB.class_call_static("NativePath", "random_ticks", arrays, random_tick_speed,
+		Blocks.ticks_randomly, rng.randi())
+	for i in range(0, hits.size(), 2):
+		var index := hits[i + 1]
+		var origin := origins[hits[i]]
+		# (a block ticked before may have changed this one: run what is there now)
+		var pos := origin + Vector3i(index & 15, index >> 8, (index >> 4) & 15)
+		var id := get_block(pos)
+		if Blocks.ticks_randomly[id] == 1:
+			Blocks.get_type(id).random_tick.call(self, pos)
 
 
 # --- Meshing -----------------------------------------------------------------------------
@@ -2346,6 +2474,7 @@ func _clear_chunk_mesh(coord: Vector3i) -> void:
 	if instance:
 		instance.queue_free()
 		_chunk_nodes.erase(coord)
+		_culled.erase(coord)
 	_cull_dirty = true
 
 
@@ -2387,12 +2516,14 @@ func _apply_mesh(job: MeshJob) -> void:
 		if instance:
 			instance.queue_free()
 			_chunk_nodes.erase(job.coord)
+			_culled.erase(job.coord)
 		return
 	if instance == null:
 		instance = MeshInstance3D.new()
 		instance.position = Vector3(job.coord * ChunkData.SIZE)
 		add_child(instance)
 		_chunk_nodes[job.coord] = instance
+		_culled.erase(job.coord)
 	instance.mesh = mesh
 
 
@@ -2517,7 +2648,7 @@ func _update_culling(delta: float) -> void:
 			return
 		WorkerThreadPool.wait_for_task_completion(_cull_task)
 		_cull_task = -1
-		_apply_culling(_cull_job.reached)
+		_apply_culling(_cull_job)
 	if not _cull_dirty or _cull_timer > 0.0:
 		return
 	_cull_dirty = false
@@ -2528,9 +2659,11 @@ func _update_culling(delta: float) -> void:
 			# (with the edges open, only the drawn area)
 			(_chunk_nodes[coord] as Node3D).visible = not open_edges or _in_render_radius(Vector2i(coord.x, coord.z))
 		culled_chunks = 0
+		_culled.clear()
 		return
 	_cull_job = {"connectivity": _connectivity.duplicate(), "camera": camera_chunk, "column": _player_column,
-		"distance": render_distance, "reached": {}}
+		"distance": render_distance, "reached": {}, "nodes": _chunk_nodes.keys(), "culled": _culled.duplicate(),
+		"hide": [], "show": []}
 	_cull_task = WorkerThreadPool.add_task(_cull_search.bind(_cull_job), false, "cave culling")
 
 
@@ -2565,18 +2698,35 @@ static func _cull_search(job: Dictionary) -> void:
 			if (connections >> (entered * 6 + face)) & 1 == 0:
 				continue # no way through this chunk to that face
 			queue.append([coord + FACE_DIRECTIONS[face], face ^ 1, directions | (1 << face)])
+	# What changes: the chunks to hide and to show again (the main thread
+	# only touches those).
+	var culled: Dictionary = job.culled
+	for node_coord: Vector3i in job.nodes:
+		var visible := reached.has(node_coord)
+		if visible and culled.has(node_coord):
+			(job.show as Array).append(node_coord)
+		elif not visible and not culled.has(node_coord):
+			(job.hide as Array).append(node_coord)
 
 
-## Shows the reached chunks and hides the rest (only those that change).
-func _apply_culling(reached: Dictionary) -> void:
-	culled_chunks = 0
-	for coord: Vector3i in _chunk_nodes:
-		var visible := reached.has(coord)
-		var node: Node3D = _chunk_nodes[coord]
-		if node.visible != visible:
-			node.visible = visible
-		if not visible:
-			culled_chunks += 1
+## Chunks hidden by cave culling (their nodes).
+var _culled := {}
+
+
+## Shows the reached chunks and hides the rest: the changes the search
+## worked out (_cull_search).
+func _apply_culling(job: Dictionary) -> void:
+	for coord: Vector3i in job.show:
+		_culled.erase(coord)
+		var node: Node3D = _chunk_nodes.get(coord)
+		if node:
+			node.visible = true
+	for coord: Vector3i in job.hide:
+		var node: Node3D = _chunk_nodes.get(coord)
+		if node:
+			node.visible = false
+			_culled[coord] = true
+	culled_chunks = _culled.size()
 
 
 # --- Saving --------------------------------------------------------------------------

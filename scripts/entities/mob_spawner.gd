@@ -42,6 +42,12 @@ var block_spawners := {}
 var _counter := 0
 ## The little mobs turning inside the known spawners: position -> view.
 var _views := {}
+## Worked out once per spawning round (not for every spot tried): the
+## players' positions and how dark the night makes the sky.
+var _round_players: Array[Vector3] = []
+var _round_darkness := -1.0
+## Block id -> 1 for leaves (where animals don't spawn on top).
+static var _leaves := PackedByteArray()
 
 
 ## Keeps a SpawnerMobView inside every spawner known (and none in gone
@@ -81,6 +87,14 @@ func tick() -> void:
 	if around.is_empty():
 		return
 	var peaceful: bool = Settings.get_value("difficulty") == 0
+	_round_players = around
+	_round_darkness = sky_darkness(world)
+	_spawn_round(around, peaceful)
+	_round_players = []
+	_round_darkness = -1.0
+
+
+func _spawn_round(around: Array[Vector3], peaceful: bool) -> void:
 	for at in around:
 		var counts := {"monster": 0, "animal": 0, "water": 0}
 		for entity in world.entities.near(at, COUNT_RANGE):
@@ -156,6 +170,7 @@ func _try_spawn(category: String, around: Vector3) -> bool:
 				mob.size = [1, 2, 4][randi_range(0, 2)]
 			if mob_type == "sheep":
 				mob.wool_color = Mob.natural_wool()
+			mob.equip()
 			world.entities.spawn(mob, Vector3(spot) + Vector3(0.5, 0.0, 0.5))
 			mob.rotation.y = randf() * TAU
 			mob.set("_yaw", mob.rotation.y)
@@ -167,18 +182,35 @@ func _try_spawn(category: String, around: Vector3) -> bool:
 
 
 ## The air cell above the highest solid block or water in the column, -1
-## if there is none loaded.
+## if there is none loaded. (Chunks of only air, most of the sky, are
+## skipped whole.)
 func _surface(x: int, z: int) -> int:
-	for y in range(WorldGenerator.HEIGHT - 1, 0, -1):
-		var id := world.get_block(Vector3i(x, y, z))
-		if id == Blocks.AIR:
+	if _leaves.is_empty():
+		_leaves.resize(Blocks.collides_table.size())
+		for id in _leaves.size():
+			_leaves[id] = int(Blocks.get_type(id) != null and Blocks.get_type(id).name.ends_with("_leaves"))
+	var chunks: Dictionary = world.get("_chunks")
+	var liquid := Blocks.liquid_table
+	var collides := Blocks.collides_table
+	var column := (x & 15) + ((z & 15) << 4)
+	for cy in range((WorldGenerator.HEIGHT - 1) >> 4, -1, -1):
+		var data: ChunkData = chunks.get(Vector3i(x >> 4, cy, z >> 4))
+		if data == null or data.air_count == ChunkData.VOLUME:
 			continue
-		if Blocks.liquid_table[id] == 1:
-			return y # squid spawn inside the water
-		if Blocks.collides_table[id] == 1:
-			return y + 1
-		if Blocks.get_type(id).name.ends_with("_leaves"):
-			return -1
+		var blocks := data.blocks
+		for ly in range(15, -1, -1):
+			var y := (cy << 4) + ly
+			if y <= 0 or y >= WorldGenerator.HEIGHT:
+				continue
+			var id := blocks[column + (ly << 8)]
+			if id == Blocks.AIR:
+				continue
+			if liquid[id] == 1:
+				return y # squid spawn inside the water
+			if collides[id] == 1:
+				return y + 1
+			if _leaves[id] == 1:
+				return -1
 	return -1
 
 
@@ -226,10 +258,10 @@ func _suits(category: String, mob_type: String, pos: Vector3i, keep_away: bool =
 	if mob_type == "spider" and not (_free(world.get_block(pos + Vector3i(1, 0, 0))) and _free(world.get_block(pos + Vector3i(0, 0, 1)))):
 		return false
 	if keep_away:
-		for at in _player_positions():
+		for at in (_round_players if not _round_players.is_empty() else _player_positions()):
 			if at.distance_to(Vector3(pos)) < MIN_DISTANCE:
 				return false
-	var darkness := sky_darkness(world)
+	var darkness := _round_darkness if _round_darkness >= 0.0 else sky_darkness(world)
 	if category == "animal":
 		var ground := Blocks.get_type(below).name
 		return (ground.begins_with("grass") or ground == "snowy_grass") and world.get_combined_light(pos, darkness) > 8

@@ -2,7 +2,8 @@ class_name MusicBehavior
 extends RefCounted
 ## Jukeboxes and note blocks like the classic game.
 ## - Jukebox: right-click with a music disc puts it in and plays its track
-##   (assets/records/<disc>.mp3, our own music: tools/make_music.py), heard
+##   (assets/records/<disc>.mp3, our own music: tools/make_music.py, or a
+##   texture pack's records/<disc>.ogg: Sounds.record_stream), heard
 ##   up to 64 blocks around; right-click again throws the disc out and stops
 ##   it; breaking the jukebox drops the disc.
 ## - Note block: right-click raises its note a semitone (25 notes, two
@@ -51,7 +52,7 @@ static func eject(world: VoxelWorld, pos: Vector3i) -> void:
 
 static func play_record(world: VoxelWorld, pos: Vector3i, track: String) -> void:
 	stop_record(world, pos)
-	var stream := load(RECORDS_DIR + track + ".mp3") as AudioStream
+	var stream := Sounds.record_stream(track) # (a texture pack's, else assets/records/)
 	if stream == null:
 		return
 	var speaker := AudioStreamPlayer3D.new()

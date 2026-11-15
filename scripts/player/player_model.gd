@@ -10,15 +10,6 @@ extends Node3D
 ## flinch when hurt, falling over when dead, lying in a bed asleep; the
 ## head follows the view.
 
-## Armor slot -> [[model part, texture layer, inflate, uv, mirrored], ...]
-## (the left limbs use the right ones' texture, mirrored, like the game).
-const ARMOR_PARTS := [
-	[["head", 1, 1.0, [0, 0], false]],
-	[["body", 1, 1.0, [16, 16], false], ["right_arm", 1, 1.0, [40, 16], false], ["left_arm", 1, 1.0, [40, 16], true]],
-	[["body", 2, 0.5, [16, 16], false], ["right_leg", 2, 0.5, [0, 16], false], ["left_leg", 2, 0.5, [0, 16], true]],
-	[["right_leg", 1, 1.0, [0, 16], false], ["left_leg", 1, 1.0, [0, 16], true]],
-]
-
 var player: Player
 var _model := {}
 var _armor_meshes: Array[MeshInstance3D] = []
@@ -58,7 +49,6 @@ func _update_armor() -> void:
 	_armor_meshes.clear()
 	if player == null:
 		return
-	var spec: Dictionary = _model.spec
 	var helmet := player.armor.id_at(0)
 	if player.armor.count_at(0) > 0 and Items.armor_slot_of(helmet) == 0 and Items.is_block(helmet):
 		# A carved pumpkin on the head, a little bigger than it (10 pixels),
@@ -69,24 +59,7 @@ func _update_armor() -> void:
 		pumpkin.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		(_model.parts.head as Node3D).add_child(pumpkin)
 		_pumpkin = pumpkin
-	for slot in player.armor.size():
-		var item := Items.get_type(player.armor.id_at(slot))
-		if player.armor.count_at(slot) <= 0 or item == null or item.armor_slot != slot:
-			continue
-		for piece: Array in ARMOR_PARTS[slot]:
-			var part: Dictionary = {}
-			for candidate: Dictionary in spec.parts:
-				if candidate.name == piece[0]:
-					part = candidate.duplicate()
-			part.texture = "armor_%s_%d" % [item.armor_material, piece[1]]
-			part.inflate = piece[2]
-			part.uv = piece[3]
-			part.mirror = piece[4]
-			var instance := MeshInstance3D.new()
-			instance.mesh = MobModels.part_mesh("player", part)
-			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			(_model.parts[piece[0]] as Node3D).add_child(instance)
-			_armor_meshes.append(instance)
+	_armor_meshes = MobModels.armor_pieces(_model, player.armor)
 
 
 ## The held item in the right hand, like the game's third-person view.

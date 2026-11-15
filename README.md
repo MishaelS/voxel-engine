@@ -106,7 +106,33 @@ tools/run.sh --release      # ... with the release build's short F3 screen
 ## World types and texture packs
 Create New World → World Type: **Default** is Beta 1.7.3's world, 128 blocks high with the sea at 64 (building stops at 128); **Tall Mountains** is the same land 256 high, the sea still at 64, mountains rising far above. Worlds made before (256 high, sea at 128) open as they were.
 
-Texture packs are Beta 1.7.3's: put a pack's `.zip` (or the folder, unpacked) into the pack folder (Options → Texture Packs → Open Pack Folder) and pick it there; it shows its `pack.png` and the two lines of `pack.txt` and is used from the next start. Every file of a Beta pack is used at its place (terrain, items, GUI, icons, mobs, armor, boat, minecart, arrows, paintings `art/kz.png`, rain, snow, clouds, grass and foliage colors, map, clock, pumpkin blur, sun, moon, title logo and Mojang screen); a picture of another size is scaled to Beta's. A pack's `particles.png` and `font/default.png` are used too (Cyrillic stays in the game's font).
+Texture packs are Beta 1.7.3's: put a pack's `.zip` (or the folder, unpacked) into the pack folder (Options → Texture Packs → Open Pack Folder) and click it there to put it on; it shows its `pack.png` and the two lines of `pack.txt` and is used from the next start. Every file of a Beta pack is used at its place (terrain, items, GUI, icons, mobs, armor, boat, minecart, arrows, paintings `art/kz.png`, rain, snow, clouds, grass and foliage colors, map, clock, pumpkin blur, vignette, under-water picture, shadow, sun, moon, title logo and Mojang screen); a picture of another size is scaled to Beta's. A pack's `particles.png` and `font/default.png` are used too (Cyrillic stays in the game's font).
+
+Several packs can be on at once: the list's arrows set the order, the higher pack's files win, the game's own fill in whatever no pack has, so a pack can hold just a few files (only the GUI, only sounds).
+
+### Texture pack layout
+A pack is a folder or `.zip` (the files may sit in one folder inside it); every file is optional.
+```
+pack.txt, pack.png            name lines and picture in the list
+terrain.png, particles.png    Beta's files at Beta's places (gui/, mob/, armor/,
+gui/ mob/ armor/ item/ art/   item/, art/, environment/, misc/, terrain/, font/,
+environment/ misc/ terrain/   title/mclogo.png, title/mojang.png, title/splashes.txt)
+font/ title/
+gui/creative.png              the creative inventory
+title/logo.png                the whole title logo, any size (instead of mclogo.png)
+title/intro.png               the whole studio screen (instead of mojang.png)
+title/background.png          a still picture behind the title menu
+title/bg/panorama0..5.png     or a turning cube panorama: front, right, back, left, top, bottom
+title/shade.png               the shade over the title background
+sounds/<group><n>.ogg|wav|mp3 sounds like assets/sounds (sounds/dig/stone1.ogg, stone2.ogg...);
+                              a group the pack has replaces the game's whole group;
+                              Beta's newsound/ folder works too
+music/<name>.ogg|mp3          background music: the same name replaces a game track
+                              (calm1, musicTrack0...), others are added;
+                              music/dawn|day|night/ for a time of day, music/menu/ for the menus only
+records/<disc>.ogg|mp3        jukebox discs (cat, 13); Beta's streaming/ works too
+```
+Buttons, the menu's dirt background and the hotbar are Beta's `gui/gui.png` and `gui/background.png`. See `scripts/render/texture_packs.gd`.
 
 Render Distance goes up to 32 chunks: up to 16 every chunk is real; beyond 16 the land past 16 chunks is drawn simplified with the blocks' own textures, in 1, 2 and 4 block cells further and further out (`scripts/render/far_terrain.gd`).
 

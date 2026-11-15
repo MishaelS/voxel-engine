@@ -117,7 +117,7 @@ static func held_item(mob: String, item_id: int) -> MeshInstance3D:
 	else:
 		mesh.mesh = ItemMeshes.extruded(item_id, ItemEntities._flat_material(item_id))
 		var name := Items.name_of(item_id)
-		if name == "bow" and mob == "player":
+		if name == "bow": # (skeletons hold it like the player: RenderPlayer's bow)
 			gl = gl * _gl_move(0, 0.125, 0.3125) * _gl_turn(-20, Vector3.UP) \
 				* Transform3D(Basis.from_scale(Vector3(0.625, -0.625, 0.625)), Vector3.ZERO) \
 				* _gl_turn(-100, Vector3.RIGHT) * _gl_turn(45, Vector3.UP)
@@ -138,7 +138,63 @@ static func held_item(mob: String, item_id: int) -> MeshInstance3D:
 	# around x), blocks -> pixels.
 	var axes := Transform3D(Basis(Vector3(1, 0, 0), Vector3(0, -1, 0), Vector3(0, 0, -1)).scaled(Vector3.ONE * 16.0), Vector3.ZERO)
 	mesh.transform = axes * gl * picture
+	if Items.name_of(item_id) == "bow" and ARMS_FORWARD.has(mob):
+		# Held like the player's bow, from an arm straight forward
+		# (MobAnimation: turned -90 degrees about x), then rolled a little
+		# about the hand so it stands more upright in front of the creature.
+		var arm := Transform3D(Basis(Vector3.RIGHT, -PI / 2.0), Vector3.ZERO)
+		var hand := Vector3(0, 0, 10) # (the arm's end, from its pivot, in the model's axes)
+		var roll := Transform3D(Basis.IDENTITY, hand) * Transform3D(Basis(Vector3.BACK, deg_to_rad(BOW_ROLL)), Vector3.ZERO) \
+			* Transform3D(Basis.IDENTITY, -hand)
+		mesh.transform = arm.affine_inverse() * roll * arm * mesh.transform
 	return mesh
+
+
+## Armor slot -> [[model part, texture layer, inflate, uv, mirrored], ...]
+## (the left limbs use the right ones' texture, mirrored, like the game).
+const ARMOR_PARTS := [
+	[["head", 1, 1.0, [0, 0], false]],
+	[["body", 1, 1.0, [16, 16], false], ["right_arm", 1, 1.0, [40, 16], false], ["left_arm", 1, 1.0, [40, 16], true]],
+	[["body", 2, 0.5, [16, 16], false], ["right_leg", 2, 0.5, [0, 16], false], ["left_leg", 2, 0.5, [0, 16], true]],
+	[["right_leg", 1, 1.0, [0, 16], false], ["left_leg", 1, 1.0, [0, 16], true]],
+]
+
+
+## The worn armor (`armor`: 4 slots, helmet first) drawn over a biped
+## model (the player's, zombies', skeletons') like the game's armor layers:
+## the player's own boxes (helmet, chestplate and boots 1 pixel bigger,
+## leggings half a pixel; textures armor_<material>_1 / _2) on the model's
+## parts, so a skeleton's armor is the size of the player's. Returns the
+## pieces made (the caller lights them and frees them).
+static func armor_pieces(built: Dictionary, armor: Inventory) -> Array[MeshInstance3D]:
+	var result: Array[MeshInstance3D] = []
+	var boxes := {}
+	for part: Dictionary in model("player").parts:
+		boxes[part.name] = part
+	for slot in mini(armor.size(), ARMOR_PARTS.size()):
+		var item := Items.get_type(armor.id_at(slot)) if armor.count_at(slot) > 0 else null
+		if item == null or item.armor_slot != slot:
+			continue
+		for piece: Array in ARMOR_PARTS[slot]:
+			if not boxes.has(piece[0]) or not (built.parts as Dictionary).has(piece[0]):
+				continue
+			var part: Dictionary = (boxes[piece[0]] as Dictionary).duplicate()
+			part.texture = "armor_%s_%d" % [item.armor_material, piece[1]]
+			part.inflate = piece[2]
+			part.uv = piece[3]
+			part.mirror = piece[4]
+			var instance := MeshInstance3D.new()
+			instance.mesh = part_mesh("player", part)
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			(built.parts[piece[0]] as Node3D).add_child(instance)
+			result.append(instance)
+	return result
+
+
+## Creatures that hold their arms straight forward (MobAnimation).
+const ARMS_FORWARD := ["skeleton", "zombie"]
+## How far their bow is rolled upright (degrees, about the hand).
+const BOW_ROLL := 30.0
 
 
 static func _gl_move(x: float, y: float, z: float) -> Transform3D:

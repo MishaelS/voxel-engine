@@ -28,7 +28,11 @@ extends Node
 ##   in the evening and at night; tracks not listed play any time; in the
 ##   menus, as by day).
 ## Sounds are found by listing the folders (also in exported games, where
-## the files are imported).
+## the files are imported). The texture packs on (TexturePacks) add their
+## own: a group a pack has (sounds/dig/stone1.ogg...) is all the pack's, a
+## track of the same name replaces the game's, other tracks are added
+## (music/dawn|day|night|menu/<name> for a time of day; menu: only in the
+## menus), discs (records/<disc>) replace the jukebox's.
 
 const SOUNDS_DIR := "res://assets/sounds"
 const MUSIC_DIR := "res://assets/music"
@@ -65,6 +69,8 @@ var _music: AudioStreamPlayer
 var _tracks: Array[AudioStream] = []
 var _track_times: Array[String] = [] # part of the day each track is for ("" = any)
 var _music_wait := 0.0
+var _records := {} # disc -> AudioStream (record_stream)
+const RECORDS_DIR := "res://assets/records/"
 ## Under water: the filter's cutoff and the quieting, eased toward the
 ## target each frame (`_underwater_until`: keep_underwater() has to be
 ## called again before then, so leaving the game lets it go).
@@ -137,11 +143,16 @@ func _ready() -> void:
 	_set_muffle(0.0)
 	_apply_space()
 	_scan(SOUNDS_DIR, "")
+	var tracks := {} # name -> [stream, part of the day]
 	for path in _files(MUSIC_DIR):
 		var stream := load(MUSIC_DIR.path_join(path)) as AudioStream
 		if stream:
-			_tracks.append(stream)
-			_track_times.append(MUSIC_TIMES.get(path.get_file().get_basename(), ""))
+			var track := path.get_file().get_basename()
+			tracks[track] = [stream, MUSIC_TIMES.get(track, "")]
+	_add_pack_sounds(tracks)
+	for track: String in tracks:
+		_tracks.append(tracks[track][0])
+		_track_times.append(tracks[track][1])
 	for i in VOICES_3D:
 		var player := AudioStreamPlayer3D.new()
 		player.bus = "Sound"
@@ -169,6 +180,61 @@ func _ready() -> void:
 	for category in CATEGORIES:
 		_on_setting(category + "_volume", Settings.get_value(category + "_volume"))
 	get_tree().node_added.connect(_on_node_added)
+
+
+## The texture packs' sounds and music (the last pack on first, so the
+## first one's win): a pack's group replaces the group, a track its name.
+func _add_pack_sounds(tracks: Dictionary) -> void:
+	var packs := TexturePacks.active()
+	for p in range(packs.size() - 1, -1, -1):
+		var pack := packs[p]
+		var groups := {}
+		for folder in TexturePacks.SOUND_FOLDERS:
+			var files := TexturePacks.files_in(pack, folder)
+			for file: String in files:
+				var stream := _pack_stream(pack, file)
+				if stream:
+					var group := _group_of(files[file])
+					if not groups.has(group):
+						groups[group] = []
+					(groups[group] as Array).append(stream)
+		for group: String in groups:
+			_groups[group] = groups[group]
+		for folder in TexturePacks.MUSIC_FOLDERS:
+			var files := TexturePacks.files_in(pack, folder)
+			for file: String in files:
+				var stream := _pack_stream(pack, file)
+				if stream:
+					var under: String = files[file]
+					var time := under.get_slice("/", 0) if under.contains("/") else ""
+					var track := under.get_file().get_basename()
+					tracks[track] = [stream, time if time in ["dawn", "day", "night", "menu"] else MUSIC_TIMES.get(track, "")]
+
+
+## A pack's sound file as a sound (null: not one of AUDIO_EXTENSIONS, or broken).
+func _pack_stream(pack: String, file: String) -> AudioStream:
+	if not file.get_extension().to_lower() in TexturePacks.AUDIO_EXTENSIONS:
+		return null
+	var stream := TexturePacks.audio_stream(pack, file)
+	if stream == null:
+		push_warning("Texture pack %s: %s is not a sound the game can play" % [pack, file])
+	return stream
+
+
+## A music disc's track (cat, 13): the first texture pack's that has one
+## (records/<disc>.ogg|mp3|wav, or Beta's streaming/), else the game's.
+func record_stream(disc: String) -> AudioStream:
+	if not _records.has(disc):
+		var stream: AudioStream = null
+		for pack in TexturePacks.active():
+			for folder in TexturePacks.RECORD_FOLDERS:
+				for extension in TexturePacks.AUDIO_EXTENSIONS:
+					if stream == null and TexturePacks.pack_has(pack, folder + disc + "." + extension):
+						stream = _pack_stream(pack, folder + disc + "." + extension)
+		if stream == null:
+			stream = load(RECORDS_DIR + disc + ".mp3") as AudioStream
+		_records[disc] = stream
+	return _records[disc]
 
 
 ## Plays a random variant of a sound group ("dig/stone", "random/pop").
@@ -339,7 +405,8 @@ func _process(delta: float) -> void:
 	_music_wait -= delta
 	if _music_wait <= 0.0:
 		_music.stream = _pick_track()
-		_music.play()
+		if _music.stream:
+			_music.play()
 		_music_wait = randf_range(MUSIC_PAUSE.x, MUSIC_PAUSE.y)
 
 
@@ -354,15 +421,24 @@ func part_of_day() -> String:
 	return "day" if time < NIGHT_START else "night"
 
 
-## A random track for now: one for this part of the day or for any time.
+## A random track for now: one for this part of the day or for any time
+## (in the menus a texture pack's menu tracks, if it has some; they play
+## nowhere else).
 func _pick_track() -> AudioStream:
 	var part := part_of_day()
+	var in_menus := Game.find(get_tree()) == null
+	if in_menus and _track_times.has("menu"):
+		part = "menu"
 	var fitting: Array[AudioStream] = []
 	for i in _tracks.size():
-		if _track_times[i] == "" or _track_times[i] == part:
+		if _track_times[i] == part or (_track_times[i] == "" and part != "menu"):
 			fitting.append(_tracks[i])
 	if fitting.is_empty():
-		fitting = _tracks
+		for i in _tracks.size():
+			if _track_times[i] != "menu":
+				fitting.append(_tracks[i])
+	if fitting.is_empty():
+		return null
 	return fitting[randi() % fitting.size()]
 
 
@@ -408,13 +484,19 @@ func _scan(dir_path: String, prefix: String) -> void:
 		var stream := load(dir_path.path_join(file)) as AudioStream
 		if stream == null:
 			continue
-		var base := file.get_basename()
-		while base.length() > 0 and base[base.length() - 1].is_valid_int():
-			base = base.left(-1)
-		var group := prefix + base
+		var group := _group_of(prefix + file)
 		if not _groups.has(group):
 			_groups[group] = []
 		(_groups[group] as Array).append(stream)
+
+
+## A sound's group: its path without the extension and the trailing
+## number (dig/stone2.ogg: "dig/stone").
+static func _group_of(path: String) -> String:
+	var base := path.get_basename()
+	while base.length() > 0 and base[base.length() - 1].is_valid_int():
+		base = base.left(-1)
+	return base
 
 
 ## Sound files in a folder (in an exported game the folder holds the

@@ -57,7 +57,7 @@ func _ready() -> void:
 	_ui.add_child(UiTheme.blur_rect())
 
 	var shade := TextureRect.new()
-	shade.texture = load("res://assets/textures/extra/title_blur.png")
+	shade.texture = TexturePacks.load_texture("res://assets/textures/extra/title_blur.png")
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	shade.stretch_mode = TextureRect.STRETCH_SCALE
@@ -120,7 +120,8 @@ func _build_main() -> void:
 	_main.add_child(logo)
 
 	_splash = Label.new()
-	_splash.text = SPLASHES[randi() % SPLASHES.size()]
+	var splashes := _splashes()
+	_splash.text = splashes[randi() % splashes.size()]
 	_splash.add_theme_color_override("font_color", SPLASH_COLOR)
 	_splash.add_theme_color_override("font_shadow_color", Color("3f3f00"))
 	_splash.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -169,10 +170,34 @@ func _build_main() -> void:
 	_main.add_child(credits)
 
 
-## The logo: a texture pack's title/mclogo.png drawn like Beta's (its two
-## halves, "MINEC" and "RAFT", side by side), else the game's own.
+## The splash texts: a texture pack's title/splashes.txt (a line each,
+## like Beta's), else the game's.
+static func _splashes() -> PackedStringArray:
+	var result := PackedStringArray()
+	for line in TexturePacks.read_text("title/splashes.txt").split("\n"):
+		if line.strip_edges() != "":
+			result.append(line.strip_edges())
+	return result if not result.is_empty() else PackedStringArray(SPLASHES)
+
+
+## The pack that wins for one of two files (the first pack on with either),
+## and which of them it has: [pack, file], or [] (none has them).
+static func _pack_with(files: Array) -> Array:
+	for pack in TexturePacks.active():
+		for file: String in files:
+			if TexturePacks.pack_has(pack, file):
+				return [pack, file]
+	return []
+
+
+## The logo: a texture pack's title/logo.png (the whole logo, any size), or
+## its title/mclogo.png drawn like Beta's (its two halves, "MINEC" and
+## "RAFT", side by side), else the game's own.
 static func _logo_image() -> Image:
-	var pack := TexturePacks.pack_image("title/mclogo.png")
+	var found := _pack_with(["title/logo.png", "title/mclogo.png"])
+	var pack := TexturePacks.pack_image(found[1], found[0]) if not found.is_empty() else null
+	if pack and found[1] == "title/logo.png":
+		return pack
 	if pack:
 		var logo := Image.create_empty(310, 44, false, Image.FORMAT_RGBA8)
 		logo.blit_rect(pack, Rect2i(0, 0, 155, 44), Vector2i(0, 0))
@@ -184,10 +209,13 @@ static func _logo_image() -> Image:
 	return image
 
 
-## The intro picture: a texture pack's title/mojang.png on white like
-## Beta's, else the game's own.
+## The intro picture: a texture pack's title/intro.png (the whole screen),
+## or its title/mojang.png on white like Beta's, else the game's own.
 static func _intro_picture() -> Texture2D:
-	var pack := TexturePacks.pack_image("title/mojang.png")
+	var found := _pack_with(["title/intro.png", "title/mojang.png"])
+	var pack := TexturePacks.pack_image(found[1], found[0]) if not found.is_empty() else null
+	if pack and found[1] == "title/intro.png":
+		return ImageTexture.create_from_image(pack)
 	if pack == null:
 		return load("res://assets/textures/extra/title_intro.png")
 	var screen := Image.create_empty(480, 270, false, Image.FORMAT_RGBA8)

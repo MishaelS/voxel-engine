@@ -8,6 +8,11 @@ extends Node3D
 ## A 9 x 9 column piece around that place is generated, lit and meshed on
 ## worker threads when the title screen opens (the menu stays smooth), then
 ## fades in; its edges are hidden in fog the color of the horizon.
+##
+## A texture pack can have its own instead (TexturePacks): six pictures of
+## a cube around the eye, title/bg/panorama0..5.png (front, right, back,
+## left, top, bottom, like the later game's), turning the same way; or one
+## still picture, title/background.png, covering the screen.
 
 const TITLE_SEED := 1337
 ## Column at the middle of the view (a forest with some relief).
@@ -40,7 +45,29 @@ var _angle := 0.0
 var _eye := Vector3(72.0, 80.0, 72.0)
 
 
+## The pack's cube panorama pictures (six, or none).
+static func pack_faces() -> Array[Texture2D]:
+	var faces: Array[Texture2D] = []
+	for i in 6:
+		var bytes := TexturePacks.read_file("title/bg/panorama%d.png" % i)
+		var image := Image.new()
+		if bytes.is_empty() or image.load_png_from_buffer(bytes) != OK:
+			return [] as Array[Texture2D]
+		image.generate_mipmaps()
+		faces.append(ImageTexture.create_from_image(image))
+	return faces
+
+
 func _ready() -> void:
+	var faces := pack_faces()
+	if not faces.is_empty():
+		_build_cube(faces)
+		return
+	var still := TexturePacks.read_file("title/background.png")
+	var picture := Image.new()
+	if not still.is_empty() and picture.load_png_from_buffer(still) == OK:
+		_build_still(picture)
+		return
 	ChunkMesher.random_rotation = Settings.get_value("random_rotation")
 	ChunkMesher.prepare_native()
 	_build_scene()
@@ -104,6 +131,68 @@ func _build_scene() -> void:
 	clouds.camera = camera
 	add_child(clouds)
 	clouds.set_color(Color(0.62, 0.52, 0.62)) # evening clouds
+
+
+## A pack's panorama: the six pictures on a cube around the eye.
+func _build_cube(faces: Array[Texture2D]) -> void:
+	_plain_environment()
+	camera = Camera3D.new()
+	camera.fov = 85.0
+	camera.near = 0.05
+	camera.far = 10.0
+	camera.current = true
+	add_child(camera)
+	_eye = Vector3.ZERO
+	_update_camera(0.0)
+	# [position, rotation] of each face, its picture facing the eye.
+	var places := [
+		[Vector3(0, 0, -1), Vector3.ZERO], [Vector3(1, 0, 0), Vector3(0, -PI / 2, 0)],
+		[Vector3(0, 0, 1), Vector3(0, PI, 0)], [Vector3(-1, 0, 0), Vector3(0, PI / 2, 0)],
+		[Vector3(0, 1, 0), Vector3(PI / 2, 0, 0)], [Vector3(0, -1, 0), Vector3(-PI / 2, 0, 0)],
+	]
+	for i in 6:
+		var quad := QuadMesh.new()
+		quad.size = Vector2(2.002, 2.002) # (a hair bigger: no seams)
+		var material := StandardMaterial3D.new()
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.albedo_texture = faces[i]
+		material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		material.disable_fog = true
+		quad.material = material
+		var face := MeshInstance3D.new()
+		face.mesh = quad
+		face.position = places[i][0]
+		face.rotation = places[i][1]
+		face.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(face)
+
+
+## A pack's still picture covering the screen (under the menu's blur).
+func _build_still(picture: Image) -> void:
+	_plain_environment()
+	camera = Camera3D.new()
+	camera.current = true
+	add_child(camera)
+	var layer := CanvasLayer.new()
+	layer.layer = -1
+	add_child(layer)
+	var rect := TextureRect.new()
+	rect.texture = ImageTexture.create_from_image(picture)
+	rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(rect)
+	set_process(false)
+
+
+func _plain_environment() -> void:
+	var environment := Environment.new()
+	environment.background_mode = Environment.BG_COLOR
+	environment.background_color = Color.BLACK
+	var world_environment := WorldEnvironment.new()
+	world_environment.environment = environment
+	add_child(world_environment)
 
 
 func _process(delta: float) -> void:

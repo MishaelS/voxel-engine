@@ -7,6 +7,7 @@
 #include "native_mesher.h"
 #include "native_beta_generator.h"
 #include "native_particles.h"
+#include "native_path.h"
 
 using namespace godot;
 
@@ -18,6 +19,7 @@ static void initialize(ModuleInitializationLevel level) {
 	GDREGISTER_CLASS(voxel::NativeMesher);
 	GDREGISTER_CLASS(voxel::NativeBetaGenerator);
 	GDREGISTER_CLASS(voxel::NativeParticles);
+	GDREGISTER_CLASS(voxel::NativePath);
 }
 
 static void uninitialize(ModuleInitializationLevel level) {

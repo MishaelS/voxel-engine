@@ -65,7 +65,7 @@ func _ready() -> void:
 	_root.add_child(background)
 	# The title screen's shade (extra/title_blur.png): darker toward the bottom.
 	var shade := TextureRect.new()
-	shade.texture = load("res://assets/textures/extra/title_blur.png")
+	shade.texture = TexturePacks.load_texture("res://assets/textures/extra/title_blur.png")
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	shade.stretch_mode = TextureRect.STRETCH_SCALE

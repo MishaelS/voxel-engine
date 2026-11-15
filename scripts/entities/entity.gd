@@ -373,9 +373,9 @@ func damage(amount: int, from: Variant = null) -> bool:
 	if _invulnerable > 0:
 		if amount <= _last_damage:
 			return false
-		health -= amount - _last_damage
+		health -= _absorb(amount - _last_damage)
 	else:
-		health -= amount
+		health -= _absorb(amount)
 		hurt_ticks = INVULNERABLE_TICKS
 		_invulnerable = INVULNERABLE_TICKS
 	_last_damage = amount
@@ -385,6 +385,11 @@ func damage(amount: int, from: Variant = null) -> bool:
 		health = 0
 		die()
 	return true
+
+
+## What of a hit gets through (armor: Mob); all of it here.
+func _absorb(amount: int) -> int:
+	return amount
 
 
 ## The classic knockback: away from the hit, 0.4 blocks per tick and a hop.

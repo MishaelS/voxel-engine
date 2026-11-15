@@ -34,6 +34,10 @@ var _settings := {}       # key -> Setting
 var _categories := {}     # category -> Array[Setting] (registration order)
 var _values := {}         # key -> value
 var _loading := false
+## The texture packs on (TexturePacks), the first wins; picked in Options ->
+## Texture Packs, used from the next start. Saved by name.
+var texture_packs := PackedStringArray()
+const PACKS_SECTION := "texture_packs"
 
 
 func _ready() -> void:
@@ -76,8 +80,6 @@ func _register_all() -> void:
 	# Video Settings: the main list, laid out like the classic game (two
 	# columns: Graphics | Render Distance, Smooth Lighting | Max Framerate...).
 	define("video", Setting.choice("graphics", "Graphics", PackedStringArray(["Fast", "Fancy"]), 1))
-	# Texture packs (TexturePacks): picked on their own screen, used from the next start.
-	define("texture_packs", Setting.choice("texture_pack", "Texture Pack", TexturePacks.choices(), 0))
 	# Up to 16 chunks the real ones; further (up to 32) the far terrain beyond
 	# 16 (FarTerrain).
 	define("video", Setting.range_of("render_distance", "Render Distance", 2, 32, 6) \
@@ -223,6 +225,7 @@ func load_settings() -> void:
 		for category in ["records", "weather", "blocks", "hostile", "friendly", "players", "ambient"]:
 			set_value(category + "_volume", level)
 		set_value("sound_volume", 100)
+	texture_packs = packs_in(config)
 	KeyBindings.load_from(config)
 	_loading = false
 
@@ -231,8 +234,25 @@ func save_settings() -> void:
 	var config := ConfigFile.new()
 	for key: String in _settings:
 		config.set_value(SECTION, key, _values[key])
+	config.set_value(PACKS_SECTION, "on", Array(texture_packs))
 	KeyBindings.save_to(config)
 	config.save(PATH)
+
+
+## The texture packs on in a settings file; from the one-pack setting of
+## before (an index into the packs there were: Default, then by name) too.
+static func packs_in(config: ConfigFile) -> PackedStringArray:
+	if config.has_section_key(PACKS_SECTION, "on"):
+		return PackedStringArray(config.get_value(PACKS_SECTION, "on", []))
+	var index := int(config.get_value(SECTION, "texture_pack", 0))
+	var choices := TexturePacks.choices()
+	return PackedStringArray([choices[index]]) if index > 0 and index < choices.size() else PackedStringArray()
+
+
+## Puts the texture packs on (first wins), from the next start.
+func set_texture_packs(list: PackedStringArray) -> void:
+	texture_packs = list.duplicate()
+	save_settings()
 
 
 # --- Window-level settings -----------------------------------------------------

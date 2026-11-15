@@ -532,28 +532,70 @@ func _choose_skin() -> void:
 	dialog.popup_centered_ratio(0.6)
 
 
-## Every texture pack with its picture and two lines; clicking one picks it
-## (used from the next start).
+## The texture packs: the ones on first (framed, numbered: the first one's
+## files win, then the next one's, then the game's), with arrows to move
+## them; then the others. Clicking a pack puts it on (on top) or off; the
+## game's own textures ("Default") are always under them. Used from the
+## next start.
 func _texture_pack_list() -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 2 * P)
-	var choices := TexturePacks.choices()
-	var picked: int = Settings.get_value("texture_pack")
-	for i in choices.size():
-		var pack := "" if i == 0 else choices[i]
-		var index := i
-		column.add_child(_pack_row(pack, i == picked, func() -> void:
-			Settings.set_value("texture_pack", index)
-			show_category("texture_packs")))
+	var on := Settings.texture_packs.duplicate()
+	var there := TexturePacks.names()
+	for pack in on.duplicate():
+		if not there.has(pack):
+			on.remove_at(on.find(pack)) # (taken out of the folder)
+	var change := func(list: PackedStringArray) -> void:
+		Settings.set_texture_packs(list)
+		show_category("texture_packs")
+	for i in on.size():
+		var pack := on[i]
+		var row := _pack_row(pack, true, func() -> void:
+			var list := on.duplicate()
+			list.remove_at(i)
+			change.call(list))
+		row.get_child(1).text = "%d. %s" % [i + 1, row.get_child(1).text]
+		var arrows := HBoxContainer.new()
+		arrows.anchor_left = 1.0
+		arrows.anchor_right = 1.0
+		arrows.anchor_top = 0.5
+		arrows.anchor_bottom = 0.5
+		arrows.offset_left = -(ROW_HEIGHT * 2 + 5 * P)
+		arrows.offset_right = -3 * P
+		arrows.offset_top = -ROW_HEIGHT / 2.0
+		arrows.offset_bottom = ROW_HEIGHT / 2.0
+		arrows.add_theme_constant_override("separation", 2 * P)
+		for step in [-1, 1]:
+			var to: int = i + step
+			var arrow := _make_button("▲" if step < 0 else "▼", func() -> void:
+				var list := on.duplicate()
+				list[i] = list[to]
+				list[to] = pack
+				change.call(list))
+			arrow.custom_minimum_size = Vector2(ROW_HEIGHT, ROW_HEIGHT)
+			arrow.disabled = to < 0 or to >= on.size()
+			arrow.tooltip_text = Lang.t("Higher: its files win") if step < 0 else Lang.t("Lower")
+			arrows.add_child(arrow)
+		row.add_child(arrows)
+		row.get_child(1).offset_right = -(ROW_HEIGHT * 2 + 7 * P)
+		column.add_child(row)
+	for pack in there:
+		if on.has(pack):
+			continue
+		column.add_child(_pack_row(pack, false, func() -> void:
+			var list := PackedStringArray([pack])
+			list.append_array(on)
+			change.call(list)))
+	column.add_child(_pack_row("", on.is_empty(), func() -> void: change.call(PackedStringArray())))
 	var note := Label.new()
-	note.text = "A pack is used from the next start. Put Beta 1.7.3 texture packs (.zip) into the pack folder."
+	note.text = "Click a pack to put it on or off; several can be on: the higher one's files win, the game's fill in the rest. Used from the next start. Beta 1.7.3 texture packs (.zip or a folder) go into the pack folder."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	note.add_theme_color_override("font_color", DIM_TEXT)
 	column.add_child(note)
 	column.add_child(_wide_button("Open Pack Folder", func() -> void:
-		DirAccess.make_dir_recursive_absolute(TexturePacks.DIR)
-		OS.shell_open(ProjectSettings.globalize_path(TexturePacks.DIR))))
+		DirAccess.make_dir_recursive_absolute(TexturePacks.folder)
+		OS.shell_open(ProjectSettings.globalize_path(TexturePacks.folder))))
 	return column
 
 
