@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.24] - 2026-11-15
+
 ### Added
 - Swimming sounds like Beta's: in water a splash every step's distance instead of a footstep, as loud as the stroke is fast, for the player and creatures.
 - Sound volumes by category like the game's (Options -> Audio): Master Volume, Music, Jukebox/Note Blocks, Weather, Blocks, Hostile Creatures, Friendly Creatures, Players, Ambient/Environment; the old Sound level moves to every category once, so nothing gets louder.
@@ -693,7 +695,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.23...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.24...HEAD
+[0.0.24]: https://github.com/MishaelS/voxel-engine/compare/v0.0.23...v0.0.24
 [0.0.23]: https://github.com/MishaelS/voxel-engine/compare/v0.0.22...v0.0.23
 [0.0.22]: https://github.com/MishaelS/voxel-engine/compare/v0.0.21...v0.0.22
 [0.0.21]: https://github.com/MishaelS/voxel-engine/compare/v0.0.20...v0.0.21
