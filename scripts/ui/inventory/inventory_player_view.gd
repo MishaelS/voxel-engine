@@ -91,7 +91,7 @@ func _update() -> void:
 	# (PlayerModel's own pieces: the held item, the parts, the armor.)
 	_model._update_held()
 	var parts: Dictionary = _model._model.parts
-	MobAnimation.pose_biped(parts, Time.get_ticks_msec() / 50.0, 0.0, 0.0, _model._held != null, false, 0.0, 0.0)
+	MobAnimation.pose_biped(parts, Time.get_ticks_msec() / 50.0, 0.0, 0.0, _model._held != null, 0.0, 0.0, 0.0)
 	var head := parts.head as Node3D
 	head.rotation = Vector3(tilt, -turn, 0)
 	if _model._held:

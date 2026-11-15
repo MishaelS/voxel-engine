@@ -13,10 +13,16 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Zombies and skeletons pick up armor for an empty slot, and zombies a sword or axe for an empty hand, lying where they stand (their box grown by a block sideways, like the player's), like the modern game's: worn and held like the player's, a weapon adds its damage over a fist to a zombie's hit, what they picked up always drops when they die (what they spawned with: 8.5%), and one that picked something up no longer despawns. Saved, and sent to network players as it changes.
+
+### Changed
+- Zombies and skeletons rest with their arms down (swinging as they walk; a skeleton holds its bow at its side like the player) and raise them straight ahead when they go after someone, smoothly; a skeleton's bow stands upright in front of it then.
+
 ## [0.0.25] - 2026-11-15
 
 ### Added
-- Zombies and skeletons may spawn in armor, like the modern game's: 3.75 / 7.5 / 11.25% of them on Easy / Normal / Hard, mostly leather or gold, rarely chainmail, iron or diamond, from the helmet down (each further piece stopping 1 in 4, on Hard 1 in 10). It is drawn like the player's (the same armor layers, now MobModels.armor_pieces for both), takes hits and wears out like the player's (Beta's points; a worn-out piece breaks), keeps the sun off with a helmet, is saved and sent to network players, and each piece drops 8.5% of the time when they die.
+- Zombies and skeletons may spawn in armor, like the modern game's: 3.75 / 7.5 / 11.25% of them on Easy / Normal / Hard, mostly leather or gold, rarely chainmail, iron or diamond, from the helmet down (each further piece stopping 1 in 4, on Hard 1 in 10). It spawns already worn (each piece has what is left of it like the modern game's dropped gear: random(1 + random(durability - 3)), mostly a quarter or less, never broken), is drawn like the player's (the same armor layers, now MobModels.armor_pieces for both), takes hits and wears out further like the player's, dropping as worn as it is (Beta's points; a worn-out piece breaks), keeps the sun off with a helmet, is saved and sent to network players, and each piece drops 8.5% of the time when they die.
 - Several texture packs at once (Options -> Texture Packs): click a pack to put it on or off, the arrows set the order; the higher pack's files win and the game's fill in the rest, so a pack can hold only a few files. The pack picked before stays on.
 - Texture packs can change more than Beta's files (README, "Texture pack layout"): sounds (`sounds/dig/stone1.ogg`..., Ogg, WAV or MP3; a group the pack has replaces the game's), background music (`music/`, the same name replaces a track, `music/dawn|day|night|menu/` for a time or the menus only), jukebox discs (`records/cat.ogg`), the title screen (`title/logo.png`, `title/intro.png`, `title/background.png`, a cube panorama `title/bg/panorama0..5.png`, `title/shade.png`, Beta's `title/splashes.txt`) and the creative inventory (`gui/creative.png`); Beta's `newsound/` and `streaming/` folders work too.
 - A pack's `misc/vignette.png` and `misc/water.png` (the picture over the screen under water) are used like Beta's.

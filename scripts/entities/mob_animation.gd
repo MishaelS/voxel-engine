@@ -58,9 +58,10 @@ static func flinch(hurt_ticks: int, alpha: float, length: int) -> float:
 
 ## Poses a two-legged body (zombie, skeleton, the player): `parts` the
 ## model's pivots, `t` age in ticks, `swing` / `amount` the walk cycle,
-## `holding` an item in the right hand, `arms_ahead` zombie-like arms.
+## `holding` an item in the right hand, `ahead` (0..1) how far the arms are
+## raised straight forward (zombies and skeletons after someone).
 static func pose_biped(parts: Dictionary, t: float, swing: float, amount: float, holding: bool,
-		arms_ahead: bool, jump: float, fall: float) -> void:
+		ahead: float, jump: float, fall: float) -> void:
 	var right_arm: Node3D = parts.get("right_arm")
 	var left_arm: Node3D = parts.get("left_arm")
 	var right_leg: Node3D = parts.get("right_leg")
@@ -77,24 +78,23 @@ static func pose_biped(parts: Dictionary, t: float, swing: float, amount: float,
 		left_leg.rotation.z -= 0.12 * fall
 	if right_arm == null or left_arm == null:
 		return
-	if arms_ahead:
-		# ModelZombie: both arms straight ahead, a little apart.
-		right_arm.rotation = Vector3(-PI / 2.0, 0.1, 0)
-		left_arm.rotation = Vector3(-PI / 2.0, -0.1, 0)
-	else:
-		right_arm.rotation = Vector3(cos(walk + PI) * amount, 0, 0)
-		left_arm.rotation = Vector3(cos(walk) * amount, 0, 0)
-		if holding:
-			right_arm.rotation.x = right_arm.rotation.x * 0.5 - PI / 10.0
+	# At rest the arms swing with the walk (the right one a little up with
+	# an item); ahead, like ModelZombie: both straight forward, a little
+	# apart.
+	var right_rest := Vector3(cos(walk + PI) * amount, 0, 0)
+	if holding:
+		right_rest.x = right_rest.x * 0.5 - PI / 10.0
+	var left_rest := Vector3(cos(walk) * amount, 0, 0)
+	right_arm.rotation = right_rest.lerp(Vector3(-PI / 2.0, 0.1, 0), ahead)
+	left_arm.rotation = left_rest.lerp(Vector3(-PI / 2.0, -0.1, 0), ahead)
 	right_arm.rotation.x += sway.x
 	right_arm.rotation.z += sway.y
 	left_arm.rotation.x -= sway.x
 	left_arm.rotation.z -= sway.y
 	# Up and out: a little when jumping, wide when falling.
 	var lift := jump * 0.25 + fall * 0.9
-	if not arms_ahead:
-		right_arm.rotation.x -= lift * 0.4
-		left_arm.rotation.x -= lift * 0.4
+	right_arm.rotation.x -= lift * 0.4 * (1.0 - ahead)
+	left_arm.rotation.x -= lift * 0.4 * (1.0 - ahead)
 	right_arm.rotation.z -= lift
 	left_arm.rotation.z += lift
 

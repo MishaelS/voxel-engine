@@ -132,7 +132,7 @@ func _process(delta: float) -> void:
 	if player.sleeping:
 		_pose_asleep(parts)
 	else:
-		MobAnimation.pose_biped(parts, t, _limb_swing, _limb_amount, _held != null, false, _jump, _fall)
+		MobAnimation.pose_biped(parts, t, _limb_swing, _limb_amount, _held != null, 0.0, _jump, _fall)
 		if player.vehicle:
 			# Sitting (a boat, a minecart, a pig), like the game's riding pose:
 			# the legs straight ahead and a little apart, the arms forward.

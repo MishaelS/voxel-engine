@@ -138,15 +138,6 @@ static func held_item(mob: String, item_id: int) -> MeshInstance3D:
 	# around x), blocks -> pixels.
 	var axes := Transform3D(Basis(Vector3(1, 0, 0), Vector3(0, -1, 0), Vector3(0, 0, -1)).scaled(Vector3.ONE * 16.0), Vector3.ZERO)
 	mesh.transform = axes * gl * picture
-	if Items.name_of(item_id) == "bow" and ARMS_FORWARD.has(mob):
-		# Held like the player's bow, from an arm straight forward
-		# (MobAnimation: turned -90 degrees about x), then rolled a little
-		# about the hand so it stands more upright in front of the creature.
-		var arm := Transform3D(Basis(Vector3.RIGHT, -PI / 2.0), Vector3.ZERO)
-		var hand := Vector3(0, 0, 10) # (the arm's end, from its pivot, in the model's axes)
-		var roll := Transform3D(Basis.IDENTITY, hand) * Transform3D(Basis(Vector3.BACK, deg_to_rad(BOW_ROLL)), Vector3.ZERO) \
-			* Transform3D(Basis.IDENTITY, -hand)
-		mesh.transform = arm.affine_inverse() * roll * arm * mesh.transform
 	return mesh
 
 
@@ -191,8 +182,18 @@ static func armor_pieces(built: Dictionary, armor: Inventory) -> Array[MeshInsta
 	return result
 
 
-## Creatures that hold their arms straight forward (MobAnimation).
-const ARMS_FORWARD := ["skeleton", "zombie"]
+## A held item's place when the arms are raised straight forward
+## (MobAnimation: turned -90 degrees about x): a bow is rolled a little
+## about the hand, so it stands upright in front of the creature; the rest
+## stay as they are on the arm.
+static func aimed_transform(item_id: int, held: Transform3D) -> Transform3D:
+	if Items.name_of(item_id) != "bow":
+		return held
+	var arm := Transform3D(Basis(Vector3.RIGHT, -PI / 2.0), Vector3.ZERO)
+	var hand := Vector3(0, 0, 10) # (the arm's end, from its pivot, in the model's axes)
+	var roll := Transform3D(Basis.IDENTITY, hand) * Transform3D(Basis(Vector3.BACK, deg_to_rad(BOW_ROLL)), Vector3.ZERO) \
+		* Transform3D(Basis.IDENTITY, -hand)
+	return arm.affine_inverse() * roll * arm * held
 ## How far their bow is rolled upright (degrees, about the hand).
 const BOW_ROLL := 30.0
 

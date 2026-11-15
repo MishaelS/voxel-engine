@@ -159,7 +159,7 @@ func _pose() -> void:
 	var turn := angle_difference(rotation.y, _body_yaw) if _body_yaw != INF else 0.0
 	_model.root.transform = Transform3D(Basis(Vector3.UP, PI + turn).scaled(Vector3.ONE * _scale), Vector3.ZERO)
 	var t := Time.get_ticks_msec() / 50.0
-	MobAnimation.pose_biped(parts, t, _limb_swing, _limb_amount, _held != null, false, 0.0, 0.0)
+	MobAnimation.pose_biped(parts, t, _limb_swing, _limb_amount, _held != null, 0.0, 0.0, 0.0)
 	var right_arm := parts.right_arm as Node3D
 	var left_arm := parts.left_arm as Node3D
 	if _flags & 2:

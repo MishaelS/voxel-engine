@@ -292,6 +292,25 @@ func _try_pickup(item: Dictionary) -> void:
 		_update_copies(item)
 
 
+## A creature picks up one item lying in `box` that `wants` (id -> bool)
+## takes (Mob: armor, weapons); returns {id, damage}, empty if none.
+func take_one(box: AABB, wants: Callable) -> Dictionary:
+	for i in _items.size():
+		var item := _items[i]
+		if item.picked >= 0 or item.delay > 0:
+			continue
+		if not box.grow(HALF).has_point(item.pos) or not wants.call(item.id):
+			continue
+		item.count -= 1
+		if item.count <= 0:
+			(item.node as Node).queue_free()
+			_items.remove_at(i)
+		else:
+			_update_copies(item)
+		return {"id": item.id, "damage": item.damage}
+	return {}
+
+
 ## Equal stacks lying close together become one.
 func _merge() -> void:
 	for a in _items.size():

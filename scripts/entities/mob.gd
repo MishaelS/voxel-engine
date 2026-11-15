@@ -231,6 +231,21 @@ var _held: MeshInstance3D
 var armor := Inventory.new(4)
 var _armor_meshes: Array[MeshInstance3D] = []
 var _armor_remainder := 0
+## What it holds in its right hand (a skeleton's bow, a weapon a zombie
+## picked up).
+var hand := Inventory.new(1)
+## Picked up from the ground (armor slots 0..3, the hand 4): always dropped
+## when it dies (what it spawned with: 8.5%).
+var _picked := PackedByteArray([0, 0, 0, 0, 0])
+## Picked something up: it no longer despawns (like the modern game's).
+var persistent := false
+## How far its arms are raised (0 at rest .. 1 after someone).
+var _aim := 0.0
+## Aiming on the host (a network client's copy: from its snapshots).
+var _aiming := false
+var _held_shown := -1
+var _held_rest := Transform3D.IDENTITY
+var _held_aim := Transform3D.IDENTITY
 
 
 func _ready() -> void:
@@ -238,10 +253,10 @@ func _ready() -> void:
 	step_height = 0.5
 	_model = MobModels.build(mob_type)
 	add_child(_model.root)
-	if mob_type == "skeleton":
-		# Skeletons hold their bow, like the game's.
-		_held = MobModels.held_item(mob_type, Items.id_of("bow"))
-		(_model.parts.right_arm as Node3D).add_child(_held)
+	if mob_type == "skeleton" and hand.is_empty():
+		hand.set_slot(0, Items.id_of("bow"), 1) # skeletons hold their bow, like the game's
+	hand.changed.connect(_update_held)
+	_update_held()
 	_apply_size()
 	health = max_health
 	_yaw = rotation.y
@@ -270,7 +285,8 @@ const ARMOR_DROP := 0.085
 ## game's setEquipmentBasedOnDifficulty: sometimes (more on harder
 ## difficulties) armor of one material - mostly leather or gold, rarely
 ## better (3 tries of 9.5% for each level up) - from the helmet down, each
-## further piece stopping there 1 in 4 (Hard: 1 in 10).
+## further piece stopping there 1 in 4 (Hard: 1 in 10), already worn
+## (worn_damage).
 func equip() -> void:
 	if not ARMORED.has(mob_type):
 		return
@@ -285,7 +301,79 @@ func equip() -> void:
 	for slot in 4:
 		if slot > 0 and randf() < stop:
 			break
-		armor.set_slot(slot, Items.id_of("%s_%s" % [ARMOR_LEVELS[mini(level, 4)], Items.ARMOR_PIECES[slot]]), 1)
+		var id := Items.id_of("%s_%s" % [ARMOR_LEVELS[mini(level, 4)], Items.ARMOR_PIECES[slot]])
+		armor.set_slot(slot, id, 1, worn_damage(Items.durability(id)))
+
+
+## How worn a piece a creature spawns with is: the modern game's drop
+## (what is left: random(1 + random(max(durability - 3, 1)))), mostly a
+## quarter or less, never broken; then hits wear it further and it drops
+## as it is.
+static func worn_damage(durability: int) -> int:
+	if durability <= 1:
+		return 0
+	var left := randi_range(0, randi_range(0, maxi(durability - 3, 1)))
+	return clampi(durability - left, 0, durability - 1)
+
+
+## Picks up armor for an empty slot and (zombies, an empty hand) a weapon
+## lying where it stands (its box grown by 1 block sideways, like the
+## player's), like the modern game's zombies and skeletons.
+const WEAPONS := ["sword", "axe"]
+
+
+func _pick_up_tick() -> void:
+	if not ARMORED.has(mob_type) or is_dead() or world.items == null:
+		return
+	var box := AABB(feet() - Vector3(half_width + 1.0, 0.0, half_width + 1.0), Vector3(half_width * 2.0 + 2.0, height, half_width * 2.0 + 2.0))
+	var taken: Dictionary = world.items.take_one(box, _wants)
+	if taken.is_empty():
+		return
+	var item := Items.get_type(taken.id)
+	if item and item.armor_slot >= 0:
+		armor.set_slot(item.armor_slot, taken.id, 1, taken.damage)
+		_picked[item.armor_slot] = 1
+	else:
+		hand.set_slot(0, taken.id, 1, taken.damage)
+		_picked[4] = 1
+	persistent = true
+	Sounds.play("random/pop", center(), 0.2, ((randf() - randf()) * 0.7 + 1.0) * 2.0)
+
+
+## Whether it takes this item now (into a slot that is free).
+func _wants(id: int) -> bool:
+	var item := Items.get_type(id)
+	if item == null:
+		return false
+	if item.armor_slot >= 0 and item.armor_slot < 4 and not Items.is_block(id):
+		return armor.count_at(item.armor_slot) <= 0
+	return mob_type == "zombie" and hand.is_empty() and WEAPONS.has(item.tool)
+
+
+## The item in its right hand drawn there; a bow is held like the
+## player's at rest and upright in front of it with the arms raised
+## (MobModels.aimed_transform).
+func _update_held() -> void:
+	if _model.is_empty():
+		return
+	var id := hand.id_at(0) if hand.count_at(0) > 0 else Blocks.AIR
+	if id == _held_shown:
+		return
+	_held_shown = id
+	if _held:
+		_held.queue_free()
+		_held = null
+	_held = MobModels.held_item(mob_type, id)
+	if _held:
+		_held_rest = _held.transform
+		_held_aim = MobModels.aimed_transform(id, _held_rest)
+		(_model.parts.right_arm as Node3D).add_child(_held)
+
+
+## Its melee hit: the creature's own plus the weapon's over a fist.
+func _melee_damage() -> int:
+	var bonus := Items.attack_damage(hand.id_at(0)) - 1 if hand.count_at(0) > 0 else 0
+	return spec.damage + bonus
 
 
 var _armor_shown := PackedInt32Array()
@@ -393,8 +481,10 @@ func _ai_tick() -> void:
 		return
 	_breeding_tick()
 	var player = _player()
-	if is_hostile() and _despawn(player):
+	if is_hostile() and not persistent and _despawn(player):
 		return
+	if age % 2 == 0:
+		_pick_up_tick()
 	if is_hostile() and Settings.get_value("difficulty") == 0:
 		removed = true # peaceful: no monsters
 		return
@@ -780,7 +870,7 @@ func _monster_tick(player) -> void:
 	_navigate(goal, spec.speed)
 	if mob_type != "creeper" and flat < half_width + 0.9 and absf(goal.y - _y) < height and _attack_cooldown == 0:
 		_attack_cooldown = ATTACK_COOLDOWN
-		target.damage(_scaled_damage(spec.damage))
+		target.damage(_scaled_damage(_melee_damage()))
 		target.knockback(center())
 		if _is_player(target):
 			guard_owner(self)
@@ -1350,9 +1440,12 @@ func _on_death() -> void:
 	if mob_type == "sheep" and not sheared:
 		world.items.spawn(Blocks.id_of(wool_color + "_wool"), 1, center(), Vector3(0, 0.2, 0))
 	for slot in armor.size():
-		if armor.count_at(slot) > 0 and randf() < ARMOR_DROP:
+		if armor.count_at(slot) > 0 and (_picked[slot] == 1 or randf() < ARMOR_DROP):
 			world.items.spawn(armor.id_at(slot), 1, center(), Vector3(randf_range(-0.1, 0.1), 0.2, randf_range(-0.1, 0.1)),
 				ItemEntities.PICKUP_DELAY, armor.damage_at(slot))
+	if hand.count_at(0) > 0 and _picked[4] == 1:
+		world.items.spawn(hand.id_at(0), 1, center(), Vector3(randf_range(-0.1, 0.1), 0.2, randf_range(-0.1, 0.1)),
+			ItemEntities.PICKUP_DELAY, hand.damage_at(0))
 
 
 
@@ -1402,8 +1495,13 @@ func _process(delta: float) -> void:
 	var parts: Dictionary = _model.parts
 	var biped := parts.has("right_arm") and parts.has("right_leg")
 	if biped:
-		MobAnimation.pose_biped(parts, t, _limb_swing, _limb_amount, _held != null,
-			mob_type == "zombie" or mob_type == "skeleton", _jump, _fall)
+		# Zombies and skeletons raise their arms when after someone, at rest
+		# they hang (and swing as they walk).
+		var after := (_aiming if puppet else (target != null and is_hostile())) and ARMORED.has(mob_type)
+		_aim = move_toward(_aim, 1.0 if after else 0.0, delta * 4.0)
+		MobAnimation.pose_biped(parts, t, _limb_swing, _limb_amount, _held != null, _aim if ARMORED.has(mob_type) else 0.0, _jump, _fall)
+		if _held:
+			_held.transform = _held_rest.interpolate_with(_held_aim, _aim)
 		if vehicle:
 			# Sitting in a boat or minecart: the legs straight ahead, a little apart.
 			for side: Array in [["right_leg", -1.0], ["left_leg", 1.0]]:
@@ -1510,7 +1608,11 @@ func _turn_head(node: Node3D) -> void:
 func net_state() -> Dictionary:
 	var state := super()
 	state.merge({"fuse": _fuse, "angry": angry, "sheared": sheared, "sitting": sitting, "saddled": saddled, "tamed": tamed,
-		"baby": is_baby(), "love": love_ticks > 0})
+		"baby": is_baby(), "love": love_ticks > 0, "aiming": target != null and is_hostile()})
+	if ARMORED.has(mob_type):
+		state["gear"] = PackedInt32Array([armor.id_at(0) if armor.count_at(0) > 0 else 0, armor.id_at(1) if armor.count_at(1) > 0 else 0,
+			armor.id_at(2) if armor.count_at(2) > 0 else 0, armor.id_at(3) if armor.count_at(3) > 0 else 0,
+			hand.id_at(0) if hand.count_at(0) > 0 else 0])
 	return state
 
 
@@ -1524,6 +1626,16 @@ func apply_net_state(at: Vector3, yaw: float, state: Dictionary) -> void:
 	sitting = bool(state.get("sitting", false))
 	saddled = bool(state.get("saddled", false))
 	tamed = bool(state.get("tamed", false))
+	_aiming = bool(state.get("aiming", false))
+	var gear: Variant = state.get("gear")
+	if gear is PackedInt32Array and (gear as PackedInt32Array).size() == 5:
+		# (what it picked up or wore out on the host)
+		for slot in 4:
+			var id: int = gear[slot]
+			if id != (armor.id_at(slot) if armor.count_at(slot) > 0 else 0):
+				armor.set_slot(slot, id if Items.exists(id) else Blocks.AIR, 1 if id != 0 and Items.exists(id) else 0)
+		if gear[4] != (hand.id_at(0) if hand.count_at(0) > 0 else 0):
+			hand.set_slot(0, gear[4] if Items.exists(gear[4]) else Blocks.AIR, 1 if gear[4] != 0 and Items.exists(gear[4]) else 0)
 	love_ticks = LOVE_TICKS if bool(state.get("love", false)) else 0
 	if bool(state.get("baby", false)) != is_baby():
 		baby_ticks = GROW_TICKS if not is_baby() else 0
@@ -1539,6 +1651,11 @@ func save_state() -> Dictionary:
 		"baby": baby_ticks, "love": love_ticks, "breed_cooldown": breed_cooldown})
 	if not armor.is_empty():
 		state["armor"] = armor.save_state()
+	if not hand.is_empty():
+		state["hand"] = hand.save_state()
+	if persistent:
+		state["persistent"] = true
+		state["picked"] = Array(_picked)
 	return state
 
 
@@ -1566,6 +1683,13 @@ func load_state(saved: Dictionary) -> void:
 	breed_cooldown = saved.get("breed_cooldown", 0)
 	if saved.has("armor") and saved.armor is Dictionary:
 		armor.load_state(saved.armor)
+	if saved.has("hand") and saved.hand is Dictionary:
+		hand.load_state(saved.hand)
+	persistent = bool(saved.get("persistent", false))
+	var picked: Variant = saved.get("picked")
+	if picked is Array and (picked as Array).size() == 5:
+		for i in 5:
+			_picked[i] = 1 if int(picked[i]) != 0 else 0
 	_update_wool()
 	_apply_size()
 	health = mini(saved.get("health", max_health), max_health)
