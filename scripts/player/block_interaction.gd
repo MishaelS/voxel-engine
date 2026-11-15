@@ -761,7 +761,7 @@ func _fish() -> void:
 ## the longer it was drawn (full after a second), the faster and harder
 ## the arrow. A barely drawn bow doesn't shoot.
 func _start_drawing() -> void:
-	if not player.is_creative() and player.inventory.find(Items.id_of("arrow")) < 0:
+	if not player.is_creative() and not Quiver.has_arrow(player.inventory):
 		return
 	_drawing = 0.0
 	player.bow_pull = 0.0
@@ -779,12 +779,9 @@ func _release_bow() -> void:
 	_place_delay = PLACE_DELAY_TICKS
 	if power < 0.1:
 		return
-	var arrow := Items.id_of("arrow")
 	if not player.is_creative():
-		var slot := player.inventory.find(arrow)
-		if slot < 0:
+		if not Quiver.take_arrow(player.inventory): # (a quiver's first, then loose ones)
 			return
-		player.inventory.take(slot)
 		player.inventory.wear(player.selected_slot)
 	var eye := player.eye_position()
 	var look := player.look_direction()

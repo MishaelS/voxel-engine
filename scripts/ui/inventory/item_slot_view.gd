@@ -81,6 +81,13 @@ func set_item(item_id: int, item_count: int, show_count: bool = true, item_damag
 		var left := 1.0 - float(item_damage) / durability
 		_bar.size.x = roundf(13.0 * left) * P
 		_bar.color = Color.from_hsv(left / 3.0, 1.0, 1.0)
+	elif Quiver.is_quiver(item_id) and item_count > 0 and item_damage > 0:
+		# How full a quiver is (its arrows), like the modern game's bundle.
+		var full := clampf(float(item_damage) / Quiver.CAPACITY, 0.0, 1.0)
+		_bar_back.visible = true
+		_bar.visible = true
+		_bar.size.x = maxf(roundf(13.0 * full), 1.0) * P
+		_bar.color = Color("7086ff")
 
 
 ## Re-fetches the icon (after the GUI scale changed).

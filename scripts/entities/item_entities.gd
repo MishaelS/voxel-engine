@@ -277,11 +277,16 @@ func _try_pickup(item: Dictionary) -> void:
 			or absf(position.z - feet.z) > Player.HALF_WIDTH + 1.0 + HALF \
 			or position.y + HALF < feet.y - 0.5 or position.y - HALF > feet.y + Player.HEIGHT + 0.5:
 		return
-	var room := player.inventory.room_for(item.id, item.damage)
+	var arrows: bool = item.id == Items.id_of("arrow")
+	var quiver_room := Quiver.room(player.inventory) if arrows else 0
+	var room := player.inventory.room_for(item.id, item.damage) + quiver_room
 	if room <= 0:
 		return
 	var taken := mini(room, item.count)
-	player.inventory.add(item.id, taken, item.damage)
+	# Arrows fill a quiver first (Quiver), the rest go in as usual.
+	var left := Quiver.store(player.inventory, taken) if arrows else taken
+	if left > 0:
+		player.inventory.add(item.id, left, item.damage)
 	Stats.picked_up(item.id)
 	# The classic pickup "pop", a little different every time.
 	Sounds.play("random/pop", null, 0.2, ((randf() - randf()) * 0.7 + 1.0) * 2.0)

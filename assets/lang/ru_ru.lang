@@ -1119,3 +1119,6 @@ Light: %d=Свет: %d
 Fuel: smelts %s items=Топливо: плавит %s предм.
 Durability: %d / %d=Прочность: %d / %d
 Stacks to %d=В стопке до %d
+Quiver=Колчан
+Arrows: %d / %d=Стрел: %d / %d
+Arrows go in with a click, out with a right click=Стрелы кладутся кликом, достаются правым кликом

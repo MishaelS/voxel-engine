@@ -166,9 +166,11 @@ func _try_pickup() -> void:
 	var player := world.player as Player
 	if player == null or player.dead or player.global_position.distance_to(Vector3(_x, _y, _z)) > 1.5:
 		return
-	if player.inventory.room_for(Items.id_of("arrow")) <= 0:
-		return
-	player.inventory.add(Items.id_of("arrow"), 1)
+	# (into a quiver first, if there is one with room)
+	if Quiver.store(player.inventory, 1) > 0:
+		if player.inventory.room_for(Items.id_of("arrow")) <= 0:
+			return
+		player.inventory.add(Items.id_of("arrow"), 1)
 	Sounds.play("random/pop", null, 0.2, ((randf() - randf()) * 0.7 + 1.0) * 2.0)
 	removed = true
 

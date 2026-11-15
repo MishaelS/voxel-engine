@@ -14,6 +14,9 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- A quiver (ours; Beta's items.png had its picture but no item): crafted from 2 string, 2 paper and 4 leather (string down the left, paper over leather), it holds up to 128 arrows. Arrows held over it go in with a click (a right click: one), a right click with nothing held takes out a stack, a quiver held and right-clicked on arrows takes them in; its tooltip tells how many it holds and a blue bar shows how full it is. The bow shoots from it before loose arrows, arrows picked up go into it first.
+
+### Added
 - Charged creepers like Beta 1.7.3's: lightning striking near a creeper hurts and burns it like any creature and charges it (onStruckByLightning). It glows like Beta's RenderCreeper (armor/power.png on the model, 1 pixel out where Beta's was 2, the picture sliding 0.01 a tick, at half color, added to what is behind) and blows up with power 6 instead of 3 (in dirt about 600 blocks instead of 120; in stone hardly more, as in Beta). Saved, and seen by network players.
 - Spider jockeys like Beta 1.7.3's (SpawnerAnimals.creatureSpecificInit): 1 naturally spawned spider in 100 comes with a skeleton riding it. The skeleton sits on its back like Beta's (the spider's height x 0.75 - 0.5 above its feet, legs forward), the spider walks after the player and the skeleton shoots from it; when the spider dies the skeleton gets off. Saved as one, seen by network players riding.
 

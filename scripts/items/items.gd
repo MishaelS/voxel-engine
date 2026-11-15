@@ -116,6 +116,8 @@ static func _register_all() -> bool:
 	register(ItemType.make("chest_minecart", 151).stack(1))
 	register(ItemType.make("furnace_minecart", 167).stack(1))
 	register(ItemType.make("boat", 136).stack(1).set_fuel(1200))
+	# Ours, registered last (item numbers follow this order: saves keep them).
+	register(ItemType.make("quiver", 38).stack(1)) # (Beta's unused picture: Quiver)
 	return true
 
 

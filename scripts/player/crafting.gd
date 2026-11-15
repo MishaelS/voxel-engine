@@ -56,6 +56,8 @@ static func _build_recipes() -> Array:
 		{"pattern": ["SS", "SS"], "keys": {"S": "sand"}, "result": "sandstone", "count": 1},
 		{"pattern": ["SS", "SS"], "keys": {"S": "snowball"}, "result": "snow", "count": 1},
 		{"pattern": ["SS", "SS"], "keys": {"S": "string"}, "result": "white_wool", "count": 1},
+		# Ours: the quiver (2 string, 2 paper, 4 leather).
+		{"pattern": ["SPP", "SLL", " LL"], "keys": {"S": "string", "P": "paper", "L": "leather"}, "result": "quiver", "count": 1},
 		{"pattern": ["C", "S"], "keys": {"C": ["coal", "charcoal"], "S": "stick"}, "result": "torch", "count": 4},
 		{"pattern": ["GG", "GG"], "keys": {"G": "glowstone_dust"}, "result": "glowstone", "count": 1},
 		{"pattern": ["P", "T"], "keys": {"P": "carved_pumpkin", "T": "torch"}, "result": "jack_o_lantern", "count": 1},

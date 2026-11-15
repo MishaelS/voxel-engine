@@ -889,8 +889,51 @@ func _click(slot: Dictionary, right: bool, shift: bool) -> void:
 		_:
 			if shift:
 				_quick_move(slot)
-			else:
+			elif not _click_quiver(slot, right):
 				_click_stack(slot, right)
+
+
+## A quiver (Quiver), like the modern game's bundle: arrows held over it go
+## in (left click: all that fit, right: one); a quiver held, right-clicked on
+## arrows, takes them in; right-clicking a quiver with nothing held takes
+## arrows out (a stack). Returns whether the click was the quiver's.
+func _click_quiver(slot: Dictionary, right: bool) -> bool:
+	if _inventory_of(slot) == null:
+		return false
+	var content := _content(slot)
+	var id: int = content[0]
+	var count: int = content[1]
+	var arrow := Items.id_of("arrow")
+	if Quiver.is_quiver(id) and count > 0:
+		var arrows := clampi(int(content[2]), 0, Quiver.CAPACITY)
+		if _held_count > 0 and _held_id == arrow:
+			var moved := mini(1 if right else _held_count, Quiver.CAPACITY - arrows)
+			if moved > 0:
+				_put(slot, id, 1, arrows + moved)
+				_held_count -= moved
+				if _held_count == 0:
+					_held_id = Blocks.AIR
+					_held_damage = 0
+				_refresh()
+				Sounds.play("random/pop", null, 0.2, 1.4)
+			return true
+		if _held_count == 0 and right and arrows > 0:
+			var taken := mini(Quiver.TAKE_OUT, arrows)
+			_held_id = arrow
+			_held_count = taken
+			_held_damage = 0
+			_put(slot, id, 1, arrows - taken)
+			Sounds.play("random/pop", null, 0.2, 1.0)
+			return true
+		return false
+	if right and _held_count == 1 and Quiver.is_quiver(_held_id) and id == arrow and count > 0:
+		var moved := mini(count, Quiver.CAPACITY - _held_damage)
+		if moved > 0:
+			_held_damage += moved
+			_put(slot, arrow, count - moved, 0)
+			Sounds.play("random/pop", null, 0.2, 1.4)
+		return true
+	return false
 
 
 ## The usual stack rules between the held stack and a slot.

@@ -21,6 +21,8 @@ const WORN_ON := ["When on Head:", "When on Body:", "When on Legs:", "When on Fe
 ## the left Ctrl is held.
 static func lines(id: int, damage: int, details: bool) -> Array:
 	var result := [[Items.display_name(id), NAME]]
+	if Quiver.is_quiver(id):
+		result.append([Lang.t("Arrows: %d / %d") % [clampi(damage, 0, Quiver.CAPACITY), Quiver.CAPACITY], HEADER])
 	var more := _details(id, damage)
 	if more.is_empty():
 		return result
@@ -63,6 +65,9 @@ static func _details(id: int, damage: int) -> Array:
 		if block == null:
 			result.append(["", PLAIN])
 		result.append([Lang.t("Fuel: smelts %s items") % _number(fuel / 200.0), HEADER])
+	if Quiver.is_quiver(id):
+		result.append(["", PLAIN])
+		result.append([Lang.t("Arrows go in with a click, out with a right click"), HEADER])
 	var durability := Items.durability(id)
 	if durability > 0:
 		result.append(["", PLAIN])
