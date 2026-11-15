@@ -72,6 +72,8 @@ func create(type: String) -> Entity:
 		return Mob.create(type)
 	if type == "arrow":
 		return Arrow.new()
+	if type == "snowball" or type == "egg":
+		return ThrownItem.create(type)
 	if type == "painting":
 		return Painting.new()
 	if type == "tnt":

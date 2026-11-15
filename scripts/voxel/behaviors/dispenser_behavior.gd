@@ -3,7 +3,8 @@ extends RefCounted
 ## Dispensers like Beta 1.7.3: a block facing the player when placed, with 9
 ## slots (right-click opens them). When power reaches it (a rising edge, 4
 ## ticks later) it throws out one item from a random filled slot through its
-## front: arrows fly out as arrows, everything else is thrown as an item;
+## front: arrows fly out as arrows, snowballs and eggs as snowballs and
+## eggs (ThrownItem), everything else is thrown as an item;
 ## smoke puffs out and it clicks. Empty, it only clicks.
 
 const DELAY := 4
@@ -38,7 +39,10 @@ static func scheduled_tick(world: VoxelWorld, pos: Vector3i) -> void:
 	var item := inventory.id_at(slot)
 	var damage := inventory.damage_at(slot)
 	inventory.take(slot)
-	if Items.name_of(item) == "arrow":
+	if Items.name_of(item) == "snowball" or Items.name_of(item) == "egg":
+		# Beta: shot out as snowballs and eggs (1.1 a tick, spread 6), not dropped.
+		ThrownItem.throw(world, Items.name_of(item), mouth - Vector3(0, 0.125, 0), Vector3(front) + Vector3(0, 0.1, 0), null, 1.1, 6.0)
+	elif Items.name_of(item) == "arrow":
 		var arrow := Arrow.shoot(world, mouth, mouth + Vector3(front) * 10.0 + Vector3(0, 1, 0), 1.1, 6.0, null)
 		arrow.velocity = (Vector3(front) + Vector3(0, 0.1, 0)).normalized() * 1.1 \
 			+ Vector3(randfn(0, 1), randfn(0, 1), randfn(0, 1)) * 0.0075 * 6.0

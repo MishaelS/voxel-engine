@@ -88,7 +88,7 @@ static func _register_all() -> bool:
 	register(ItemType.make("cocoa_beans", 126))
 	register(ItemType.make("golden_apple", 11).set_food(4, 1.2, 20))
 	register(ItemType.make("milk_bucket", 77).stack(1).set_container("bucket"))
-	register(ItemType.make("egg", 12).stack(16))
+	register(ItemType.make("egg", 12).stack(16).set_food(1, 0.0, 1)) # (ours: Beta's eggs were only thrown)
 	register(ItemType.make("porkchop", 87).set_food(3, 0.3, 3))
 	register(ItemType.make("cooked_porkchop", 88).set_food(8, 0.8, 8))
 	register(ItemType.make("leather", 103))

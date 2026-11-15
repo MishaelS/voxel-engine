@@ -57,6 +57,9 @@ var _breaking_pos := Vector3i(0, -1000, 0)
 var _break_delay := 0.0 # ticks
 var _drawing := -1.0 # ticks the bow has been drawn, -1 = not drawing
 var _eating := -1.0 # ticks eaten, -1 = not eating
+## Ticks of a press under which an egg is thrown, not eaten (a tap throws,
+## holding eats).
+const TAP_TICKS := 4.0
 var _place_delay := 0.0 # ticks
 var _tick_time := 0.0
 var _hit_ticks := 0
@@ -130,7 +133,11 @@ func _process(delta: float) -> void:
 		if using:
 			_continue_eating(ticks)
 		else:
-			_stop_eating() # let go too soon: not eaten
+			# Let go too soon: not eaten (an egg tapped is thrown instead).
+			var tapped := _eating < TAP_TICKS and THROWN.has(Items.name_of(player.held_block()))
+			_stop_eating()
+			if tapped:
+				_throw_projectile()
 	elif using and _place_delay <= 0.0:
 		_use()
 		_place_delay = PLACE_DELAY_TICKS
@@ -331,6 +338,9 @@ func _use() -> void:
 	if item == null:
 		if id != Blocks.AIR:
 			_place_block(id)
+		return
+	if THROWN.has(item.name) and not player.can_eat(id):
+		_throw_projectile() # snowballs; eggs when not hungry for one
 		return
 	if item.food > 0:
 		if player.can_eat(id):
@@ -862,6 +872,28 @@ func _continue_eating(ticks: float) -> void:
 		_finish_eating(id)
 		_stop_eating()
 		_place_delay = PLACE_DELAY_TICKS * 2
+
+
+## Items thrown with RMB (Beta's snowballs and eggs): one a click, again
+## every 4 ticks while held (eggs: a tap; holding eats one).
+const THROWN := ["snowball", "egg"]
+
+
+## Throws the snowball or egg in hand like Beta's: from the eyes a little
+## below and aside, along the view (ThrownItem); one fewer.
+func _throw_projectile() -> void:
+	var id := player.held_block()
+	var kind := Items.name_of(id)
+	if not THROWN.has(kind) or player.inventory.count_at(player.selected_slot) <= 0:
+		return
+	var look := player.look_direction()
+	var side := look.cross(Vector3.UP).normalized() if absf(look.y) < 0.99 else Vector3.RIGHT
+	var from := player.eye_position() - Vector3(0, 0.1, 0) + side * 0.16 + look * 0.3
+	ThrownItem.throw(world, kind, from - Vector3(0, 0.125, 0), look, player)
+	player.swing()
+	_place_delay = PLACE_DELAY_TICKS
+	if not player.is_creative():
+		player.inventory.take(player.selected_slot)
 
 
 func _stop_eating() -> void:

@@ -13,6 +13,11 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Item tooltips tell more with the left Ctrl held, like the modern game's (ItemInfo): the hit in hand and a tool's mining speed (green), armor and where it is worn (blue), how much food heals, how many items a fuel smelts, durability left, a block's hardness and light, the stack size and the inner name with its number. Without Ctrl the tooltip shows the name and a hint. (Beta has no attack speed: none is shown.)
+- Snowballs and eggs are thrown with the right button like Beta 1.7.3's (EntitySnowball, EntityEgg): one a click, again every 4 ticks while held, 1.5 blocks a tick along a falling curve; they break on the first block or creature in a puff of bits of their picture. A creature hit takes Beta's "0 damage" (it flinches red, is pushed back and turns on the thrower), a player nothing. An egg hatches a chick 1 time in 8 (then 1 in 32 four of them; chicks, like our breeding, Beta's were grown hens). Dispensers shoot them out as snowballs and eggs instead of dropping them. Seen by network players.
+- Eggs can be eaten (ours): holding the right button eats one like other food (half a heart, only when hurt); a tap still throws it, and so does a click at full health.
+
 ## [0.0.27] - 2026-11-15
 
 ### Changed

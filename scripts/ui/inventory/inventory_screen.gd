@@ -75,7 +75,10 @@ var _held_id := Blocks.AIR
 var _held_count := 0
 var _held_damage := 0
 var _tooltip: PanelContainer
-var _tooltip_label: Label
+var _tooltip_lines: VBoxContainer
+## The left Ctrl is held: the tooltip says what the item does (ItemInfo).
+var _details := false
+var _last_point := Vector2.ZERO
 var _craft_width := 2
 var _craft := Inventory.new(9)
 var _catalog := PackedInt32Array()
@@ -175,6 +178,7 @@ func _open_mode(mode: Mode) -> void:
 
 
 func close() -> void:
+	_details = false
 	if not _open:
 		return
 	if (_mode == Mode.CHEST or _mode == Mode.LARGE_CHEST) and not chest_lid:
@@ -228,6 +232,12 @@ func take_from_cursor(id: int, count: int) -> int:
 func _input(event: InputEvent) -> void:
 	if not _open:
 		return
+	if event is InputEventKey and (event as InputEventKey).keycode == KEY_CTRL and not event.echo:
+		# Only the left Ctrl, like the user asked (the right one stays free).
+		var key := event as InputEventKey
+		if key.location == KEY_LOCATION_LEFT or not key.pressed:
+			_details = key.pressed
+			_update_hover(_last_point)
 	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("inventory"):
 		close()
 		get_viewport().set_input_as_handled()
@@ -407,9 +417,10 @@ func _build() -> void:
 	_tooltip.add_theme_stylebox_override("panel", box)
 	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tooltip.visible = false
-	_tooltip_label = Label.new()
-	_tooltip_label.add_theme_color_override("font_color", Color.WHITE)
-	_tooltip.add_child(_tooltip_label)
+	_tooltip_lines = VBoxContainer.new()
+	_tooltip_lines.add_theme_constant_override("separation", 0)
+	_tooltip_lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip.add_child(_tooltip_lines)
 	add_child(_tooltip)
 
 
@@ -821,21 +832,42 @@ func _slot_at(point: Vector2) -> int:
 
 
 func _update_hover(point: Vector2) -> void:
+	_last_point = point
 	_held.position = point - Vector2(8, 8) * P
 	_hover = _slot_at(point)
 	var slot: Dictionary = _slots[_hover] if _hover >= 0 else {}
 	_highlight.visible = _hover >= 0
 	var id := Blocks.AIR
+	var damage := 0
 	if _hover >= 0:
 		_highlight.position = Vector2(slot.pos) * P
-		id = _content(slot)[0]
+		var content := _content(slot)
+		id = content[0]
+		damage = content[2]
 	_tooltip.visible = id != Blocks.AIR and _held_count == 0
 	if _tooltip.visible:
-		_tooltip_label.text = Items.display_name(id)
+		_fill_tooltip(ItemInfo.lines(id, damage, _details))
 		_tooltip.reset_size()
 		_tooltip.position = point + Vector2(12, -12) * P
 	# The held stack is drawn above everything.
 	move_child(_held, get_child_count() - 1)
+
+
+## The tooltip's lines ([text, color]), reusing its labels.
+func _fill_tooltip(lines: Array) -> void:
+	while _tooltip_lines.get_child_count() < lines.size():
+		var label := Label.new()
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_tooltip_lines.add_child(label)
+	for i in _tooltip_lines.get_child_count():
+		var label := _tooltip_lines.get_child(i) as Label
+		label.visible = i < lines.size()
+		if label.visible:
+			label.text = lines[i][0] if lines[i][0] != "" else " "
+			label.add_theme_color_override("font_color", lines[i][1])
+			# (an empty line is a short gap)
+			label.custom_minimum_size.y = 0.0
+			label.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 
 
 func _click(slot: Dictionary, right: bool, shift: bool) -> void:

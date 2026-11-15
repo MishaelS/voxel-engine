@@ -169,7 +169,7 @@ const SNAPSHOT_NEW := 24
 const SNAPSHOT_ITEMS := 200
 ## Entities a client may make (arrows it shoots, boats and carts it puts
 ## down, paintings it hangs, TNT it lights).
-const CLIENT_SPAWNS: Array[String] = ["arrow", "boat", "minecart", "chest_minecart", "furnace_minecart", "painting", "tnt"]
+const CLIENT_SPAWNS: Array[String] = ["arrow", "snowball", "egg", "boat", "minecart", "chest_minecart", "furnace_minecart", "painting", "tnt"]
 ## Seconds everyone must sleep before a dedicated server skips the night.
 const SLEEP_SECONDS := 5.0
 
@@ -2121,6 +2121,8 @@ func _client_spawn(state: Dictionary, extra: Dictionary) -> void:
 	var yaw: Variant = extra.get("yaw", 0.0)
 	if "_yaw" in entity and yaw is float and is_finite(yaw):
 		entity.set("_yaw", yaw)
+	if entity is ThrownItem:
+		(entity as ThrownItem).thrower = _avatar_of(peer)
 	if entity is Arrow:
 		(entity as Arrow).shooter = _avatar_of(peer)
 		var power: Variant = extra.get("power", 1.0)
