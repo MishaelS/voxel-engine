@@ -74,6 +74,8 @@ var particles: BlockParticles
 var entities: EntityManager
 ## The text on signs.
 var sign_texts: SignTexts
+## Chest lids opening and closing.
+var chest_lids: ChestLids
 ## The active world generator.
 var world_generator: WorldGenerator
 ## keepInventory game rule: the player keeps the items on death.
@@ -328,6 +330,10 @@ func _ready() -> void:
 	sign_texts.name = "SignTexts"
 	sign_texts.world = self
 	add_child(sign_texts)
+	chest_lids = ChestLids.new()
+	chest_lids.name = "ChestLids"
+	chest_lids.world = self
+	add_child(chest_lids)
 	generate()
 	TickLoop.add_listener(_tick, TickLoop.Phase.WORLD)
 
@@ -407,6 +413,8 @@ func generate() -> void:
 	items.clear()
 	entities.clear()
 	sign_texts.clear()
+	chest_lids.clear()
+	_hidden_chests.clear()
 	for entry: Dictionary in moving_blocks.values():
 		if is_instance_valid(entry.node):
 			(entry.node as Node).queue_free()
@@ -1600,6 +1608,51 @@ func _mark_dirty_around(coord: Vector3i, local: Vector3i) -> void:
 				_mark_dirty_chunk(coord + Vector3i(dx, dy, dz))
 
 
+## Chests drawn by ChestLids (their lids opening) instead of the chunk
+## meshes: chunk coord -> {cell: true}. Only the mesh jobs' copies of the
+## blocks change (to Blocks.hidden_chest), so saving, the network and
+## everything else see the chest as it is.
+var _hidden_chests := {}
+
+
+## Leaves the chest at `pos` out of the chunk meshes (or draws it again).
+func hide_chest(pos: Vector3i, hidden: bool) -> void:
+	var coord := chunk_coord_of(pos)
+	var cells: Dictionary = _hidden_chests.get(coord, {})
+	if hidden == cells.has(pos):
+		return
+	if hidden:
+		cells[pos] = true
+		_hidden_chests[coord] = cells
+	else:
+		cells.erase(pos)
+		if cells.is_empty():
+			_hidden_chests.erase(coord)
+	_mark_dirty_around(coord, pos - coord * ChunkData.SIZE)
+
+
+## A mesh job's blocks with the hidden chests swapped out (its own copies
+## of those chunks), the neighbor chunks' too for the border.
+func _hide_chests_in(job: MeshJob) -> void:
+	for chunk: Vector3i in _hidden_chests:
+		var offset := chunk - job.coord
+		if absi(offset.x) > 1 or absi(offset.y) > 1 or absi(offset.z) > 1:
+			continue
+		var blocks: PackedInt32Array = job.center if offset == Vector3i.ZERO else job.neighbors.get(offset, PackedInt32Array())
+		if blocks.is_empty():
+			continue
+		blocks = blocks.duplicate() # (packed arrays are shared: the chunk keeps its own)
+		for cell: Vector3i in _hidden_chests[chunk]:
+			var local := cell - chunk * ChunkData.SIZE
+			var i := ChunkData.index(local.x, local.y, local.z)
+			if ChestBehavior.is_chest(blocks[i]):
+				blocks[i] = Blocks.hidden_chest
+		if offset == Vector3i.ZERO:
+			job.center = blocks
+		else:
+			job.neighbors[offset] = blocks
+
+
 ## Marks a chunk to be meshed again (if loaded and not waiting for the
 ## player to come near).
 func _mark_dirty_chunk(neighbor: Vector3i) -> void:
@@ -2170,6 +2223,8 @@ func _start_mesh_jobs() -> void:
 						job.neighbors[offset] = neighbor.blocks if neighbor else PackedInt32Array()
 						job.neighbor_light[offset] = neighbor.light if neighbor else PackedByteArray()
 						job.neighbor_block_light[offset] = neighbor.block_light if neighbor else PackedByteArray()
+		if not _hidden_chests.is_empty():
+			_hide_chests_in(job)
 		job.task_id = WorkerThreadPool.add_task(job.run, false, "Chunk mesh")
 		_mesh_jobs[coord] = job
 

@@ -59,6 +59,16 @@ func _register_all() -> void:
 		.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0.0 else "%d%%" % int(v)))
 	define("general", Setting.range_of("sound_volume", "Sound", 0, 100, 100, 5) \
 		.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0.0 else "%d%%" % int(v)))
+	# The game's sound categories (Options -> Audio; Sounds' buses). "Sound"
+	# above stays for older settings files (no longer shown: its value moves
+	# to the categories once, load_settings).
+	define("general", Setting.range_of("master_volume", "Master Volume", 0, 100, 100, 5) \
+		.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0.0 else "%d%%" % int(v)))
+	for entry: Array in [["records", "Jukebox/Note Blocks"], ["weather", "Weather"], ["blocks", "Blocks"],
+			["hostile", "Hostile Creatures"], ["friendly", "Friendly Creatures"], ["players", "Players"],
+			["ambient", "Ambient/Environment"]]:
+		define("general", Setting.range_of(entry[0] + "_volume", entry[1], 0, 100, 100, 5) \
+			.format_with(func(v: float) -> String: return Lang.t("OFF") if v <= 0.0 else "%d%%" % int(v)))
 	# Caves and rooms echo (Player._update_acoustics); off: no rays, no reverb.
 	define("general", Setting.toggle("cave_echo", "Echo in Caves", true))
 	define("general", Setting.range_of("fov", "FOV", 30, 110, 75))
@@ -206,6 +216,13 @@ func load_settings() -> void:
 			if value is bool and setting.kind == Setting.Kind.CHOICE:
 				value = setting.choices.size() - 1 if value else 0 # was a toggle
 			set_value(key, value)
+	if not config.has_section_key(SECTION, "master_volume"):
+		# Settings from before the sound categories: the one "Sound" level
+		# goes to every category, so nothing gets louder.
+		var level: Variant = _values.get("sound_volume", 100)
+		for category in ["records", "weather", "blocks", "hostile", "friendly", "players", "ambient"]:
+			set_value(category + "_volume", level)
+		set_value("sound_volume", 100)
 	KeyBindings.load_from(config)
 	_loading = false
 

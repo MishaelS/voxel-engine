@@ -56,7 +56,7 @@ static func play_record(world: VoxelWorld, pos: Vector3i, track: String) -> void
 		return
 	var speaker := AudioStreamPlayer3D.new()
 	speaker.stream = stream
-	speaker.bus = "Music"
+	speaker.bus = "Sound: records" # (the Jukebox/Note Blocks volume, like the game's)
 	speaker.max_distance = RECORD_RANGE
 	speaker.unit_size = 8.0
 	world.add_child(speaker)

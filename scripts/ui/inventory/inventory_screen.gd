@@ -59,6 +59,9 @@ const DOUBLE_CLICK_MS := 250
 const HIGHLIGHT_COLOR := Color(1, 1, 1, 0.5)
 
 @export var player: Player
+## The window is on a chest block whose lid (ChestLids) plays the closing
+## sound as it shuts; other chests (a chest minecart's) close with it.
+var chest_lid := false
 
 var _open := false
 var _mode := Mode.INVENTORY
@@ -174,8 +177,9 @@ func _open_mode(mode: Mode) -> void:
 func close() -> void:
 	if not _open:
 		return
-	if _mode == Mode.CHEST or _mode == Mode.LARGE_CHEST:
+	if (_mode == Mode.CHEST or _mode == Mode.LARGE_CHEST) and not chest_lid:
 		Sounds.play("chest/close", null, 0.5, randf() * 0.1 + 0.9)
+	chest_lid = false
 	# Nothing is lost: the held stack and the crafting grid go back.
 	_give(_held_id, _held_count, _held_damage)
 	_held_id = Blocks.AIR

@@ -618,11 +618,15 @@ func _tick() -> void:
 	var moved := sqrt((_x - start_x) * (_x - start_x) + (_z - start_z) * (_z - start_z))
 	_walked += moved * 0.6
 	# A step sound every whole step (the classic distance), not while sneaking.
-	if on_ground and not sneaking and not in_water and _walked > _next_step:
+	if in_water and _walked > _next_step:
+		# Swimming: Beta's splash every step's distance.
+		_next_step = floorf(_walked) + 1.0
+		Sounds.play_swim(Vector3(_x, _y, _z), velocity, "players")
+	elif on_ground and not sneaking and not in_water and _walked > _next_step:
 		_next_step = floorf(_walked) + 1.0
 		var below := world.get_block(Vector3i(floori(_x), floori(_y - 0.2), floori(_z))) if world else Blocks.AIR
 		if below != Blocks.AIR:
-			Sounds.play_block("step", below, Vector3(_x, _y, _z))
+			Sounds.play_block("step", below, Vector3(_x, _y, _z), "players")
 	var bob_target := minf(0.1, sqrt(velocity.x * velocity.x + velocity.z * velocity.z))
 	if not on_ground or flying:
 		bob_target = 0.0

@@ -417,7 +417,8 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 			Net.send_use(pos)
 			return true
 		if shared_family in CONTAINER_USE:
-			_open_remote_container(pos, id)
+			if not ChestBehavior.blocked(world, pos):
+				_open_remote_container(pos, id)
 			return true
 		if shared_family in HOST_ONLY_USE:
 			Net.send_jukebox(pos)
@@ -430,6 +431,8 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 	if Blocks.get_type(id).name == "redstone_ore":
 		RedstoneOre.touch(world, pos)
 		return false
+	if ChestBehavior.blocked(world, pos):
+		return true # (the click is used up, like Beta's)
 	if Blocks.family_of(id) == "dungeon_chest":
 		DungeonBehavior.open_chest(world, pos)
 		Stats.grant("treasure")
@@ -445,13 +448,14 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 			Stats.grant("musician")
 		"chest", "chest_left", "chest_right":
 			var other: Variant = ChestBehavior.partner(world, pos)
-			Sounds.play("chest/open", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.5, randf() * 0.1 + 0.9)
 			if other == null:
 				_screen().open_container(world.block_entity(pos))
 			elif Blocks.chest_part_table[id] == ChestModel.Part.LEFT:
 				_screen().open_large_chest(world.block_entity(pos), world.block_entity(other))
 			else:
 				_screen().open_large_chest(world.block_entity(other), world.block_entity(pos))
+			if _screen().is_open():
+				world.chest_lids.hold([pos] if other == null else [pos, other], _screen()) # (and its sounds)
 		"furnace", "furnace_lit":
 			_screen().open_container(world.block_entity(pos))
 		"trapdoor", "trapdoor_open":
@@ -480,7 +484,6 @@ func _open_remote_container(pos: Vector3i, id: int) -> void:
 	if family == "dungeon_chest":
 		Stats.grant("treasure")
 	elif family.begins_with("chest"):
-		Sounds.play("chest/open", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.5, randf() * 0.1 + 0.9)
 		var other: Variant = ChestBehavior.partner(world, pos)
 		if other != null:
 			positions.assign([pos, other] if Blocks.chest_part_table[id] == ChestModel.Part.LEFT else [other, pos])

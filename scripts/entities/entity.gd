@@ -269,7 +269,10 @@ func _physics() -> void:
 func move(motion: Vector3) -> void:
 	var result := EntityPhysics.sweep(world, _x, _y, _z, half_width, height, motion.x, motion.y, motion.z, self)
 	var blocked := result[0] != motion.x or result[2] != motion.z
-	if blocked and step_height > 0.0 and (on_ground or motion.y < 0.0):
+	# Stepping up only from the ground or when landing this move (Beta's
+	# onGround || landed): stepping while falling past a wall's top let a
+	# creature's jump climb two blocks.
+	if blocked and step_height > 0.0 and (on_ground or (motion.y < 0.0 and result[1] != motion.y)):
 		var up := EntityPhysics.sweep(world, _x, _y, _z, half_width, height, 0.0, step_height, 0.0, self)
 		var side := EntityPhysics.sweep(world, _x, _y + up[1], _z, half_width, height, motion.x, 0.0, motion.z, self)
 		var down := EntityPhysics.sweep(world, _x + side[0], _y + up[1], _z + side[2], half_width, height,
@@ -306,6 +309,11 @@ func _footsteps(dx: float, dz: float) -> void:
 	_walked += sqrt(dx * dx + dz * dz) * 0.6
 	if _walked <= _next_step or world == null:
 		return
+	if in_water:
+		# Swimming: Beta's splash instead of a step.
+		_next_step = int(_walked) + 1
+		Sounds.play_swim(Vector3(_x, _y, _z), velocity, sound_category())
+		return
 	var cell := Vector3i(floori(_x), floori(_y - 0.2), floori(_z))
 	var below := world.get_block(cell)
 	if below == Blocks.AIR or Blocks.liquid_table[below] == 1:
@@ -313,7 +321,12 @@ func _footsteps(dx: float, dz: float) -> void:
 	_next_step = int(_walked) + 1
 	if Blocks.family_of(world.get_block(cell + Vector3i.UP)) == "snow_layer":
 		below = world.get_block(cell + Vector3i.UP)
-	Sounds.play_block("step", below, Vector3(_x, _y, _z))
+	Sounds.play_block("step", below, Vector3(_x, _y, _z), sound_category())
+
+
+## The sound category of this entity's steps and splashes (Sounds).
+func sound_category() -> String:
+	return "blocks"
 
 
 func _track_fall(start_y: float) -> void:

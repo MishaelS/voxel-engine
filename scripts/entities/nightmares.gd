@@ -10,11 +10,19 @@ extends RefCounted
 ##   climb to the first cell a monster may spawn in (dark like natural
 ##   spawning, MobSpawner._suits); a spider, zombie or skeleton there that
 ##   has a path to the sleeper ending next to the bed appears beside the bed
-##   instead, the sleeper wakes up and the night goes on. So a bed in the
-##   dark open is risky, one in a lit room is safe. Neither on Peaceful.
+##   instead, the sleeper wakes up and the night goes on. Neither on
+##   Peaceful.
+## Gentler than Beta (the game's own rule): only a bed in the dark (light
+## at most BED_DARK, block light and the night sky both counted) gets
+## nightmares, and only from spots really dark (at most SPOT_DARK, no
+## random leeway) - a lit room or the open night sky is safe. The kind is
+## picked once, evenly: if it finds no way, no nightmare (no falling back
+## to spiders, which fit everywhere).
 
-## Beta's nightSpawnEntities (no creepers).
-const TYPES: Array[String] = ["spider", "zombie", "skeleton"]
+## Any of these hostile creatures (Beta: no creepers; here they come too).
+const TYPES: Array[String] = ["zombie", "skeleton", "spider", "creeper"]
+const BED_DARK := 2
+const SPOT_DARK := 1
 const TRIES := 20
 ## The spot is at most this far along x and z (Beta: rand(32) - rand(32)).
 const SPREAD := 32
@@ -56,11 +64,14 @@ static func haunt(world: VoxelWorld, player: Node3D, bed: Vector3i) -> bool:
 		return false
 	var at: Vector3 = player.global_position
 	var origin := Vector3i(at.floor())
+	var darkness := MobSpawner.sky_darkness(world)
+	if maxi(world.get_combined_light(bed + Vector3i.UP, darkness), world.get_combined_light(origin, darkness)) > BED_DARK:
+		return false # a lit bed: sleep in peace
+	var mob_type: String = TYPES[randi_range(0, TYPES.size() - 1)]
 	for i in TRIES:
 		var x := origin.x + randi_range(0, SPREAD - 1) - randi_range(0, SPREAD - 1)
 		var z := origin.z + randi_range(0, SPREAD - 1) - randi_range(0, SPREAD - 1)
 		var top := clampi(origin.y + randi_range(0, SPREAD_UP - 1) - randi_range(0, SPREAD_UP - 1), 1, WorldGenerator.HEIGHT - 3)
-		var mob_type: String = TYPES[randi_range(0, TYPES.size() - 1)]
 		var spot := _spot(world, mob_type, Vector3i(x, top, z))
 		if spot == Vector3i.MAX:
 			continue
@@ -91,9 +102,10 @@ static func _spot(world: VoxelWorld, mob_type: String, from: Vector3i) -> Vector
 	while y > 2 and Blocks.collides_table[world.get_block(Vector3i(from.x, y - 1, from.z))] == 0:
 		y -= 1
 	var spawner := world.entities.spawner
+	var darkness := MobSpawner.sky_darkness(world)
 	while y < from.y + SPREAD_UP and y < WorldGenerator.HEIGHT - 2:
 		var cell := Vector3i(from.x, y, from.z)
-		if spawner._suits("monster", mob_type, cell, false):
+		if world.get_combined_light(cell, darkness) <= SPOT_DARK and spawner._suits("monster", mob_type, cell, false):
 			return cell
 		y += 1
 	return Vector3i.MAX

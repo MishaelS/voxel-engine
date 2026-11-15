@@ -45,7 +45,8 @@ const VIDEO_GROUPS := [
 	["performance", "Performance"], ["animations", "Animations"],
 ]
 ## Settings of the "general" store category shown under Audio instead.
-const AUDIO_KEYS := ["music_volume", "sound_volume", "cave_echo"]
+const AUDIO_KEYS := ["master_volume", "music_volume", "records_volume", "weather_volume", "blocks_volume",
+	"hostile_volume", "friendly_volume", "players_volume", "ambient_volume", "cave_echo"]
 
 ## The category shown last (opening the screen again shows it).
 static var _last_category := "general"
@@ -401,14 +402,16 @@ func _setting_row(setting: Setting) -> Control:
 	var control: Control
 	match setting.kind:
 		Setting.Kind.BOOL:
-			var switch := Switch.new()
-			switch.pressed.connect(func() -> void:
+			# One stone button saying ON / OFF (clearer than a sliding switch).
+			var toggle := Button.new()
+			toggle.focus_mode = Control.FOCUS_NONE
+			toggle.clip_text = true
+			toggle.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+			toggle.pressed.connect(func() -> void:
 				setting.set_value(not setting.get_value())
 				refresh())
-			_updaters.append(func() -> void:
-				switch.on = bool(setting.get_value())
-				switch.queue_redraw())
-			control = switch
+			_updaters.append(func() -> void: toggle.text = Lang.t("ON" if bool(setting.get_value()) else "OFF"))
+			control = toggle
 		Setting.Kind.CHOICE:
 			var button := Button.new()
 			button.focus_mode = Control.FOCUS_NONE
@@ -745,35 +748,6 @@ class SettingRow:
 		var line: Vector2 = get_meta("line", Vector2.ZERO)
 		if line.y - line.x > P * 2:
 			draw_rect(Rect2(line.x, floorf(size.y / 2.0), line.y - line.x, P), OptionsScreen.LINE_COLOR)
-
-
-## A two-state switch: a dark track with the "ON"/"OFF" button filling the
-## right (on) or left (off) half.
-class Switch:
-	extends Button
-
-	var on := false
-
-	func _init() -> void:
-		flat = true
-		focus_mode = Control.FOCUS_NONE
-		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-
-	func _draw() -> void:
-		var track := get_theme_stylebox("disabled", "Button")
-		draw_style_box(track, Rect2(Vector2.ZERO, size))
-		var half := Rect2(Vector2(size.x / 2.0 if on else 0.0, 0), Vector2(size.x / 2.0, size.y))
-		draw_style_box(get_theme_stylebox("hover" if is_hovered() else "normal", "Button"), half)
-		var text := tr("ON") if on else tr("OFF")
-		var font := get_theme_font("font", "Button")
-		var font_size := get_theme_font_size("font_size", "Button")
-		var text_size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
-		var origin := half.position + Vector2((half.size.x - text_size.x) / 2.0,
-			(half.size.y - text_size.y) / 2.0 + font.get_ascent(font_size))
-		origin = origin.floor()
-		var color := UiTheme.HOVER_TEXT_COLOR if is_hovered() else UiTheme.TEXT_COLOR
-		draw_string(font, origin + Vector2(UiTheme.PIXEL, UiTheme.PIXEL), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, UiTheme.SHADOW_COLOR)
-		draw_string(font, origin, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
 
 
 ## A group's header: a small triangle (down when open, right when folded)

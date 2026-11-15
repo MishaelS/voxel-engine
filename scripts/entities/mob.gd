@@ -208,6 +208,10 @@ func type_name() -> String:
 
 ## The undead (zombies, skeletons) fear the sun: they catch fire in
 ## daylight under the open sky, like the game's.
+func sound_category() -> String:
+	return "hostile" if is_hostile() else "friendly"
+
+
 ## Creatures walking make footstep sounds like Beta's (squids swim).
 func makes_steps() -> bool:
 	return not spec.get("water", false) and not puppet

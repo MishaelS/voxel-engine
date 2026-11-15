@@ -13,6 +13,20 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Swimming sounds like Beta's: in water a splash every step's distance instead of a footstep, as loud as the stroke is fast, for the player and creatures.
+- Sound volumes by category like the game's (Options -> Audio): Master Volume, Music, Jukebox/Note Blocks, Weather, Blocks, Hostile Creatures, Friendly Creatures, Players, Ambient/Environment; the old Sound level moves to every category once, so nothing gets louder.
+- Chests open like the modern game's while keeping Beta's look: the top of the cube swings back as a lid in half a second and shuts again when the last player closes it (the closing sound when it shuts), a large chest's two halves as one lid, black inside; every player in a network game sees it. A chest with a solid block on top doesn't open, like Beta's.
+
+### Fixed
+- The rear of cows, pigs and sheep was upside down: the bottom face of a model box now lies the same way as the top one, like the game's ModelBox.
+- Zombies and other creatures could climb two blocks by catching a wall's top while falling from a jump: they step up only from the ground or when landing, like Beta.
+- Beds drawn like Beta's: the legs with the floor seen between them (the sides were filled in), the bottom raised onto the legs, no inner ends where the two halves meet.
+
+### Changed
+- On/off settings in Options are one stone button saying ON or OFF (like the other choices) instead of a sliding switch.
+- Nightmares only come to a bed in the dark (light 2 or less, torches and the night sky both counted: a lit room or the open night sky is safe) and from spots really dark (light 0-1); the monster is picked evenly from zombies, skeletons, spiders and creepers instead of nearly always spiders.
+
 ## [0.0.23] - 2026-11-14
 
 ### Added

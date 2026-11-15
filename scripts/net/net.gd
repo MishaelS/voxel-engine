@@ -628,6 +628,7 @@ func leave() -> void:
 	_waiting_changes.clear()
 	_pending_blocks.clear()
 	_viewers.clear()
+	_lids_sent = PackedInt32Array()
 	_open_containers.clear()
 	_container_slots.clear()
 	for list: Dictionary in [_addresses, _tags, _waiting_hello, _nonces, _counters, _strikes, _dropping, _moves,
@@ -1121,6 +1122,10 @@ func _process(delta: float) -> void:
 			if _container_timer <= 0.0:
 				_container_timer = CONTAINER_SECONDS
 				_send_container_changes()
+		_lid_timer -= delta
+		if _lid_timer <= 0.0:
+			_lid_timer = CONTAINER_SECONDS
+			_send_chest_lids()
 		if not _pending_blocks.is_empty():
 			_blocks_changed.rpc(_pending_blocks)
 			_pending_blocks = PackedInt32Array()
@@ -1786,6 +1791,8 @@ func _send_world_sync() -> void:
 	var weather := world.weather
 	_world_sync.rpc(world.clock.game_time, world.clock.day_time, weather.raining, weather.rain_strength,
 		weather.thundering, weather.thunder_strength)
+	if not _lids_sent.is_empty():
+		_chest_lids.rpc(_lids_sent) # (for players who joined since)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -2658,6 +2665,8 @@ func _open_for(peer: int, keys: Array) -> void:
 	for key: Variant in keys:
 		if _container_center(world, key).distance_to(avatar.target_position) > CONTAINER_REACH:
 			return
+		if key is Vector3i and ChestBehavior.blocked(world, key):
+			return
 		if key is Vector3i and Blocks.family_of(world.get_block(key)) == "dungeon_chest":
 			DungeonBehavior.open_chest(world, key) # its loot appears now
 		var entity := _container_at(world, key)
@@ -2698,6 +2707,8 @@ func _container_opened(states: Array) -> void:
 		screen.open_large_chest(entities[0], entities[1])
 	else:
 		screen.open_container(entities[0])
+	if screen.is_open() and _open_containers[0] is Vector3i and ChestBehavior.is_chest(world.get_block(_open_containers[0])):
+		world.chest_lids.hold(_open_containers.duplicate(), screen)
 	screen.closed.connect(_container_screen_closed, CONNECT_ONE_SHOT)
 
 
@@ -2826,6 +2837,42 @@ func _container_screen_closed() -> void:
 func _client_close() -> void:
 	if is_host():
 		_close_for(multiplayer.get_remote_sender_id())
+
+
+## Host: the chests the clients have open (ChestLids: their lids open).
+func viewed_chests() -> Array:
+	if not is_host():
+		return []
+	return _viewers.keys().filter(func(key: Variant) -> bool: return key is Vector3i)
+
+
+## Host: which chests are open (any player's), sent when it changes so
+## everyone sees their lids open (ChestLids).
+var _lids_sent := PackedInt32Array()
+var _lid_timer := 0.0
+
+
+func _send_chest_lids() -> void:
+	var world := _world()
+	if world == null:
+		return
+	var packed := PackedInt32Array()
+	for cell in world.chest_lids.open_cells():
+		packed.append_array(PackedInt32Array([cell.x, cell.y, cell.z]))
+	if packed != _lids_sent:
+		_lids_sent = packed
+		_chest_lids.rpc(packed)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _chest_lids(packed: PackedInt32Array) -> void:
+	var world := _world()
+	if world == null or packed.size() % 3 != 0:
+		return
+	var cells: Array[Vector3i] = []
+	for i in range(0, packed.size(), 3):
+		cells.append(Vector3i(packed[i], packed[i + 1], packed[i + 2]))
+	world.chest_lids.set_remote(cells)
 
 
 func _close_for(peer: int) -> void:

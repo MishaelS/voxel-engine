@@ -1088,3 +1088,9 @@ A slow connection only shows Bad connection in the corner: the game waits for it
 Create Server: a server for friends in the background, started from Multiplayer; or a dedicated server with the start-server files next to the game.=«Создать сервер»: сервер для друзей в фоне, запускается из «Сетевой игры»; или выделенный сервер через файлы start-server рядом с игрой.
 The settings and the log of the server Create Server starts.=Настройки и журнал сервера, который запускает «Создать сервер».
 Internet access: forward the ports, or upnp / public-address in server.properties=Доступ из интернета: пробросьте порты или задайте upnp / public-address в server.properties
+Master Volume=Общая громкость
+Jukebox/Note Blocks=Музыкальные блоки
+Weather=Погода
+Hostile Creatures=Враждебные существа
+Friendly Creatures=Дружелюбные существа
+Ambient/Environment=Окружение

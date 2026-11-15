@@ -89,6 +89,9 @@ static var light_emission_table := PackedByteArray()
 static var glowing_ids := PackedInt32Array()
 ## family -> [ids by facing] (or [id] for blocks without facing).
 static var _families := {}
+## The chest_hidden block's id (set when registering: declared before
+## _registered, whose initializer registers the blocks).
+static var hidden_chest := -1
 
 static var _registered := _register_all()
 
@@ -269,6 +272,16 @@ static func _register_all() -> bool:
 			for shape in range(1, StairsBehavior.SHAPES.size()):
 				for facing in 4:
 					register(_stairs(material[0], material[1], facing, upside_down, shape))
+	# What the chunk meshes draw in a chest's cell while ChestLids draws the
+	# chest opening (VoxelWorld.hide_chest): nothing, but opaque like the
+	# chest, so the faces and shade of the blocks around stay the same. Never
+	# in the world itself (appended: ids stay stable).
+	var hidden := BlockType.cube("chest_hidden", CHEST_TOP).set_hardness(-1).set_light_opacity(15) \
+		.set_drop("none").hidden_from_catalog()
+	hidden.shape = BlockType.Shape.MODEL
+	hidden.model = BlockModel.register([])
+	hidden_chest = register(hidden)
+	is_opaque_table[hidden_chest] = 1 # (models count as see-through)
 	_set_flammability()
 	return true
 
@@ -1285,28 +1298,34 @@ static func _liquid(block_name: String, level: int, family: String = "water") ->
 ## Half of a bed (9/16 high): the foot or the head, facing from foot to head.
 ## Textures like the classic game: the bed runs along the textures' u axis
 ## with the head toward +u, so faces are turned / mirrored to match.
+## A bed half like Beta's RenderBlocks.renderBlockBed: 9/16 high, its sides
+## drawn with their legs (cutout: see-through between the legs), its bottom
+## the planks raised 3/16 onto the legs, and the two ends where the halves
+## meet left out. Modeled facing south (the head toward +Z), turned for
+## `facing` like the other models.
 static func _bed(part: String, facing: int) -> BlockType:
 	var head := part == "head"
 	var block := BlockType.cube("bed_%s_%s" % [part, FACING_NAMES[facing]], 4).set_height(0.5625) \
-		.set_hardness(0.2).set_item("bed").set_cull_self().hidden_from_catalog()
+		.set_hardness(0.2).set_item("bed").set_layer(Layer.CUTOUT).hidden_from_catalog()
 	block.family = "bed_" + part
 	block.facing = facing
-	var direction := FACING_DIRECTIONS[facing]
-	block.tiles[0] = 135 if head else 134
-	# Top face: u runs along +X; quarter turns make it run along the facing.
-	block.uv_modes[0] = [3, 2, 1, 0][facing]
-	# u direction of each side face (+X, -X, +Z, -Z faces).
-	var u_directions := {2: Vector3i(0, 0, -1), 3: Vector3i(0, 0, 1), 4: Vector3i(1, 0, 0), 5: Vector3i(-1, 0, 0)}
-	for face in range(2, 6):
-		var normal: Vector3i = ChunkMesher.FACE_OFFSETS[face]
-		if normal == direction:
-			block.tiles[face] = 152 # the head end
-		elif normal == -direction:
-			block.tiles[face] = 149 # the foot end
-		else:
-			block.tiles[face] = 151 if head else 150
-			if u_directions[face] != direction:
-				block.uv_modes[face] = 4
+	block.shape = BlockType.Shape.MODEL
+	var side := 151 if head else 150
+	var faces := {
+		BlockModel.UP: {"layer": 135 if head else 134, "uv_turn": 3},
+		# u runs along +Z on the west side (head-ward): as drawn; the east side mirrored.
+		BlockModel.WEST: {"layer": side},
+		BlockModel.EAST: {"layer": side, "mirror_u": true},
+	}
+	if head:
+		faces[BlockModel.SOUTH] = {"layer": 152} # the head end (the foot half's side is inside)
+	else:
+		faces[BlockModel.NORTH] = {"layer": 149} # the foot end
+	block.model = BlockModel.register([
+		{"from": Vector3(0, 0, 0), "to": Vector3(16, 9, 16), "faces": faces},
+		# The bottom: the planks on the legs.
+		{"from": Vector3(0, 3, 0), "to": Vector3(16, 9, 16), "faces": {BlockModel.DOWN: {"layer": 4}}},
+	], facing)
 	return block
 
 

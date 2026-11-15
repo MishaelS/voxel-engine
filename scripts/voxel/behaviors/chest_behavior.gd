@@ -32,6 +32,18 @@ static func partner(world: VoxelWorld, pos: Vector3i) -> Variant:
 	return null
 
 
+## Like Beta's: a chest under an opaque block (a large chest: over either
+## half) doesn't open. False for blocks other than chests.
+static func blocked(world: VoxelWorld, pos: Vector3i) -> bool:
+	var id := world.get_block(pos)
+	if not is_chest(id) and Blocks.family_of(id) != "dungeon_chest":
+		return false
+	if Blocks.is_opaque_table[world.get_block(pos + Vector3i.UP)] == 1:
+		return true
+	var other: Variant = partner(world, pos)
+	return other != null and Blocks.is_opaque_table[world.get_block((other as Vector3i) + Vector3i.UP)] == 1
+
+
 ## The chest to place at `pos` facing `facing`: half of a large chest when a
 ## single chest facing the same way is beside it (that one becomes the
 ## other half), else a single chest.

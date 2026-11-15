@@ -279,9 +279,15 @@ static func _mesh(mob: String, part: Dictionary) -> ArrayMesh:
 		var corner_uvs := [Vector2(1, 0), Vector2(0, 0), Vector2(0, 1), Vector2(1, 1)] if mirror \
 			else [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
 		for k in 4:
+			var corner_uv: Vector2 = corner_uvs[k]
+			if face[1] == Vector3.DOWN:
+				# Like the game's ModelBox: the bottom square lies the same way as
+				# the top one (seen from below: flipped); the cow's, pig's and
+				# sheep's rear is this face of their turned body.
+				corner_uv.y = 1.0 - corner_uv.y
 			vertices.append(face[0][k])
 			normals.append(face[1])
-			uvs.append((rect.position + rect.size * corner_uvs[k]) / skin)
+			uvs.append((rect.position + rect.size * corner_uv) / skin)
 		indices.append_array([start, start + 1, start + 2, start, start + 2, start + 3])
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
