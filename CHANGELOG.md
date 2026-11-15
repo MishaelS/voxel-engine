@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.26] - 2026-11-15
+
 ### Added
 - Zombies and skeletons pick up armor for an empty slot, and zombies a sword or axe for an empty hand, lying where they stand (their box grown by a block sideways, like the player's), like the modern game's: worn and held like the player's, a weapon adds its damage over a fist to a zombie's hit, what they picked up always drops when they die (what they spawned with: 8.5%), and one that picked something up no longer despawns. Saved, and sent to network players as it changes.
 
@@ -720,7 +722,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.25...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.26...HEAD
+[0.0.26]: https://github.com/MishaelS/voxel-engine/compare/v0.0.25...v0.0.26
 [0.0.25]: https://github.com/MishaelS/voxel-engine/compare/v0.0.24...v0.0.25
 [0.0.24]: https://github.com/MishaelS/voxel-engine/compare/v0.0.23...v0.0.24
 [0.0.23]: https://github.com/MishaelS/voxel-engine/compare/v0.0.22...v0.0.23
