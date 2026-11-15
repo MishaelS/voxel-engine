@@ -33,6 +33,9 @@ const WOLF_WEIGHT := 2
 ## Most of a group (Beta's getMaxSpawnedInChunk).
 const GROUP := 4
 const WOLF_GROUP := 8
+## A spider spawns with a skeleton riding it 1 time in this many (Beta's
+## SpawnerAnimals.creatureSpecificInit: spider jockeys).
+const JOCKEY_CHANCE := 100
 
 var world: VoxelWorld
 var enabled := true
@@ -175,6 +178,8 @@ func _try_spawn(category: String, around: Vector3) -> bool:
 			mob.rotation.y = randf() * TAU
 			mob.set("_yaw", mob.rotation.y)
 			mob.set("_prev_yaw", mob.rotation.y)
+			if mob_type == "spider" and randi_range(0, JOCKEY_CHANCE - 1) == 0:
+				Mob.add_jockey(world, mob)
 			spawned += 1
 			if spawned >= most:
 				return true

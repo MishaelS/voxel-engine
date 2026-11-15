@@ -13,7 +13,7 @@ extends Entity
 ## they can see within 16 blocks: zombies and spiders hit, skeletons shoot
 ## arrows from a distance, creepers swell up and explode, slimes jump at
 ## you and split when they die. Zombies and skeletons burn in daylight;
-## spiders are calm in the light unless hurt. Monsters far from the player
+## spiders are calm in the light (above 11, the night taken off) unless hurt. Monsters far from the player
 ## disappear.
 ## All of them find their way on the block grid (Pathfinder: around walls
 ## and holes, up a block at a time, never into lava), walk with the entity
@@ -53,6 +53,8 @@ const SIGHT := 16.0
 const ATTACK_COOLDOWN := 20
 const CREEPER_FUSE := 30
 const CREEPER_POWER := 3.0
+## A charged creeper's (struck by lightning, Beta's getPowered).
+const CHARGED_CREEPER_POWER := 6.0
 ## Sheep wool colors (wool block names).
 const WOOL_COLORS := ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
 	"light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"]
@@ -115,6 +117,30 @@ var _path: Array[Vector3i] = []
 var _path_goal := Vector3i.MAX
 var _path_age := 0
 var _stuck := 0
+## A creeper struck by lightning (Beta's onStruckByLightning): it glows and
+## blows up twice as hard.
+var powered := false:
+	set(value):
+		if value != powered:
+			powered = value
+			_update_power()
+var _power_shell: Array[MeshInstance3D] = []
+
+
+## Lightning struck nearby (LightningBolt): a creeper is charged.
+func struck_by_lightning() -> void:
+	if mob_type == "creeper":
+		powered = true
+
+
+func _update_power() -> void:
+	for mesh in _power_shell:
+		mesh.queue_free()
+	_power_shell.clear()
+	if powered and not _model.is_empty():
+		_power_shell = MobModels.power_shell(_model, MobModels.power_material())
+
+
 ## Who hurt it last (a creeper shot by a skeleton drops a disc) and from
 ## where (animals run away from there).
 var _last_attacker: Node3D
@@ -257,6 +283,7 @@ func _ready() -> void:
 		hand.set_slot(0, Items.id_of("bow"), 1) # skeletons hold their bow, like the game's
 	hand.changed.connect(_update_held)
 	_update_held()
+	_update_power()
 	_apply_size()
 	health = max_health
 	_yaw = rotation.y
@@ -269,6 +296,34 @@ func _ready() -> void:
 
 
 # --- Armor -----------------------------------------------------------------------------
+
+## A skeleton riding `spider`, like Beta's spider jockey: it sits on its
+## back (the spider walks, the skeleton shoots); dressed like any other.
+static func add_jockey(world: VoxelWorld, spider: Mob) -> Mob:
+	var skeleton := Mob.create("skeleton")
+	skeleton.equip()
+	world.entities.spawn(skeleton, spider.feet())
+	skeleton.rotation.y = spider.rotation.y
+	skeleton.set("_yaw", skeleton.rotation.y)
+	skeleton.set("_prev_yaw", skeleton.rotation.y)
+	skeleton.vehicle = spider
+	spider.rider = skeleton
+	return skeleton
+
+
+## Its eyes (Beta's getEyeHeight: 0.85 of its height), where creatures
+## that go after it look and aim.
+func eye_position() -> Vector3:
+	return feet() + Vector3(0, height * 0.85, 0)
+
+
+## A spider's rider sits like Beta's (EntitySpider.getMountedYOffset: its
+## height x 0.75 - 0.5 above its feet); the rest as any creature.
+func seat_height() -> float:
+	if mob_type == "spider":
+		return height * 0.75 - 0.5 + RIDER_HIPS
+	return super()
+
 
 ## Who may spawn in armor (like the modern game's zombies and skeletons).
 const ARMORED := ["zombie", "skeleton"]
@@ -843,15 +898,23 @@ func _sees(player) -> bool:
 ## within 16 blocks, like Beta's; less far while it sneaks), following it
 ## along paths even out of sight until twice as far; hit it when close
 ## (spiders leap). Burning undead go for shade first.
+## Spiders are calm where it is brighter than this (the night taken off),
+## like Beta's EntitySpider: its brightness under 0.5 is light 11 or less.
+const SPIDER_CALM_LIGHT := 11
+
+
 func _monster_tick(player) -> void:
-	if mob_type == "spider" and not angry and world.get_combined_light(Vector3i(center().floor())) > 7:
+	# Beta's spider: in the light it looks for nobody and now and then (1 in
+	# 100 ticks) forgets who it was after; hit, it stays angry.
+	var calm := mob_type == "spider" and not angry \
+		and world.get_combined_light(Vector3i(center().floor()), MobSpawner.sky_darkness(world)) > SPIDER_CALM_LIGHT
+	if calm and target != null and randi_range(0, 99) == 0:
 		target = null
-	else:
-		if target and _is_player(target) and (target.dead or target.is_creative() \
-				or (target.global_position as Vector3).distance_to(feet()) > SIGHT * 2.0):
-			target = null
-		if player and player != target and (target == null or _is_player(target)) and _notices(player):
-			target = player
+	if target and _is_player(target) and (target.dead or target.is_creative() \
+			or (target.global_position as Vector3).distance_to(feet()) > SIGHT * 2.0):
+		target = null
+	if not calm and player and player != target and (target == null or _is_player(target)) and _notices(player):
+		target = player
 	if _flee_sun():
 		return
 	if target == null:
@@ -894,7 +957,7 @@ func _creeper_tick(player) -> void:
 		_fuse += 1
 		if _fuse >= CREEPER_FUSE:
 			removed = true
-			Explosion.explode(world, center(), CREEPER_POWER, self)
+			Explosion.explode(world, center(), CHARGED_CREEPER_POWER if powered else CREEPER_POWER, self)
 	else:
 		_fuse = maxi(_fuse - 1, 0)
 
@@ -1571,6 +1634,9 @@ func _process(delta: float) -> void:
 			flash = fuse * 0.2
 	if _held:
 		FallingBlocks.light(_held, brightness)
+	if powered:
+		# (the glow's picture slides with the game's ticks, one material for all)
+		MobModels.power_material().set_shader_parameter("ticks", float(TickLoop.tick_count) + TickLoop.alpha)
 	for mesh: MeshInstance3D in _model.meshes:
 		mesh.set_instance_shader_parameter("brightness", 1.0 if mesh.has_meta("glow") else brightness)
 		mesh.set_instance_shader_parameter("hurt", 1.0 if hurt_ticks > 0 or is_dead() else 0.0)
@@ -1608,7 +1674,8 @@ func _turn_head(node: Node3D) -> void:
 func net_state() -> Dictionary:
 	var state := super()
 	state.merge({"fuse": _fuse, "angry": angry, "sheared": sheared, "sitting": sitting, "saddled": saddled, "tamed": tamed,
-		"baby": is_baby(), "love": love_ticks > 0, "aiming": target != null and is_hostile()})
+		"baby": is_baby(), "love": love_ticks > 0, "aiming": target != null and is_hostile(),
+		"mount": vehicle.net_id if vehicle is Mob and is_instance_valid(vehicle) else 0, "powered": powered})
 	if ARMORED.has(mob_type):
 		state["gear"] = PackedInt32Array([armor.id_at(0) if armor.count_at(0) > 0 else 0, armor.id_at(1) if armor.count_at(1) > 0 else 0,
 			armor.id_at(2) if armor.count_at(2) > 0 else 0, armor.id_at(3) if armor.count_at(3) > 0 else 0,
@@ -1627,6 +1694,15 @@ func apply_net_state(at: Vector3, yaw: float, state: Dictionary) -> void:
 	saddled = bool(state.get("saddled", false))
 	tamed = bool(state.get("tamed", false))
 	_aiming = bool(state.get("aiming", false))
+	powered = bool(state.get("powered", false)) and mob_type == "creeper"
+	var mount := int(state.get("mount", 0))
+	if mount == 0:
+		if vehicle is Mob:
+			vehicle = null
+	elif world and (vehicle == null or vehicle.net_id != mount):
+		var ridden := world.entities.by_net_id(mount)
+		if ridden is Mob:
+			vehicle = ridden # (drawn on its seat: Entity._process)
 	var gear: Variant = state.get("gear")
 	if gear is PackedInt32Array and (gear as PackedInt32Array).size() == 5:
 		# (what it picked up or wore out on the host)
@@ -1649,10 +1725,14 @@ func save_state() -> Dictionary:
 	var state := super()
 	state.merge({"sheared": sheared, "wool": wool_color, "size": size, "tamed": tamed, "sitting": sitting, "saddled": saddled, "no_ai": no_ai,
 		"baby": baby_ticks, "love": love_ticks, "breed_cooldown": breed_cooldown})
+	if rider is Mob and is_instance_valid(rider) and not rider.removed and not rider.is_dead() and rider.vehicle == self:
+		state["rider"] = rider.save_state() # (a spider jockey: saved as one)
 	if not armor.is_empty():
 		state["armor"] = armor.save_state()
 	if not hand.is_empty():
 		state["hand"] = hand.save_state()
+	if powered:
+		state["powered"] = true
 	if persistent:
 		state["persistent"] = true
 		state["picked"] = Array(_picked)
@@ -1685,7 +1765,17 @@ func load_state(saved: Dictionary) -> void:
 		armor.load_state(saved.armor)
 	if saved.has("hand") and saved.hand is Dictionary:
 		hand.load_state(saved.hand)
+	var ridden: Variant = saved.get("rider")
+	if ridden is Dictionary and not puppet and world and not world.remote and Mob.TYPES.has(str(ridden.get("type", ""))):
+		# Its rider back on its back (a network client's copy gets the
+		# host's rider on its own).
+		var back := Mob.create(str(ridden.type))
+		world.entities.spawn(back, feet())
+		back.load_state(ridden)
+		back.vehicle = self
+		rider = back
 	persistent = bool(saved.get("persistent", false))
+	powered = bool(saved.get("powered", false)) and mob_type == "creeper"
 	var picked: Variant = saved.get("picked")
 	if picked is Array and (picked as Array).size() == 5:
 		for i in 5:

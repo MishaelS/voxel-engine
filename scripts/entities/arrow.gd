@@ -107,6 +107,9 @@ func tick() -> void:
 	# Creatures on the way (not the shooter right after the shot).
 	var ignore := shooter as Entity if age < 5 else null
 	var hit := world.entities.raycast(start, velocity, minf(length, block_distance), ignore)
+	if not hit.is_empty() and shooter is Entity and is_instance_valid(shooter) and hit[0] == (shooter as Entity).vehicle:
+		# (a spider jockey's skeleton doesn't shoot its own spider)
+		hit = world.entities.raycast(start, velocity, minf(length, block_distance), hit[0])
 	var player := world.player as Player
 	if player and (shooter != player or age >= 5) and not player.dead:
 		var box := AABB(player.global_position - Vector3(Player.HALF_WIDTH, 0, Player.HALF_WIDTH),

@@ -26,6 +26,7 @@ const SKINS := "res://assets/textures/"
 const SKIN_FILES := {
 	"player": "mob/char.png", "pale_wolf": "mob/wolf.png", "saddle_pig": "mob/saddle.png",
 	"boat": "item/boat.png", "minecart": "item/cart.png",
+	"creeper_power": "armor/power.png",
 }
 
 
@@ -180,6 +181,42 @@ static func armor_pieces(built: Dictionary, armor: Inventory) -> Array[MeshInsta
 			(built.parts[piece[0]] as Node3D).add_child(instance)
 			result.append(instance)
 	return result
+
+
+## A charged creeper's glow (Beta's RenderCreeper): every part of its
+## model POWER_SHELL pixels bigger with armor/power.png sliding over it, added to what
+## is behind (shaders/creeper_power.gdshader; `material` shared, its ticks
+## set each frame). Returns the pieces made.
+static func power_shell(built: Dictionary, material: ShaderMaterial) -> Array[MeshInstance3D]:
+	var result: Array[MeshInstance3D] = []
+	for part: Dictionary in (built.spec as Dictionary).parts:
+		if not (built.parts as Dictionary).has(part.name):
+			continue
+		var shell := part.duplicate()
+		shell.texture = "creeper_power"
+		shell.inflate = float(part.get("inflate", 0.0)) + POWER_SHELL
+		var instance := MeshInstance3D.new()
+		instance.mesh = part_mesh("creeper", shell)
+		instance.material_override = material
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		(built.parts[part.name] as Node3D).add_child(instance)
+		result.append(instance)
+	return result
+
+
+## How far the glow stands out from the body (pixels; Beta's 2, ours a
+## little closer).
+const POWER_SHELL := 1.0
+static var _power_material: ShaderMaterial
+
+
+## The glow's material (one for every charged creeper).
+static func power_material() -> ShaderMaterial:
+	if _power_material == null:
+		_power_material = ShaderMaterial.new()
+		_power_material.shader = preload("res://shaders/creeper_power.gdshader")
+		_power_material.set_shader_parameter("skin", skin_texture("creeper_power"))
+	return _power_material
 
 
 ## A held item's place when the arms are raised straight forward

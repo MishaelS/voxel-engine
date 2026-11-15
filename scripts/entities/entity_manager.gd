@@ -163,6 +163,8 @@ func save_state() -> Array:
 	var result := []
 	for entity in _entities:
 		if not entity.is_dead() and not entity.removed:
+			if entity.vehicle is Mob and is_instance_valid(entity.vehicle) and not entity.vehicle.removed:
+				continue # (a spider jockey's skeleton: saved with its spider, Mob.save_state)
 			result.append(entity.save_state())
 	return result
 

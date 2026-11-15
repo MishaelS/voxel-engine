@@ -14,6 +14,15 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Charged creepers like Beta 1.7.3's: lightning striking near a creeper hurts and burns it like any creature and charges it (onStruckByLightning). It glows like Beta's RenderCreeper (armor/power.png on the model, 1 pixel out where Beta's was 2, the picture sliding 0.01 a tick, at half color, added to what is behind) and blows up with power 6 instead of 3 (in dirt about 600 blocks instead of 120; in stone hardly more, as in Beta). Saved, and seen by network players.
+- Spider jockeys like Beta 1.7.3's (SpawnerAnimals.creatureSpecificInit): 1 naturally spawned spider in 100 comes with a skeleton riding it. The skeleton sits on its back like Beta's (the spider's height x 0.75 - 0.5 above its feet, legs forward), the spider walks after the player and the skeleton shoots from it; when the spider dies the skeleton gets off. Saved as one, seen by network players riding.
+
+### Fixed
+- Spiders stayed calm outdoors at night: like Beta's they go after the player where the light is 11 or less with the night taken off (was 7, the night not counted), and in the light forget their target only now and then (1 in 100 ticks) instead of at once.
+- A creature going after another creature (hit by a skeleton's arrow) stopped the game's script: creatures have eyes to look and aim at (Beta's 0.85 of their height).
+- A skeleton's arrow no longer hits the spider it rides.
+
+### Added
 - Item tooltips tell more with the left Ctrl held, like the modern game's (ItemInfo): the hit in hand and a tool's mining speed (green), armor and where it is worn (blue), how much food heals, how many items a fuel smelts, durability left, a block's hardness and light, the stack size and the inner name with its number. Without Ctrl the tooltip shows the name and a hint. (Beta has no attack speed: none is shown.)
 - Snowballs and eggs are thrown with the right button like Beta 1.7.3's (EntitySnowball, EntityEgg): one a click, again every 4 ticks while held, 1.5 blocks a tick along a falling curve; they break on the first block or creature in a puff of bits of their picture. A creature hit takes Beta's "0 damage" (it flinches red, is pushed back and turns on the thrower), a player nothing. An egg hatches a chick 1 time in 8 (then 1 in 32 four of them; chicks, like our breeding, Beta's were grown hens). Dispensers shoot them out as snowballs and eggs instead of dropping them. Seen by network players.
 - Eggs can be eaten (ours): holding the right button eats one like other food (half a heart, only when hurt); a tap still throws it, and so does a click at full health.

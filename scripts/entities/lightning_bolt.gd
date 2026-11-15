@@ -125,6 +125,8 @@ func _hurt() -> void:
 		if entity != self and entity.can_be_hit():
 			entity.damage(5)
 			entity.fire_ticks = maxi(entity.fire_ticks, 160)
+			if entity is Mob:
+				(entity as Mob).struck_by_lightning() # (a creeper is charged)
 	var player := world.player as Player
 	if player and not player.dead and player.global_position.distance_to(middle) <= REACH + 1.0:
 		player.damage(5)

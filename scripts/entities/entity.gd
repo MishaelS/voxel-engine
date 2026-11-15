@@ -225,8 +225,8 @@ func tick() -> void:
 	if world and on_ground:
 		RedstoneComponents.step_on(world, Vector3i(floori(_x), floori(_y + 0.01), floori(_z)))
 	_ai_tick()
-	if vehicle and (not is_instance_valid(vehicle) or vehicle.removed):
-		vehicle = null # its boat or cart is gone
+	if vehicle and (not is_instance_valid(vehicle) or vehicle.removed or vehicle.is_dead()):
+		vehicle = null # its boat or cart is gone (or the spider it rode died)
 	if vehicle:
 		# Sitting: carried along (it still looks about and attacks).
 		var seat := _seat_feet(vehicle.feet())
