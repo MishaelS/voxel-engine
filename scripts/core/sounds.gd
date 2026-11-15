@@ -24,9 +24,8 @@ extends Node
 ##   the player twice a second, by how much open sea is around;
 ## - every menu button clicks;
 ## - music: a track from assets/music now and then (every 10-20 minutes,
-##   like the game), one for the time of day (MUSIC_TIMES: at dawn, by day,
-##   in the evening and at night; tracks not listed play any time; in the
-##   menus, as by day).
+##   like the game), one for the time of day (MUSIC_TIMES: at dawn, by day
+##   or at night; tracks not listed play any time; in the menus, as by day).
 ## Sounds are found by listing the folders (also in exported games, where
 ## the files are imported). The texture packs on (TexturePacks) add their
 ## own: a group a pack has (sounds/dig/stone1.ogg...) is all the pack's, a
@@ -48,10 +47,12 @@ var _voice_range := PackedFloat32Array()
 const MUSIC_PAUSE := Vector2(600.0, 1200.0)
 ## When tracks play (file name without the extension -> part of the day);
 ## the others any time.
+## The tracks in assets/music: calm1..3 are Beta's (Minecraft, Clark,
+## Sweden), musicTrack0 a remix of Door; musicTrack1..4 play any time.
 const MUSIC_TIMES := {
-	"the_dawn": "dawn",
-	"empty_pixel_world": "day", "early_exploration": "day",
-	"the_forest_glitches": "night", "deep_cavern_silence": "night",
+	"calm1": "dawn",
+	"calm2": "day",
+	"calm3": "night", "musicTrack0": "night",
 }
 ## Parts of the day in the world clock's ticks (0 = sunrise at 06:00, 6000
 ## noon, 12000 sunset, 18000 midnight): dawn from about 04:30 to 08:00, day

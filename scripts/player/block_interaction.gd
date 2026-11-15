@@ -29,7 +29,8 @@ const PLACE_DELAY_TICKS := 4
 ## without the right tool).
 const HAND_BREAK_FACTOR := 30.0
 const WRONG_TOOL_FACTOR := 100.0
-## Ticks of eating, like the classic game (32).
+## Ticks of eating, like the modern game (32: Beta ate at once).
+const EAT_TICKS := 32
 ## Atlas tiles of the 10 crack stages.
 const CRACK_TILE := 240
 ## Cracks are drawn on a slightly bigger cube to stay above the block.
@@ -55,6 +56,7 @@ var _crack_material: ShaderMaterial
 var _breaking_pos := Vector3i(0, -1000, 0)
 var _break_delay := 0.0 # ticks
 var _drawing := -1.0 # ticks the bow has been drawn, -1 = not drawing
+var _eating := -1.0 # ticks eaten, -1 = not eating
 var _place_delay := 0.0 # ticks
 var _tick_time := 0.0
 var _hit_ticks := 0
@@ -124,6 +126,11 @@ func _process(delta: float) -> void:
 			player.bow_pull = _drawing
 		else:
 			_release_bow()
+	elif _eating >= 0.0:
+		if using:
+			_continue_eating(ticks)
+		else:
+			_stop_eating() # let go too soon: not eaten
 	elif using and _place_delay <= 0.0:
 		_use()
 		_place_delay = PLACE_DELAY_TICKS
@@ -327,7 +334,10 @@ func _use() -> void:
 		return
 	if item.food > 0:
 		if player.can_eat(id):
-			_finish_eating(id) # Beta 1.7.3: eaten at once, heals right away
+			# Held down for EAT_TICKS like the modern game (Beta 1.7.3 ate at
+			# once): the food at the mouth, crumbs and chewing, then it heals.
+			_eating = 0.0
+			player.eating = 0.0
 		return
 	if item.places != "":
 		_place_block(Blocks.id_of(item.places)) # sugar cane, seeds, cake
@@ -830,11 +840,39 @@ func _empty_bucket(family: String) -> void:
 		player.inventory.set_slot(player.selected_slot, Items.id_of("bucket"), 1)
 
 
+## Chewing: crumbs of the food from the mouth and a bite sound every 4
+## ticks (the modern game's); eaten after EAT_TICKS. Another item in hand
+## stops it.
+func _continue_eating(ticks: float) -> void:
+	var id := player.held_block()
+	var item := Items.get_type(id)
+	if item == null or item.food <= 0 or not player.can_eat(id):
+		_stop_eating()
+		return
+	var before := int(_eating)
+	_eating += ticks
+	player.eating = _eating / EAT_TICKS
+	if int(_eating) / 4 != before / 4 and _eating > 6.0:
+		# Just in front of the mouth, below the middle of the view.
+		var look := player.look_direction()
+		var mouth := player.eye_position() + look * 0.6 - Vector3(0, 0.3 + randf() * 0.3, 0)
+		world.particles.item_crumbs(id, mouth, look, 5, 0.5)
+		Sounds.play("random/eat", null, 0.5 + 0.5 * randi_range(0, 1), randf_range(0.8, 1.2))
+	if _eating >= EAT_TICKS:
+		_finish_eating(id)
+		_stop_eating()
+		_place_delay = PLACE_DELAY_TICKS * 2
+
+
+func _stop_eating() -> void:
+	_eating = -1.0
+	player.eating = -1.0
+
+
 ## Eats the food in hand: its effect, one fewer, the bowl stays.
 func _finish_eating(id: int) -> void:
 	player.eat(id)
-	Sounds.play("random/eat", null, 0.5, randf_range(0.9, 1.0))
-	player.swing() # Beta eats at once with a swing
+	Sounds.play("random/burp", null, 0.5, randf_range(0.9, 1.0))
 	if player.is_creative():
 		return
 	player.inventory.take(player.selected_slot)

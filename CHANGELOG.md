@@ -13,6 +13,12 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- Eating takes holding the right button for 1.6 s (32 ticks) like the modern game instead of Beta's eating at once: the food comes up in front of the mouth and bobs as it is chewed, crumbs and a bite sound every 4 ticks, a burp when it is eaten and heals; letting go sooner eats nothing. Seen from the third person, the hand is at the mouth.
+
+### Fixed
+- Music by the time of day was set for tracks that are no longer there, so every track played at any time: calm1 plays at dawn, calm2 by day, calm3 and musicTrack0 (a remix of Door) at night, musicTrack1..4 any time.
+
 ## [0.0.26] - 2026-11-15
 
 ### Added

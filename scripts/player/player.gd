@@ -137,6 +137,8 @@ var _eye_asleep := false
 ## Ticks the bow has been drawn (-1 = not drawing), for the hand, the
 ## icon, the third-person arms and the view zooming in.
 var bow_pull := -1.0
+## Eating progress 0..1 (-1 = not eating), for the hand animation.
+var eating := -1.0
 var _bed := Vector3i.ZERO
 var _fire: TextureRect
 var _pumpkin_view: TextureRect

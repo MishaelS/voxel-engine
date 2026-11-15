@@ -196,6 +196,21 @@ func _pose() -> void:
 		* Basis(Vector3.BACK, deg_to_rad(-arc_sqrt * 20.0)) \
 		* Basis(Vector3.RIGHT, deg_to_rad(-arc_sqrt * 80.0))
 	transform = Transform3D(basis_3d.scaled(Vector3.ONE * SCALE), position_3d)
+	if player.eating >= 0.0:
+		# Eating like the modern game (transformEatFirstPerson): the food
+		# swings in front of the mouth, turned toward the face, and bobs
+		# while chewed.
+		var left := 1.0 - clampf(player.eating, 0.0, 1.0) # share of the time left
+		var ticks_left := left * BlockInteraction.EAT_TICKS + 1.0
+		var bob := 0.0 if left >= 0.8 else absf(cos(ticks_left / 4.0 * PI) * 0.1)
+		var f := 1.0 - pow(left, 27.0)
+		var eat := Transform3D(Basis.IDENTITY, Vector3(f * 0.6, -f * 0.5 + bob, 0.0)) \
+			* Transform3D(Basis(Vector3.UP, deg_to_rad(f * 90.0)), Vector3.ZERO) \
+			* Transform3D(Basis(Vector3.RIGHT, deg_to_rad(f * 10.0)), Vector3.ZERO) \
+			* Transform3D(Basis(Vector3.BACK, deg_to_rad(f * 30.0)), Vector3.ZERO)
+		var rest := Transform3D(Basis(Vector3.UP, deg_to_rad(45.0)).scaled(Vector3.ONE * SCALE),
+			REST + Vector3(0, -(1.0 - _equip) * 0.6, 0))
+		transform = eat * rest
 	if not ItemMeshes.is_flat(_shown):
 		# The block's mesh spans 0..1: center it on the pivot.
 		_mesh_instance.transform = Transform3D(Basis.IDENTITY, Vector3(-0.5, -0.5, -0.5))

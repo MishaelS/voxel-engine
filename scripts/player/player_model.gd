@@ -151,6 +151,10 @@ func _process(delta: float) -> void:
 			# reaching across to the string (the game's bow pose).
 			right_arm.rotation = Vector3(-PI / 2.0 - player.pitch(), 0.1, 0)
 			(parts.left_arm as Node3D).rotation = Vector3(-PI / 2.0 - player.pitch(), -0.5, 0)
+		if player.eating >= 0.0:
+			# Eating: the hand at the mouth, bobbing as it chews.
+			var chew := absf(cos(player.eating * BlockInteraction.EAT_TICKS / 4.0 * PI)) * 0.15
+			right_arm.rotation = Vector3(-1.35 + chew, -0.45, 0)
 		(parts.body as Node3D).rotation.x = 0.0
 		if player.sneaking:
 			# Beta's sneaking: the body bends forward, the arms come along, the
