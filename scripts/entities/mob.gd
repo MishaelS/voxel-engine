@@ -80,8 +80,20 @@ var saddled := false
 ## Stands still and lives on (the debug world's creatures, like the game's
 ## NoAI): no moving, attacking, burning, despawning or sounds.
 var no_ai := false
-var _squid_push := 0.0
+## Beta's EntitySquid: its swim cycle (squidRotation, 0..2 pi, a stroke),
+## the tentacles' spread, the speed of the push, its spin about itself and
+## its lean (degrees, like Beta's), each with last tick's for drawing.
+var _squid_cycle := 0.0
+var _squid_cycle_speed := 0.0
+var _squid_tentacles := 0.0
+var _squid_prev_tentacles := 0.0
+var _squid_speed := 0.0
+var _squid_spin_speed := 0.0
+var _squid_spin := 0.0
+var _squid_prev_spin := 0.0
 var _squid_pitch := 0.0
+var _squid_prev_pitch := 0.0
+var _squid_heading := Vector3.ZERO
 var angry := false
 
 var target: Node3D
@@ -309,6 +321,21 @@ static func add_jockey(world: VoxelWorld, spider: Mob) -> Mob:
 	skeleton.vehicle = spider
 	spider.rider = skeleton
 	return skeleton
+
+
+## Where it looks this frame (debug hitboxes): its head's facing, or its
+## body's for creatures without a head part.
+func look_direction() -> Vector3:
+	if _head == null and not _model.is_empty():
+		for part: Dictionary in _model.spec.parts:
+			if part.get("role", "") == "head" and _model.parts.has(part.name):
+				_head = _model.parts[part.name]
+	if _head and is_instance_valid(_head):
+		return (_head.global_basis * Vector3.BACK).normalized() # (models face +z)
+	return Vector3(sin(rotation.y), 0.0, cos(rotation.y))
+
+
+var _head: Node3D
 
 
 ## Its eyes (Beta's getEyeHeight: 0.85 of its height), where creatures
@@ -1108,26 +1135,66 @@ static func guard_owner(attacker: Node3D) -> void:
 ## Squid like Beta's: under water they swim in pushes (a new, mostly level
 ## direction now and then, the push fading), staying under the surface;
 ## the body leans into the way it goes. Out of water they flop.
+## Squids like Beta 1.7.3's EntitySquid, number for number: a stroke cycle
+## turns at 0.1..0.2 a tick (a new pace 1 in 10 strokes); in the first half
+## of it the tentacles open and close (sin(f^2 pi) x pi/4), at 3/4 of it a
+## push (speed 1) that then dies away (x 0.9 a tick) while the body spins
+## about itself; every tick 1 in 50 (or when it has none) it picks a new
+## way (0.2 sideways, -0.1..0.1 up or down) and moves that way x the speed,
+## no gravity or drag in water; its body turns toward where it goes and
+## leans along it (10% a tick). Out of water it falls, tentacles flapping,
+## and tips over onto its side.
 func _squid_tick() -> void:
+	_squid_prev_tentacles = _squid_tentacles
+	_squid_prev_spin = _squid_spin
+	_squid_prev_pitch = _squid_pitch
+	if _squid_cycle_speed == 0.0:
+		_squid_cycle_speed = 1.0 / (randf() + 1.0) * 0.2
+	_squid_cycle += _squid_cycle_speed
+	if _squid_cycle > TAU:
+		_squid_cycle -= TAU
+		if randi_range(0, 9) == 0:
+			_squid_cycle_speed = 1.0 / (randf() + 1.0) * 0.2
+	# (updatePlayerActionState: a new way now and then)
+	if randi_range(0, 49) == 0 or not in_water or _squid_heading == Vector3.ZERO:
+		var angle := randf() * TAU
+		_squid_heading = Vector3(cos(angle) * 0.2, -0.1 + randf() * 0.2, sin(angle) * 0.2)
 	if in_water:
-		_squid_push *= 0.9
-		if _wander == Vector3.INF or randi_range(0, 49) == 0 or horizontal_collision:
-			var angle := randf() * TAU
-			_wander = Vector3(cos(angle), randf_range(-0.1, 0.1), sin(angle)).normalized()
-		if _squid_push < 0.05 and randi_range(0, 19) == 0:
-			_squid_push = 1.0 # a new push of the tentacles
-		var push: Vector3 = _wander * float(spec.speed) * 2.0 * _squid_push
-		velocity.x = push.x
-		velocity.z = push.z
-		velocity.y = push.y + 0.02 # cancels the water's pull: no rising or sinking
-		# Stay under the surface.
-		if Blocks.liquid_table[world.get_block(Vector3i(floori(_x), floori(_y + height + 0.1), floori(_z)))] == 0:
-			velocity.y = minf(velocity.y, -0.02)
-		if Vector2(velocity.x, velocity.z).length_squared() > 1e-5:
-			_yaw = atan2(velocity.x, velocity.z)
+		if _squid_cycle < PI:
+			var f := _squid_cycle / PI
+			_squid_tentacles = sin(f * f * PI) * PI * 0.25
+			if f > 0.75:
+				_squid_speed = 1.0
+				_squid_spin_speed = 1.0
+			else:
+				_squid_spin_speed *= 0.8
+		else:
+			_squid_tentacles = 0.0
+			_squid_speed *= 0.9
+			_squid_spin_speed *= 0.99
+		velocity = _squid_heading * _squid_speed
+		var flat := Vector2(velocity.x, velocity.z).length()
+		if flat > 1e-6:
+			_yaw += angle_difference(_yaw, atan2(velocity.x, velocity.z)) * 0.1
+		_squid_spin += PI * _squid_spin_speed * 1.5 # (degrees a tick, like Beta's)
+		_squid_pitch += (-rad_to_deg(atan2(flat, velocity.y)) - _squid_pitch) * 0.1
 	else:
-		velocity.x *= 0.5
-		velocity.z *= 0.5
+		_squid_tentacles = absf(sin(_squid_cycle)) * PI * 0.25
+		velocity.x = 0.0
+		velocity.z = 0.0
+		velocity.y = (velocity.y - 0.08) * 0.98
+		_squid_pitch += (-90.0 - _squid_pitch) * 0.02
+
+
+## Beta's EntitySquid moves just by its motion (no gravity, drag or water
+## pull of its own: _squid_tick sets it); the rest as any creature.
+func _physics() -> void:
+	if mob_type != "squid":
+		super()
+		return
+	var start_y := _y
+	move(velocity)
+	_track_fall(start_y)
 
 
 ## The undead catch fire under the open sky by day (like Beta's); out of it
@@ -1584,7 +1651,8 @@ func _process(delta: float) -> void:
 				var flap := 0.0 if on_ground else sin(Time.get_ticks_msec() / 40.0) * 0.8 + 0.8
 				node.rotation.z = flap if part.role == "wing_left" else -flap
 			"tentacle":
-				node.rotation.x = sin(Time.get_ticks_msec() / 300.0) * 0.3
+				# Beta's ModelSquid: every tentacle opened by the stroke's angle.
+				node.rotation.x = lerpf(_squid_prev_tentacles, _squid_tentacles, TickLoop.alpha)
 			"tail":
 				# Wild wolves hold the tail low; tame ones high, lower when hurt
 				# (the classic health gauge).
@@ -1608,15 +1676,15 @@ func _process(delta: float) -> void:
 		_squish *= pow(0.6, delta * 20.0)
 		_model.root.scale = MobAnimation.slime_scale(_squish, size) * _base_scale
 	if mob_type == "squid":
-		# Leans into the way it swims (level when still), around its middle.
-		var moving := Vector2(velocity.x, velocity.z).length()
-		var target := atan2(moving, velocity.y) if moving > 0.005 or absf(velocity.y) > 0.005 else 0.0
-		if not in_water:
-			target = 0.0
-		_squid_pitch = lerpf(_squid_pitch, target, minf(delta * 3.0, 1.0))
+		# Beta's RenderSquid: leaned along its way (its pitch: -90 swimming
+		# level, 0 going up), then spun about its own length, around its
+		# middle; both between the last two ticks.
+		var alpha_t := TickLoop.alpha
+		var lean := deg_to_rad(-lerpf(_squid_prev_pitch, _squid_pitch, alpha_t))
+		var spin := deg_to_rad(lerpf(_squid_prev_spin, _squid_spin, alpha_t))
 		var middle := Vector3(0, height * 0.5, 0)
 		var size := float(MobModels.model("squid").get("scale", 1.0)) / 16.0
-		_model.root.transform = Transform3D(Basis(Vector3.RIGHT, _squid_pitch), middle) \
+		_model.root.transform = Transform3D(Basis(Vector3.RIGHT, lean) * Basis(Vector3.UP, spin), middle) \
 			* Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * size), -middle)
 	var brightness := world.brightness_at(center()) if world else 1.0
 	var flash := 0.0

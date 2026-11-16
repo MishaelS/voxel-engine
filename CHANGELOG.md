@@ -13,16 +13,14 @@ Sections:
 
 ## [Unreleased]
 
+### Fixed
+- Squids jerked as they swam and kept to one depth: they now swim like Beta 1.7.3's EntitySquid, number for number - a stroke cycle opening and closing the tentacles, a push at 3/4 of it that dies away, a new way 1 time in 50 ticks (up and down too, -0.1..0.1 against 0.2 sideways), no gravity or drag in water, the body turning toward its way and leaning along it a tenth a tick, spinning about itself while it pushes, drawn between ticks like RenderSquid; out of water they fall flapping and tip onto their side.
+
 ### Added
+- Debug hitboxes like the modern game's F3+B (debug builds only): a white box around every creature, cart, boat, arrow, dropped item and network player nearby, a red rectangle at a creature's eye height and a blue line 2 blocks long where its head looks; the chat says when they are shown or hidden. As in the modern game, F3 alone now turns the debug screen on or off when it is let go, so F3+B doesn't.
 - World pictures in Select World (ours, like the modern game's): each world shows a 64 x 64 picture on the left, the middle of the view taken a few seconds after a new world first shows and again every time the player leaves it (without the HUD, the hand or the menus), kept as icon.png in the world's folder; worlds without one show missing_world_icon.png.
-
-### Added
 - Rename World like Beta 1.7.3's: Select World has Rename next to Delete (both half wide, Cancel wide, like Beta's buttons); it opens a field with the world's name ready to type over, Rename (not while empty) and Cancel. Only the name in the world's level file changes, everything else in it and its folder stay.
-
-### Added
 - A quiver (ours; Beta's items.png had its picture but no item): crafted from 2 string, 2 paper and 4 leather (string down the left, paper over leather), it holds up to 128 arrows. Arrows held over it go in with a click (a right click: one), a right click with nothing held takes out a stack, a quiver held and right-clicked on arrows takes them in; its tooltip tells how many it holds and a blue bar shows how full it is. The bow shoots from it before loose arrows, arrows picked up go into it first.
-
-### Added
 - Charged creepers like Beta 1.7.3's: lightning striking near a creeper hurts and burns it like any creature and charges it (onStruckByLightning). It glows like Beta's RenderCreeper (armor/power.png on the model, 1 pixel out where Beta's was 2, the picture sliding 0.01 a tick, at half color, added to what is behind) and blows up with power 6 instead of 3 (in dirt about 600 blocks instead of 120; in stone hardly more, as in Beta). Saved, and seen by network players.
 - Spider jockeys like Beta 1.7.3's (SpawnerAnimals.creatureSpecificInit): 1 naturally spawned spider in 100 comes with a skeleton riding it. The skeleton sits on its back like Beta's (the spider's height x 0.75 - 0.5 above its feet, legs forward), the spider walks after the player and the skeleton shoots from it; when the spider dies the skeleton gets off. Saved as one, seen by network players riding.
 

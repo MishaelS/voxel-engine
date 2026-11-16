@@ -62,9 +62,40 @@ func _ready() -> void:
 	_right = _column(Control.PRESET_TOP_RIGHT, Control.GROW_DIRECTION_BEGIN)
 
 
+## F3 held: B (debug builds) shows or hides the hitboxes (HitboxView) like
+## the modern game's F3+B; F3 alone, let go, turns this screen on or off.
+var _f3_down := false
+var _f3_combo := false
+var _hitboxes: HitboxView
+
+
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_debug"):
-		Settings.set_value("debug_screen", not Settings.get_value("debug_screen"))
+		_f3_down = true
+		_f3_combo = false
+	elif event.is_action_released("toggle_debug"):
+		if _f3_down and not _f3_combo:
+			Settings.set_value("debug_screen", not Settings.get_value("debug_screen"))
+		_f3_down = false
+	elif _f3_down and event is InputEventKey and event.pressed and not event.echo \
+			and (event as InputEventKey).physical_keycode == KEY_B and OS.is_debug_build():
+		_f3_combo = true
+		_toggle_hitboxes()
+		get_viewport().set_input_as_handled()
+
+
+func _toggle_hitboxes() -> void:
+	if _hitboxes == null:
+		if world == null:
+			return
+		_hitboxes = HitboxView.new()
+		_hitboxes.name = "Hitboxes"
+		_hitboxes.world = world
+		world.add_child(_hitboxes)
+	_hitboxes.visible = not _hitboxes.visible
+	var player := camera.get_parent() as Player if camera else null
+	if player:
+		player.message.emit(Lang.t("Hitboxes: shown") if _hitboxes.visible else Lang.t("Hitboxes: hidden"))
 
 
 func _process(_delta: float) -> void:

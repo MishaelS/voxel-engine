@@ -316,6 +316,15 @@ func take_one(box: AABB, wants: Callable) -> Dictionary:
 	return {}
 
 
+## Where the items are drawn this frame (debug hitboxes, HitboxView).
+func positions() -> PackedVector3Array:
+	var result := PackedVector3Array()
+	for item in _items:
+		if item.picked < 0 and is_instance_valid(item.node):
+			result.append((item.node as Node3D).global_position)
+	return result
+
+
 ## Equal stacks lying close together become one.
 func _merge() -> void:
 	for a in _items.size():
