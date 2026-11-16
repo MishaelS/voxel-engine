@@ -13,6 +13,9 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- Statistics' Blocks and Items pages look like Beta 1.7.3's GuiStats (with our textures): every block or item there is, in their order, in a slot frame (gui/slot.png), every other row grey, with its numbers under three columns headed by slot.png's pictures - Blocks: crafted, used, mined; Items: broken, crafted, used - "-" where a column means nothing for it (no recipe, doesn't wear out, unbreakable), "0" where it just hasn't happened, its name in a tooltip; a click on a heading sorts by it (again: the other way, with slot.png's arrow). General, Blocks and Items are 100 pixels wide in a row with Done under them on the right, like Beta's.
+
 ### Fixed
 - Squids jerked as they swam and kept to one depth: they now swim like Beta 1.7.3's EntitySquid, number for number - a stroke cycle opening and closing the tentacles, a push at 3/4 of it that dies away, a new way 1 time in 50 ticks (up and down too, -0.1..0.1 against 0.2 sideways), no gravity or drag in water, the body turning toward its way and leaning along it a tenth a tick, spinning about itself while it pushes, drawn between ticks like RenderSquid; out of water they fall flapping and tip onto their side.
 
