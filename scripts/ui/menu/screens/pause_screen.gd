@@ -57,7 +57,7 @@ func _quit(game: Game) -> void:
 	var server := Net.local_server
 	var stop_text := Lang.t("Friends playing on it are sent away; the world is saved")
 	menu.push(ConfirmScreen.new("Stop the server too?", stop_text, "Stop Server", func() -> void:
-		game.quit_to_title() # (this player's state goes first)
+		await game.quit_to_title() # (this player's state goes first)
 		server.stop(),
 		"Keep Running", func() -> void: game.quit_to_title()))
 

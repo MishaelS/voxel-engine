@@ -14,6 +14,9 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- World pictures in Select World (ours, like the modern game's): each world shows a 64 x 64 picture on the left, the middle of the view taken a few seconds after a new world first shows and again every time the player leaves it (without the HUD, the hand or the menus), kept as icon.png in the world's folder; worlds without one show missing_world_icon.png.
+
+### Added
 - Rename World like Beta 1.7.3's: Select World has Rename next to Delete (both half wide, Cancel wide, like Beta's buttons); it opens a field with the world's name ready to type over, Rename (not while empty) and Cancel. Only the name in the world's level file changes, everything else in it and its folder stay.
 
 ### Added

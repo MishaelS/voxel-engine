@@ -46,6 +46,27 @@ func _ready() -> void:
 	var loading := LoadingScreen.new()
 	loading.world = world
 	add_child(loading)
+	loading.tree_exited.connect(_first_icon)
+
+
+## A new world's picture for Select World (WorldIcon), a few seconds after
+## it first shows.
+const ICON_DELAY := 3.0
+
+
+func _first_icon() -> void:
+	if not is_inside_tree() or WorldIcon.has_icon(WorldSave.current):
+		return
+	await get_tree().create_timer(ICON_DELAY).timeout
+	if is_inside_tree() and is_saved() and not WorldIcon.has_icon(world.save):
+		await _take_icon()
+
+
+## Takes the world's picture (WorldIcon) without the HUD, menus or hand.
+func _take_icon() -> void:
+	if not is_saved():
+		return
+	await WorldIcon.capture(get_tree(), world.save, player.held_item if player else null)
 
 
 ## The in-bed screen goes into the UI layer over the HUD (hotbar, health)
@@ -111,7 +132,15 @@ func save_game() -> void:
 	save.write_level()
 
 
+var _quitting := false
+
+
 func quit_to_title() -> void:
+	if _quitting:
+		return
+	_quitting = true
+	# The world's picture as the player leaves it (WorldIcon).
+	await _take_icon()
 	Stats.add("leave_game")
 	save_game()
 	Net.leave() # stops hosting / leaves the host's game

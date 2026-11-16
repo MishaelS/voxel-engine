@@ -4,6 +4,7 @@ extends MenuScreen
 ## played first) with name, folder, last played date and game mode. Click
 ## selects, double click plays. Buttons: Play Selected World, Create New
 ## World; Rename, Delete (asks first) and a wide Cancel (Beta's widths).
+## Each world shows its picture on the left (WorldIcon; ours).
 
 const ENTRY_WIDTH := 220 * UiTheme.PIXEL
 const ENTRY_HEIGHT := 36 * UiTheme.PIXEL
@@ -58,10 +59,22 @@ func _make_entry(save: WorldSave, index: int) -> PanelContainer:
 	var entry := PanelContainer.new()
 	entry.custom_minimum_size = Vector2(ENTRY_WIDTH, ENTRY_HEIGHT)
 	entry.mouse_filter = Control.MOUSE_FILTER_STOP
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4 * UiTheme.PIXEL)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	entry.add_child(row)
+	var icon := TextureRect.new()
+	icon.texture = WorldIcon.texture_of(save)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.custom_minimum_size = Vector2(32, 32) * UiTheme.PIXEL
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon)
 	var lines := VBoxContainer.new()
 	lines.add_theme_constant_override("separation", 0)
 	lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	entry.add_child(lines)
+	lines.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(lines)
 	var name_label := Label.new()
 	name_label.text = save.name
 	name_label.add_theme_color_override("font_color", Color.WHITE)
