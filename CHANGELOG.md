@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.28] - 2026-11-16
+
 ### Changed
 - Chests open without the lid animation again: a click opens the window at once with the chest's opening sound and the closing sound when it closes, like Beta 1.7.3's. A chest with a solid block on top still doesn't open.
 - Tall grass, ferns and dead bushes stand a little off the middle of their block like the modern game's (each place its own, the same every time): up to a quarter block sideways, grass and ferns also sunk up to 0.2 into the ground. Their hit box stays where it was.
@@ -759,7 +761,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.27...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.28...HEAD
+[0.0.28]: https://github.com/MishaelS/voxel-engine/compare/v0.0.27...v0.0.28
 [0.0.27]: https://github.com/MishaelS/voxel-engine/compare/v0.0.26...v0.0.27
 [0.0.26]: https://github.com/MishaelS/voxel-engine/compare/v0.0.25...v0.0.26
 [0.0.25]: https://github.com/MishaelS/voxel-engine/compare/v0.0.24...v0.0.25
