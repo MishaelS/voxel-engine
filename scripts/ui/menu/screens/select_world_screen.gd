@@ -3,7 +3,7 @@ extends MenuScreen
 ## "Select World", like the classic game: the saved worlds (most recently
 ## played first) with name, folder, last played date and game mode. Click
 ## selects, double click plays. Buttons: Play Selected World, Create New
-## World, Delete (asks first), Cancel.
+## World; Rename, Delete (asks first) and a wide Cancel (Beta's widths).
 
 const ENTRY_WIDTH := 220 * UiTheme.PIXEL
 const ENTRY_HEIGHT := 36 * UiTheme.PIXEL
@@ -16,7 +16,9 @@ var _worlds: Array[WorldSave] = []
 var _entries: Array[PanelContainer] = []
 var _selected := -1
 var _play: Button
+var _rename: Button
 var _delete: Button
+var _name_labels: Array[Label] = []
 
 
 func _init(play: Callable) -> void:
@@ -40,12 +42,15 @@ func build() -> void:
 		["Play Selected World", func() -> void: _play_selected()],
 		["Create New World", func() -> void: menu.push(CreateWorldScreen.new(on_play))],
 	])
+	var small := (UiTheme.HALF_BUTTON - COLUMN_GAP) / 2.0
 	var bottom := add_bottom_row([
-		["Delete", func() -> void: _ask_delete()],
+		["Rename", func() -> void: _rename_selected(), small],
+		["Delete", func() -> void: _ask_delete(), small],
 		["Cancel", func() -> void: menu.back()],
 	])
 	_play = top[0]
-	_delete = bottom[0]
+	_rename = bottom[0]
+	_delete = bottom[1]
 	_select(0 if not _worlds.is_empty() else -1)
 
 
@@ -61,6 +66,7 @@ func _make_entry(save: WorldSave, index: int) -> PanelContainer:
 	name_label.text = save.name
 	name_label.add_theme_color_override("font_color", Color.WHITE)
 	lines.add_child(name_label)
+	_name_labels.append(name_label)
 	var details := Label.new()
 	var played := Time.get_datetime_string_from_unix_time(save.last_played + _timezone_seconds(), true)
 	details.text = "%s (%s)" % [save.folder, played]
@@ -91,12 +97,21 @@ func _select(index: int) -> void:
 		box.set_content_margin_all(3 * UiTheme.PIXEL)
 		_entries[i].add_theme_stylebox_override("panel", box)
 	_play.disabled = index < 0
+	_rename.disabled = index < 0
 	_delete.disabled = index < 0
 
 
 func _play_selected() -> void:
 	if _selected >= 0:
 		on_play.call(_worlds[_selected])
+
+
+func _rename_selected() -> void:
+	if _selected < 0:
+		return
+	var index := _selected
+	menu.push(RenameWorldScreen.new(_worlds[index], func(new_name: String) -> void:
+		_name_labels[index].text = new_name))
 
 
 func _ask_delete() -> void:

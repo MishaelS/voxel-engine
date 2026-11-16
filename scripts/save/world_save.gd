@@ -140,6 +140,18 @@ func load_level() -> bool:
 	return true
 
 
+## A new name for the world (Select World -> Rename): only the name in its
+## level file changes, the rest of it (and its folder) stays as it is.
+func rename(new_name: String) -> void:
+	name = new_name
+	var config := ConfigFile.new()
+	if config.load(path(LEVEL_FILE)) != OK:
+		write_level()
+		return
+	config.set_value("world", "name", name)
+	config.save(path(LEVEL_FILE))
+
+
 func write_level() -> void:
 	if remote:
 		return

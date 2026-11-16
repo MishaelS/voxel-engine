@@ -152,7 +152,8 @@ func add_bottom_row(buttons: Array, width: float = UiTheme.HALF_BUTTON) -> Array
 	var result: Array[Button] = []
 	for entry: Array in buttons:
 		var button := _make_button(entry[0], entry[1])
-		button.custom_minimum_size = Vector2(width, UiTheme.BUTTON_HEIGHT)
+		# (a third value: that button's own width)
+		button.custom_minimum_size = Vector2(entry[2] if entry.size() > 2 else width, UiTheme.BUTTON_HEIGHT)
 		row.add_child(button)
 		result.append(button)
 	_bottom.add_child(row)

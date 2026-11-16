@@ -14,6 +14,9 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Rename World like Beta 1.7.3's: Select World has Rename next to Delete (both half wide, Cancel wide, like Beta's buttons); it opens a field with the world's name ready to type over, Rename (not while empty) and Cancel. Only the name in the world's level file changes, everything else in it and its folder stay.
+
+### Added
 - A quiver (ours; Beta's items.png had its picture but no item): crafted from 2 string, 2 paper and 4 leather (string down the left, paper over leather), it holds up to 128 arrows. Arrows held over it go in with a click (a right click: one), a right click with nothing held takes out a stack, a quiver held and right-clicked on arrows takes them in; its tooltip tells how many it holds and a blue bar shows how full it is. The bow shoots from it before loose arrows, arrows picked up go into it first.
 
 ### Added
