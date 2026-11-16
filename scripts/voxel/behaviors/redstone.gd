@@ -280,6 +280,11 @@ static func consumer_update(world: VoxelWorld, pos: Vector3i) -> void:
 		if edge(world, lower, powered) != 0 and DoorBehavior.parts(world.get_block(lower))[2] != powered:
 			DoorBehavior.toggle(world, lower)
 		return
+	if family == "fence_gate" or family == "fence_gate_open":
+		var gate_powered := indirectly_powered(world, pos)
+		if edge(world, pos, gate_powered) != 0 and (family == "fence_gate_open") != gate_powered:
+			FenceBehavior.toggle_gate(world, pos)
+		return
 	if family == "trapdoor" or family == "trapdoor_open":
 		var powered := indirectly_powered(world, pos)
 		if edge(world, pos, powered) != 0 and (family == "trapdoor_open") != powered:

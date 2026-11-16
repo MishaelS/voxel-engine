@@ -128,6 +128,7 @@ static func prepare_native() -> bool:
 		"face_tiles": Blocks.face_tiles, "face_overlays": Blocks.face_overlays, "tints": Blocks.tints_linear,
 		"collides": Blocks.collides_table, "liquid": Blocks.liquid_table, "biome_tint": Blocks.biome_tint_table,
 		"random_rotation": Blocks.random_rotation_table, "height": Blocks.height_table,
+		"plant_offset": Blocks.plant_offset_table,
 		"uv_mode": Blocks.uv_mode_table, "cull_group": Blocks.cull_group_table,
 		"liquid_level": Blocks.liquid_level_table, "shape": Blocks.shape_table, "model": Blocks.model_table,
 		"models": models, "fast": Blocks.fast_tables(),
@@ -420,6 +421,21 @@ static func block_mesh(block_id: int, material: Material = null) -> ArrayMesh:
 ## `origin`: world position of the chunk's first block, which picks each
 ## block's random texture rotation (null = no random rotation: single blocks).
 ## `block_light`: the padded block light (glowing blocks); empty = none.
+## Where a plant at (x, z) is drawn from its cell's corner, like the modern
+## game's getOffset (MathHelper.getPositionRandom at y 0; Java's int
+## arithmetic where it had it): up to a quarter block sideways, and with
+## `lower` up to 0.2 down. NativeMesher does the same.
+static func plant_offset(x: int, z: int, lower: bool) -> Vector3:
+	var a := (x * 3129871) & 0xFFFFFFFF
+	if a >= 0x80000000:
+		a -= 0x100000000 # (an int there)
+	var h := a ^ (z * 116129781)
+	h = h * h * 42317861 + h * 11
+	h >>= 16
+	return Vector3(((h & 15) / 15.0 - 0.5) * 0.5, ((((h >> 4) & 15) / 15.0) - 1.0) * 0.2 if lower else 0.0,
+		(((h >> 8) & 15) / 15.0 - 0.5) * 0.5)
+
+
 static func build(padded: PackedInt32Array, light: PackedByteArray,
 		grass := PackedColorArray(), foliage := PackedColorArray(), origin: Variant = null,
 		block_light := PackedByteArray()) -> Dictionary:
@@ -460,7 +476,7 @@ static func build(padded: PackedInt32Array, light: PackedByteArray,
 
 	var result := {}
 	var rotate := random_rotation and origin != null
-	var at: Vector3i = origin if rotate else Vector3i.ZERO
+	var at: Vector3i = origin if origin != null else Vector3i.ZERO # (also plant_offset's place)
 	var smooth := smooth_lighting > 0
 	var use_ao := smooth_lighting >= 2
 	var arrays := _build_layer(padded, light, opaque_cells, smooth, use_ao, grass, foliage, rotate, at, block_light)
@@ -506,6 +522,7 @@ static func _build_layer(padded: PackedInt32Array, light: PackedByteArray, cells
 	var normals_table := _normals
 	var biome_tint := Blocks.biome_tint_table
 	var rotation_table := Blocks.random_rotation_table
+	var plant_offsets := Blocks.plant_offset_table
 	var corner_uvs := CORNER_UVS
 	var heights := Blocks.height_table
 	var uv_modes := Blocks.uv_mode_table
@@ -561,10 +578,14 @@ static func _build_layer(padded: PackedInt32Array, light: PackedByteArray, cells
 			var cross_overlay := -2.0 if face_overlays[id * 6 + 2] == -2 else -1.0 # -2: glowing (fire)
 			var cross_color := Color(tint.r, tint.g, tint.b, float(light[i]) / SkyLight.MAX)
 			var cross_glow := block_light[i] * 17
+			var cross_origin := origin
+			var offset_kind := plant_offsets[id]
+			if offset_kind != 0:
+				cross_origin += plant_offset(at.x + i % P - 1, at.z + (i / P) % P - 1, offset_kind == 2)
 			for quad: PackedVector3Array in CROSS_QUADS:
 				var start := vertices.size()
 				for c in 4:
-					vertices.append(origin + quad[c])
+					vertices.append(cross_origin + quad[c])
 					normals.append(Vector3.UP)
 					uvs.append(corner_uvs[c])
 					layers.append(Vector2(cross_tile, cross_overlay))

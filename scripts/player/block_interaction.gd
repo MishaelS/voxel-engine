@@ -404,7 +404,8 @@ func _use() -> void:
 
 ## Blocks a network client has the host use (Net.send_use): levers,
 ## buttons, repeaters, doors, trapdoors and note blocks.
-const SHARED_USE: Array[String] = ["lever", "stone_button", "repeater", "trapdoor", "trapdoor_open", "note_block"]
+const SHARED_USE: Array[String] = ["lever", "stone_button", "repeater", "trapdoor", "trapdoor_open", "note_block",
+	"fence_gate", "fence_gate_open"]
 ## Containers a network client opens through the host (Net.open_container).
 const CONTAINER_USE: Array[String] = ["chest", "chest_left", "chest_right", "furnace", "furnace_lit", "dispenser", "dungeon_chest"]
 ## The jukebox's record is the host's (Net.send_jukebox). Cakes and beds a
@@ -423,6 +424,8 @@ static func use_shared(world: VoxelWorld, pos: Vector3i) -> void:
 		var open := family == "trapdoor"
 		world.set_block(pos, Blocks.variant("trapdoor_open" if open else "trapdoor", Blocks.facing_table[id]))
 		Sounds.play("door/" + ("open" if open else "close"), Vector3(pos) + Vector3(0.5, 0.5, 0.5), 1.0, randf() * 0.1 + 0.9)
+	elif FenceBehavior.is_gate(id):
+		FenceBehavior.toggle_gate(world, pos)
 	elif family == "note_block":
 		MusicBehavior.tune(world, pos)
 	elif DoorBehavior.is_door(id) and DoorBehavior.parts(id)[0] == "wooden":
@@ -475,9 +478,14 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 			else:
 				_screen().open_large_chest(world.block_entity(other), world.block_entity(pos))
 			if _screen().is_open():
-				world.chest_lids.hold([pos] if other == null else [pos, other], _screen()) # (and its sounds)
+				Sounds.play("chest/open", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.5, randf() * 0.1 + 0.9)
 		"furnace", "furnace_lit":
 			_screen().open_container(world.block_entity(pos))
+		"fence_gate", "fence_gate_open":
+			# (swings away from the player: the facing they look at)
+			var look := player.look_direction()
+			var looking := (0 if look.z > 0.0 else 2) if absf(look.z) >= absf(look.x) else (3 if look.x > 0.0 else 1)
+			FenceBehavior.toggle_gate(world, pos, looking)
 		"trapdoor", "trapdoor_open":
 			var open := family == "trapdoor"
 			world.set_block(pos, Blocks.variant("trapdoor_open" if open else "trapdoor", Blocks.facing_table[id]))
@@ -504,6 +512,7 @@ func _open_remote_container(pos: Vector3i, id: int) -> void:
 	if family == "dungeon_chest":
 		Stats.grant("treasure")
 	elif family.begins_with("chest"):
+		Sounds.play("chest/open", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.5, randf() * 0.1 + 0.9)
 		var other: Variant = ChestBehavior.partner(world, pos)
 		if other != null:
 			positions.assign([pos, other] if Blocks.chest_part_table[id] == ChestModel.Part.LEFT else [other, pos])
@@ -529,8 +538,8 @@ func _place_cell() -> Variant:
 	if pos.y >= world.height:
 		player.message.emit(Lang.t("Height limit for building is %d blocks") % world.height)
 		return null
-	if not world.is_inside(pos) or Blocks.collides_table[world.get_block(pos)] == 1:
-		return null
+	if not world.is_inside(pos) or Blocks.collides_table[world.get_block(pos)] == 1 or FenceBehavior.is_gate(world.get_block(pos)):
+		return null # (an open gate lets players through, not blocks)
 	return pos
 
 

@@ -339,6 +339,8 @@ static func icon(pack: String) -> Texture2D:
 ## or the "missing" checkers), the game's own from extra/terrain_extra.png.
 const GAME_TILES: Array[int] = [198, 214]
 const TERRAIN_EXTRA := "res://assets/textures/extra/terrain_extra.png"
+## The New Year chests' tiles (Blocks._chest).
+const HOLIDAY_TILES: Array[int] = [137, 138, 139, 153, 154, 155, 169, 170, 171]
 
 
 ## A texture: the pack's if it has the file, else the game's.
@@ -383,6 +385,19 @@ static func _terrain_with_game_tiles() -> Image:
 		var rect := Rect2i((tile % 16) * size, (tile / 16) * size, size, size)
 		if _is_missing(image.get_region(rect)):
 			image.blit_rect(extra, rect, rect.position)
+	# The New Year chests (Holidays) from the game's own terrain.png where a
+	# pack has none.
+	var own: Image = null
+	for tile in HOLIDAY_TILES:
+		var rect := Rect2i((tile % 16) * size, (tile / 16) * size, size, size)
+		if _is_missing(image.get_region(rect)):
+			if own == null:
+				own = (load(GAME_TEXTURES + "terrain.png") as Texture2D).get_image()
+				if own.is_compressed():
+					own.decompress()
+				own.convert(Image.FORMAT_RGBA8)
+				own.resize(image.get_width(), image.get_height(), Image.INTERPOLATE_NEAREST)
+			image.blit_rect(own, rect, rect.position)
 	return image
 
 

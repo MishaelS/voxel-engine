@@ -254,6 +254,17 @@ func duplicate_type(new_name: String) -> BlockType:
 
 ## A plant: two crossed squares, no collision, breaks at once, replaced
 ## by placed blocks and flowing liquids, needs the right ground below.
+## A plant drawn a little off its cell's middle, by its place, like the
+## modern game's (getOffset; its box stays put): 0 none, 1 sideways (x, z),
+## 2 sideways and lower (tall grass, ferns).
+var plant_offset := 0
+
+
+func set_plant_offset(kind: int) -> BlockType:
+	plant_offset = kind
+	return self
+
+
 func as_plant() -> BlockType:
 	shape = Shape.CROSS
 	layer = 1 # Blocks.Layer.CUTOUT

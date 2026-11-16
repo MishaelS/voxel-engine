@@ -4,9 +4,7 @@
 //   UV2    - x: base tile layer + AO level (0..3) / 4, y: overlay layer (-1 = none,
 //            -2 = glowing: full bright whatever the light, like lava)
 //   COLOR  - rgb: tint (linear, biome colors included), a: smooth sky light / 15
-//   CUSTOM0 - r: smooth block light / 15 (torches, lava: BlockLight);
-//            g, b: an AO level (g * 3) the AO blends toward, and how far
-//            (0 from ChunkMesher; ChestModel.lid_meshes)
+//   CUSTOM0 - r: smooth block light / 15 (torches, lava: BlockLight)
 // Brightness is computed here like the classic game: the brighter of sky
 // light minus the night's darkness (sky_darkness, levels) and block light,
 // through the classic light curve; times the corner's ambient occlusion.
@@ -53,7 +51,7 @@ const vec4 CLASSIC_AO = vec4(0.4, 0.6, 0.8, 1.0);
 #else
 #define BLOCK_AO(level) mix(1.0, ao_levels[level], ao_strength)
 #endif
-#define BLOCK_VERTEX tile_layers = vec2(floor(UV2.x + 0.01), UV2.y); block_ao = mix(BLOCK_AO(clamp(int(fract(UV2.x + 0.01) * 4.0 + 0.5), 0, 3)), BLOCK_AO(clamp(int(CUSTOM0.g * 3.0 + 0.5), 0, 3)), CUSTOM0.b); block_glow = CUSTOM0.r;
+#define BLOCK_VERTEX tile_layers = vec2(floor(UV2.x + 0.01), UV2.y); block_ao = BLOCK_AO(clamp(int(fract(UV2.x + 0.01) * 4.0 + 0.5), 0, 3)); block_glow = CUSTOM0.r;
 
 #ifndef BLOCK_CUSTOM_VERTEX
 void vertex() {

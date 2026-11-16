@@ -51,13 +51,6 @@ static func quads(index: int) -> Array:
 	return _models[index]
 
 
-## The quads of boxes without registering a model (meshes drawn outside the
-## chunks: ChestModel.lid_meshes).
-## `degrees`: turned like register_turned.
-static func quads_of(boxes: Array, degrees: float = 0.0) -> Array:
-	return _build(boxes, degrees)
-
-
 static func _build(boxes: Array, degrees: float, uvlock: bool = false) -> Array:
 	var rotation := Basis(Vector3.UP, deg_to_rad(degrees))
 	var middle := Vector3(0.5, 0.0, 0.5)

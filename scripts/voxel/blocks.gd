@@ -58,6 +58,8 @@ static var liquid_table := PackedByteArray()
 static var biome_tint_table := PackedByteArray()
 ## Random texture variants per block (BlockType.Rotation).
 static var random_rotation_table := PackedByteArray()
+## BlockType.plant_offset by id (ChunkMesher: tall grass and bushes off the middle).
+static var plant_offset_table := PackedByteArray()
 ## Top height per block (see BlockType.height).
 static var height_table := PackedFloat32Array()
 ## Texture turn per face [id * 6 + face] (see BlockType.uv_modes).
@@ -89,9 +91,6 @@ static var light_emission_table := PackedByteArray()
 static var glowing_ids := PackedInt32Array()
 ## family -> [ids by facing] (or [id] for blocks without facing).
 static var _families := {}
-## The chest_hidden block's id (set when registering: declared before
-## _registered, whose initializer registers the blocks).
-static var hidden_chest := -1
 
 static var _registered := _register_all()
 
@@ -184,11 +183,11 @@ static func _register_all() -> bool:
 			register(_bed(part, facing))
 
 	# Plants, lava and leaves placed by the player (appended: ids stay stable).
-	register(BlockType.cube("tall_grass", 39).as_plant().set_tint(GRASS_PLAINS).set_biome_tint(1) \
+	register(BlockType.cube("tall_grass", 39).as_plant().set_plant_offset(2).set_tint(GRASS_PLAINS).set_biome_tint(1) \
 		.set_drops([{"item": "seeds", "chance": 0.125}, {}]))
-	register(BlockType.cube("fern", 56).as_plant().set_tint(GRASS_PLAINS).set_biome_tint(1) \
+	register(BlockType.cube("fern", 56).as_plant().set_plant_offset(2).set_tint(GRASS_PLAINS).set_biome_tint(1) \
 		.set_drops([{"item": "seeds", "chance": 0.125}, {}]))
-	register(BlockType.cube("dead_bush", 55).as_plant().set_drop("none"))
+	register(BlockType.cube("dead_bush", 55).as_plant().set_plant_offset(1).set_drop("none"))
 	register(BlockType.cube("dandelion", 13).as_plant().set_height(0.6))
 	register(BlockType.cube("rose", 12).as_plant().set_height(0.6))
 	for level in range(0, 9):
@@ -272,16 +271,10 @@ static func _register_all() -> bool:
 			for shape in range(1, StairsBehavior.SHAPES.size()):
 				for facing in 4:
 					register(_stairs(material[0], material[1], facing, upside_down, shape))
-	# What the chunk meshes draw in a chest's cell while ChestLids draws the
-	# chest opening (VoxelWorld.hide_chest): nothing, but opaque like the
-	# chest, so the faces and shade of the blocks around stay the same. Never
-	# in the world itself (appended: ids stay stable).
-	var hidden := BlockType.cube("chest_hidden", CHEST_TOP).set_hardness(-1).set_light_opacity(15) \
-		.set_drop("none").hidden_from_catalog()
-	hidden.shape = BlockType.Shape.MODEL
-	hidden.model = BlockModel.register([])
-	hidden_chest = register(hidden)
-	is_opaque_table[hidden_chest] = 1 # (models count as see-through)
+	# Fence gates (appended: ids stay stable).
+	for state in ["closed", "open"]:
+		for facing in 4:
+			register(_fence_gate(state == "open", facing))
 	_set_flammability()
 	return true
 
@@ -1014,6 +1007,48 @@ static func _fence(mask: int) -> BlockType:
 	return block
 
 
+## A fence gate like the modern game's (ours: not in Beta): two posts with
+## rails between them across its facing; open, the two halves swing out
+## toward its facing (away from who opened it). Closed it is bumped into
+## 1.5 blocks high like a fence, open it lets everything through. Opened
+## by hand or redstone (FenceBehavior.toggle_gate, Redstone).
+static func _fence_gate(open: bool, facing: int) -> BlockType:
+	var family := "fence_gate_open" if open else "fence_gate"
+	var block := BlockType.cube(family if facing == 0 else "%s_%s" % [family, FACING_NAMES[facing]], 4) \
+		.set_hardness(2.0).set_tool("axe").set_height(0.999).set_light_opacity(0) \
+		.set_on_update(Callable(Redstone, "consumer_update"))
+	block.family = family
+	block.facing = facing
+	if open or facing != 0:
+		block.item = "fence_gate"
+		block.in_catalog = false
+	var faces := {}
+	for face in 6:
+		faces[face] = {"layer": 4}
+	# (pixels, facing south: the gate across x, its middle at z 8)
+	var boxes := [{"from": Vector3(0, 5, 7), "to": Vector3(2, 16, 9), "faces": faces},
+		{"from": Vector3(14, 5, 7), "to": Vector3(16, 16, 9), "faces": faces}]
+	if not open:
+		boxes.append({"from": Vector3(2, 12, 7), "to": Vector3(14, 15, 9), "faces": faces})
+		boxes.append({"from": Vector3(2, 6, 7), "to": Vector3(14, 9, 9), "faces": faces})
+		boxes.append({"from": Vector3(6, 9, 7), "to": Vector3(10, 12, 9), "faces": faces})
+	else:
+		for x: Vector2 in [Vector2(0, 2), Vector2(14, 16)]:
+			boxes.append({"from": Vector3(x.x, 12, 9), "to": Vector3(x.y, 15, 15), "faces": faces})
+			boxes.append({"from": Vector3(x.x, 6, 9), "to": Vector3(x.y, 9, 15), "faces": faces})
+			boxes.append({"from": Vector3(x.x, 9, 13), "to": Vector3(x.y, 12, 15), "faces": faces})
+	block.shape = BlockType.Shape.MODEL
+	block.model = BlockModel.register(boxes, facing)
+	var turn := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
+	var outline := _turned_box(Vector3(0, 0, 6) / 16.0, Vector3(16, 16, 10) / 16.0, turn)
+	block.selection_box = outline
+	if open:
+		block.collides = false
+	else:
+		block.collision_boxes.append(_turned_box(Vector3(0, 0, 6) / 16.0, Vector3(16, 24, 10) / 16.0, turn))
+	return block
+
+
 ## A ladder on the wall behind it (facing away from the wall): one flat
 ## picture, climbable, 2/16 thick.
 static func _ladder(facing: int) -> BlockType:
@@ -1259,9 +1294,21 @@ const CHEST_BACK := {ChestModel.Part.SINGLE: 26, ChestModel.Part.LEFT: 58, Chest
 static func _chest(facing: int, family: String = "chest") -> BlockType:
 	var part: int = {"chest": ChestModel.Part.SINGLE, "chest_left": ChestModel.Part.LEFT,
 		"chest_right": ChestModel.Part.RIGHT}[family]
-	var block := _oriented(family, facing, CHEST_TOP, CHEST_TOP, CHEST_FRONT[part], CHEST_SIDE).set_hardness(2.5) \
+	var top: int = CHEST_TOP
+	var side: int = CHEST_SIDE
+	var front: int = CHEST_FRONT[part]
+	var back: int = CHEST_BACK[part]
+	if Holidays.new_year():
+		# At New Year presents (terrain.png's own tiles, 112 below the
+		# chest's): a single chest red, a large one blue.
+		var large := part != ChestModel.Part.SINGLE
+		top = CHEST_TOP + (130 if large else 112)
+		side = CHEST_SIDE + (145 if large else 112)
+		front += 112
+		back = back + 112 if large else side
+	var block := _oriented(family, facing, top, top, front, side).set_hardness(2.5) \
 		.set_tool("axe").set_on_update(Callable(ChestBehavior, "on_update"))
-	block.tiles[BACK_FACE[facing]] = CHEST_BACK[part]
+	block.tiles[BACK_FACE[facing]] = back
 	block.chest_part = part
 	if family != "chest":
 		block.item = "chest"
@@ -1369,6 +1416,7 @@ static func register(block: BlockType) -> int:
 	collides_table.append(1 if block.collides else 0)
 	liquid_table.append(1 if block.liquid else 0)
 	random_rotation_table.append(block.random_rotation)
+	plant_offset_table.append(block.plant_offset)
 	height_table.append(block.height)
 	uv_mode_table.append_array(block.uv_modes)
 	liquid_level_table.append(block.liquid_level)

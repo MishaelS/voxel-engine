@@ -370,8 +370,21 @@ const ARMOR_DROP := 0.085
 ## further piece stopping there 1 in 4 (Hard: 1 in 10), already worn
 ## (worn_damage).
 func equip() -> void:
-	if not ARMORED.has(mob_type):
-		return
+	if ARMORED.has(mob_type):
+		_equip_armor()
+	# Around Halloween (Holidays) a pumpkin on the head instead of a helmet,
+	# like the modern game's: a carved one or now and then a jack o'lantern;
+	# it never drops.
+	if HALLOWEEN_HEADS.has(mob_type) and Holidays.halloween() and randf() < HALLOWEEN_CHANCE:
+		armor.set_slot(0, Blocks.variant("jack_o_lantern" if randf() < 0.1 else "carved_pumpkin", 0), 1)
+
+
+## Who may wear a pumpkin at Halloween, and how often (the modern game's).
+const HALLOWEEN_HEADS := ["zombie", "skeleton", "creeper"]
+const HALLOWEEN_CHANCE := 0.25
+
+
+func _equip_armor() -> void:
 	var difficulty: int = Settings.get_value("difficulty")
 	if randf() >= ARMOR_CHANCE[clampi(difficulty, 0, 3)]:
 		return
@@ -474,6 +487,17 @@ func _update_armor() -> void:
 		_model.meshes.erase(mesh)
 		mesh.queue_free()
 	_armor_meshes = MobModels.armor_pieces(_model, armor)
+	var head := armor.id_at(0)
+	if armor.count_at(0) > 0 and Items.is_block(head) and (_model.parts as Dictionary).has("head"):
+		# A pumpkin on the head, a little bigger than it (10 pixels), its
+		# face forward, like the player's (PlayerModel).
+		var pumpkin := MeshInstance3D.new()
+		pumpkin.mesh = FallingBlocks.block_mesh(Blocks.variant(Blocks.family_of(head), 0))
+		pumpkin.transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * 10.0), Vector3(-5, -1, -5))
+		pumpkin.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		pumpkin.set_meta("block", true) # (lit through entity_light: FallingBlocks.light)
+		(_model.parts.head as Node3D).add_child(pumpkin)
+		_armor_meshes.append(pumpkin)
 	_model.meshes.append_array(_armor_meshes) # (lit with the body)
 
 
@@ -502,7 +526,7 @@ func _absorb(amount: int) -> int:
 	if value <= 0:
 		return amount
 	for slot in armor.size():
-		if armor.count_at(slot) > 0:
+		if armor.count_at(slot) > 0 and not Items.is_block(armor.id_at(slot)): # (a pumpkin doesn't wear)
 			# (worn here, not by Inventory.wear: that counts the player's
 			# stats and plays at the player)
 			var damaged := armor.damage_at(slot) + amount
@@ -1570,6 +1594,8 @@ func _on_death() -> void:
 	if mob_type == "sheep" and not sheared:
 		world.items.spawn(Blocks.id_of(wool_color + "_wool"), 1, center(), Vector3(0, 0.2, 0))
 	for slot in armor.size():
+		if armor.count_at(slot) > 0 and Items.is_block(armor.id_at(slot)) and _picked[slot] == 0:
+			continue # (a Halloween pumpkin)
 		if armor.count_at(slot) > 0 and (_picked[slot] == 1 or randf() < ARMOR_DROP):
 			world.items.spawn(armor.id_at(slot), 1, center(), Vector3(randf_range(-0.1, 0.1), 0.2, randf_range(-0.1, 0.1)),
 				ItemEntities.PICKUP_DELAY, armor.damage_at(slot))
@@ -1706,6 +1732,9 @@ func _process(delta: float) -> void:
 		# (the glow's picture slides with the game's ticks, one material for all)
 		MobModels.power_material().set_shader_parameter("ticks", float(TickLoop.tick_count) + TickLoop.alpha)
 	for mesh: MeshInstance3D in _model.meshes:
+		if mesh.has_meta("block"):
+			FallingBlocks.light(mesh, brightness)
+			continue
 		mesh.set_instance_shader_parameter("brightness", 1.0 if mesh.has_meta("glow") else brightness)
 		mesh.set_instance_shader_parameter("hurt", 1.0 if hurt_ticks > 0 or is_dead() else 0.0)
 		mesh.set_instance_shader_parameter("flash", flash)

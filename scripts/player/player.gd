@@ -739,9 +739,20 @@ func _touches_liquid_at(x: float, y: float, z: float, family: String) -> bool:
 	return false
 
 
-## On a ladder: the block at the feet is climbable.
+## On a ladder: the block at the feet is climbable, or (like the modern
+## game) an open trapdoor over a ladder on the same wall - up through it
+## without having to jump off the ladder.
 func _on_ladder() -> bool:
-	return world != null and Blocks.get_type(world.get_block(Vector3i(floori(_x), floori(_y), floori(_z)))).climbable
+	if world == null:
+		return false
+	var cell := Vector3i(floori(_x), floori(_y), floori(_z))
+	var id := world.get_block(cell)
+	if Blocks.get_type(id).climbable:
+		return true
+	if Blocks.family_of(id) == "trapdoor_open":
+		var below := world.get_block(cell + Vector3i.DOWN)
+		return Blocks.family_of(below) == "ladder" and Blocks.facing_table[below] == Blocks.facing_table[id]
+	return false
 
 
 func _in_web() -> bool:

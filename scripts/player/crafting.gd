@@ -73,6 +73,8 @@ static func _build_recipes() -> Array:
 		{"pattern": ["XXX"], "keys": {"X": PLANKS}, "result": "wooden_slab", "count": 3},
 		{"pattern": ["XXX"], "keys": {"X": "cobblestone"}, "result": "cobblestone_slab", "count": 3},
 		{"pattern": ["SSS", "SSS"], "keys": {"S": "stick"}, "result": "fence", "count": 2},
+		# Ours: the fence gate (sticks either side of planks, two rows).
+		{"pattern": ["SPS", "SPS"], "keys": {"S": "stick", "P": PLANKS}, "result": "fence_gate", "count": 1},
 		{"pattern": ["S S", "SSS", "S S"], "keys": {"S": "stick"}, "result": "ladder", "count": 2},
 		{"pattern": ["PP", "PP", "PP"], "keys": {"P": PLANKS}, "result": "wooden_door", "count": 1},
 		{"pattern": ["II", "II", "II"], "keys": {"I": "iron_ingot"}, "result": "iron_door", "count": 1},

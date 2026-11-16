@@ -39,7 +39,7 @@ struct Quad {
 
 // Blocks' tables, copied once (set_tables), then shared by the workers.
 struct Tables {
-	std::vector<uint8_t> opaque, layer, cull_self, collides, liquid, biome_tint, rotation, shape;
+	std::vector<uint8_t> opaque, layer, cull_self, collides, liquid, biome_tint, rotation, shape, plant_offset;
 	std::vector<int32_t> face_tiles, face_overlays, uv_mode, cull_group, liquid_level, model;
 	std::vector<float> height;
 	std::vector<Color> tints;
@@ -305,10 +305,25 @@ void build_layer(const Tables &t, const Input &in, const std::vector<int> &cells
 			const Vector2 layer(float(double(t.face_tiles[id * 6 + 2]) + 0.75), t.face_overlays[id * 6 + 2] == -2 ? -2.0f : -1.0f);
 			const Color cross_color(tint.r, tint.g, tint.b, float(double(light[i]) / MAX_LIGHT));
 			const int cross_glow = block_light[i] * 17;
+			Vector3 cross_origin = origin;
+			const int offset_kind = id < int(t.plant_offset.size()) ? t.plant_offset[id] : 0;
+			if (offset_kind != 0) {
+				// ChunkMesher.plant_offset: the modern game's getOffset.
+				const int64_t px = in.at.x + i % P - 1;
+				const int64_t pz = in.at.z + (i / P) % P - 1;
+				const int32_t a = int32_t(uint32_t(int32_t(px)) * 3129871u);
+				uint64_t h = uint64_t(int64_t(a) ^ (pz * 116129781LL));
+				h = h * h * 42317861ull + h * 11ull;
+				const int64_t r = int64_t(h) >> 16;
+				cross_origin.x += float((double(r & 15) / 15.0 - 0.5) * 0.5);
+				cross_origin.z += float((double((r >> 8) & 15) / 15.0 - 0.5) * 0.5);
+				if (offset_kind == 2)
+					cross_origin.y += float((double((r >> 4) & 15) / 15.0 - 1.0) * 0.2);
+			}
 			for (const auto &q : CROSS_QUADS) {
 				const int start = int(s.vertices.size());
 				for (int c = 0; c < 4; c++) {
-					s.add(origin + q[c], NORMALS[0], layer, cross_color, cross_glow);
+					s.add(cross_origin + q[c], NORMALS[0], layer, cross_color, cross_glow);
 					s.uvs.push_back(CORNER_UVS[c]);
 				}
 				s.quad_indices(start);
@@ -516,6 +531,8 @@ void NativeMesher::set_tables(const Dictionary &d) {
 	t->liquid = copy_of<uint8_t>(PackedByteArray(d["liquid"]));
 	t->biome_tint = copy_of<uint8_t>(PackedByteArray(d["biome_tint"]));
 	t->rotation = copy_of<uint8_t>(PackedByteArray(d["random_rotation"]));
+	if (d.has("plant_offset"))
+		t->plant_offset = copy_of<uint8_t>(PackedByteArray(d["plant_offset"]));
 	t->shape = copy_of<uint8_t>(PackedByteArray(d["shape"]));
 	t->face_tiles = copy_of<int32_t>(PackedInt32Array(d["face_tiles"]));
 	t->face_overlays = copy_of<int32_t>(PackedInt32Array(d["face_overlays"]));
