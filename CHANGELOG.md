@@ -14,6 +14,8 @@ Sections:
 ## [Unreleased]
 
 ### Changed
+- Faster, on macOS especially: the game draws with Godot's Mobile renderer there (made for tiled GPUs like Apple's M chips), a steady 60 frames a second (the window's limit) at render distance 12 where the Forward+ renderer gave 54-57 with stutters while flying; it looks the same. Windows and Linux keep Forward+.
+- Less work each frame: creatures out of the camera's sight are not posed or lit (their animation was the biggest part of a frame's script time); creatures' round shadows are made again only when they would look different; the compass and clock icons are drawn again only when the needle or dial turns a pixel and sent to the graphics card only when they changed (the whole item atlas went 20 times a second), and the compass no longer searches the spawn point anew 20 times a second; the chunk meshing queue is sorted with one check per column instead of per chunk. Scripts take about 4 ms a frame standing instead of 7.5.
 - Signs look like Beta 1.7.3's (TileEntitySignRenderer): the text is smaller - a font pixel 1/90 block, so 15 letters just fill the board - with a line every 10 font pixels (the lines touched and ran over the board's edges); a sign post's board stands higher, its top above the block (to 1.08), on a darker post (the log's side) instead of planks; a wall sign hangs a little off the wall.
 - The "Achievement get!" plate is drawn in pixels like the modern game's toasts: a black edge with rounded corners, a grey frame 2 pixels wide and dark grey inside (it was a see-through dark box with a thin bluish line).
 

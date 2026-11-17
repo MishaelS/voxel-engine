@@ -440,6 +440,7 @@ func _process(_delta: float) -> void:
 ## farther the camera (gone at 16 blocks); with Fancy graphics only.
 var shadow_size := 0.0
 var _shadow: MeshInstance3D
+var _shadow_key := []
 static var _shadow_material: ShaderMaterial
 
 
@@ -465,9 +466,16 @@ func _show_shadow() -> void:
 		add_child(_shadow)
 	_shadow.visible = true
 	_shadow.global_transform = Transform3D.IDENTITY
+	var at := global_position
+	# Made again only when it would look different: the creature moved, the
+	# camera's distance changed it a little, or a second passed (blocks or
+	# light under it).
+	var key := [at, roundi(opacity * 32.0), TickLoop.tick_count / 20]
+	if key == _shadow_key:
+		return
+	_shadow_key = key
 	var mesh := _shadow.mesh as ImmediateMesh
 	mesh.clear_surfaces()
-	var at := global_position
 	var size := shadow_size
 	var quads := 0
 	for bx in range(floori(at.x - size), floori(at.x + size) + 1):

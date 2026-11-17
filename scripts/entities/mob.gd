@@ -1200,6 +1200,30 @@ func _squid_tick() -> void:
 		_squid_pitch += (-90.0 - _squid_pitch) * 0.02
 
 
+## The camera's view (its frustum planes), worked out once a frame for
+## every creature.
+static var _view_planes: Array[Plane] = []
+static var _view_frame := -1
+
+
+## Whether the creature (a ball round its middle, a little bigger than it)
+## can be in the camera's sight.
+func _in_view() -> bool:
+	var frame := Engine.get_process_frames()
+	if frame != _view_frame:
+		_view_frame = frame
+		var camera := get_viewport().get_camera_3d()
+		_view_planes = camera.get_frustum() if camera else ([] as Array[Plane])
+	if _view_planes.is_empty():
+		return true
+	var middle := global_position + Vector3(0, height * 0.5, 0)
+	var radius := maxf(height, half_width * 2.0) + 1.0 # (held items, riders, a swinging limb)
+	for plane in _view_planes:
+		if plane.distance_to(middle) > radius:
+			return false
+	return true
+
+
 ## Beta's EntitySquid moves just by its motion (no gravity, drag or water
 ## pull of its own: _squid_tick sets it); the rest as any creature.
 func _physics() -> void:
@@ -1619,6 +1643,11 @@ func _sound(kind: String, volume: float) -> void:
 func _process(delta: float) -> void:
 	super(delta)
 	if _model.is_empty():
+		return
+	if not _in_view():
+		# Out of the camera's sight: only turned, not posed or lit (that was
+		# most of the frame's script time with many creatures around).
+		rotation.y = lerp_angle(_prev_yaw, _yaw, TickLoop.alpha)
 		return
 	if mob_type == "wolf":
 		_update_wolf_skin()

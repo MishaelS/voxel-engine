@@ -382,6 +382,7 @@ func _process(delta: float) -> void:
 ## generates the spawn column right away and puts the player on the ground.
 func generate() -> void:
 	_wait_for_jobs()
+	_found_spawn = Vector3.INF
 	for node: Node in _chunk_nodes.values():
 		node.queue_free()
 	_chunks.clear()
@@ -552,6 +553,18 @@ func find_spawn() -> Vector3:
 		return Net.world_info.get("spawn", Vector3(8.5, sea_level + 1.0, 8.5))
 	if world_spawn != Vector3.INF:
 		return world_spawn
+	if _found_spawn != Vector3.INF:
+		return _found_spawn # (the compass asks 20 times a second)
+	_found_spawn = _search_spawn()
+	return _found_spawn
+
+
+## Where find_spawn found the spawn (Vector3.INF: not looked yet; a new
+## world looks again).
+var _found_spawn := Vector3.INF
+
+
+func _search_spawn() -> Vector3:
 	if generator == Generator.RANDOM_BLOCKS:
 		_generate_now(Vector2i.ZERO)
 		return Vector3(24, 20, 24)
@@ -2315,7 +2328,10 @@ func _rebuild_mesh_queue() -> void:
 	_mesh_queue.clear()
 	_mesh_backlog.clear() # everything waiting is sorted again here
 	var center := Vector3(_player_column.x, (player.global_position.y if player else float(sea_level)) / ChunkData.SIZE, _player_column.y)
-	var meshable_columns := {} # Vector2i -> bool, checked once per column
+	# Per column, worked out once for all its chunks: whether it can be
+	# meshed, and the height at or under which its chunks count as deep
+	# (_is_deep; -1: none are, near the player or with open edges).
+	var column_info := {} # Vector2i -> Vector2i(meshable 0/1, deep top)
 	var view: Vector3 = player.look_direction() if player and player.has_method("look_direction") else Vector3.ZERO
 	var keys := PackedInt64Array()
 	var coords: Array[Vector3i] = []
@@ -2329,14 +2345,14 @@ func _rebuild_mesh_queue() -> void:
 			empty.append(coord) # nothing to draw: no job at all
 			continue
 		var column := Vector2i(coord.x, coord.z)
-		if not open_edges and not _near_player(column) and _is_deep(coord):
+		var info: Variant = column_info.get(column)
+		if info == null:
+			info = Vector2i(1 if _can_mesh(coord) else 0, -1 if open_edges or _near_player(column) else _deep_top(column))
+			column_info[column] = info
+		if coord.y * ChunkData.SIZE + ChunkData.SIZE <= (info as Vector2i).y:
 			deep.append(coord) # far underground: built when the player comes near
 			continue
-		var meshable: Variant = meshable_columns.get(column)
-		if meshable == null:
-			meshable = _can_mesh(coord)
-			meshable_columns[column] = meshable
-		if not meshable:
+		if (info as Vector2i).x == 0:
 			continue
 		# Farthest first after sorting: key = -distance (fixed point), index.
 		# Like the modern game, chunks in front of the camera come first:
@@ -2380,6 +2396,16 @@ var _surface_min := {}    # Vector2i -> lowest heightmap value of the column
 
 func _near_player(column: Vector2i) -> bool:
 	return absi(column.x - _player_column.x) <= DEEP_MESH_RADIUS and absi(column.y - _player_column.y) <= DEEP_MESH_RADIUS
+
+
+## The highest top a chunk of `column` may have and still be deep
+## (_is_deep for all its chunks at once).
+func _deep_top(column: Vector2i) -> int:
+	var lowest := 2147483647
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			lowest = mini(lowest, _surface_min.get(Vector2i(column.x + dx, column.y + dz), -1))
+	return lowest - DEEP_MARGIN
 
 
 func _is_deep(coord: Vector3i) -> bool:
