@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.29] - 2026-11-17
+
 ### Changed
 - Squids' tentacles open like Beta 1.7.3's ModelSquid: each one away from the body's middle, a fan of eight at a stroke, straight down again between strokes (they all swung the same way). The body no longer spins about its own length on every push (it turned about half round each time); it still leans and turns toward where it swims.
 - Fire looks like Beta 1.7.3's (RenderBlocks.renderBlockFire): instead of two crossed pictures, eight sheets 1.4 blocks high - four crossing in the middle, leaning out toward the top, and four round the sides leaning in - with both fire tiles (31 inside, 47 outside), full bright.
@@ -769,7 +771,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.28...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.29...HEAD
+[0.0.29]: https://github.com/MishaelS/voxel-engine/compare/v0.0.28...v0.0.29
 [0.0.28]: https://github.com/MishaelS/voxel-engine/compare/v0.0.27...v0.0.28
 [0.0.27]: https://github.com/MishaelS/voxel-engine/compare/v0.0.26...v0.0.27
 [0.0.26]: https://github.com/MishaelS/voxel-engine/compare/v0.0.25...v0.0.26
