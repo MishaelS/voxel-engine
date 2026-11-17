@@ -248,9 +248,14 @@ static func _v(a: Array) -> Vector3:
 
 
 ## A skin's size in pixels (64 x 64, or 64 x 32 for the classic ones).
+## The skin's layout in pixels (what the models' uv count in): 64 wide,
+## 32 or 64 high by the picture's shape, whatever its own size (a bigger,
+## finer picture is laid the same way).
 static func _skin_size(texture: String) -> Vector2:
 	var image := default_skin(texture)
-	return Vector2(image.get_size()) if image else Vector2(64, 64)
+	if image == null:
+		return Vector2(64, 64)
+	return Vector2(64, roundf(64.0 * image.get_height() / image.get_width()))
 
 
 static func _material(texture: String, translucent: bool = false) -> ShaderMaterial:

@@ -92,6 +92,10 @@ static var glowing_ids := PackedInt32Array()
 ## family -> [ids by facing] (or [id] for blocks without facing).
 static var _families := {}
 
+## The fire's model (Blocks._fire_quads; declared before _registered,
+## whose initializer registers the blocks).
+static var _fire_model := -1
+
 static var _registered := _register_all()
 
 
@@ -1192,7 +1196,42 @@ static func _fire(age: int) -> BlockType:
 	block.emissive = true
 	block.height = 1.0
 	block.family = "fire"
+	block.shape = BlockType.Shape.MODEL
+	if _fire_model < 0:
+		_fire_model = BlockModel.register(_fire_quads())
+	block.model = _fire_model
+	block.set_selection(AABB(Vector3.ZERO, Vector3(16, 16, 16)))
 	return block
+
+
+
+## Fire on the ground like Beta 1.7.3's RenderBlocks.renderBlockFire: 1.4
+## blocks high, four sheets crossing in the middle (leaning out from
+## 0.3 / 0.7 at the bottom to 0.2 / 0.8 at the top, both ways) and four
+## round the sides (from the block's edges leaning in to 0.1 / 0.9), the
+## two fire tiles (31 the inner sheets, 47 the outer). Full bright, not
+## shaded by side (their normal is up, like plants).
+static func _fire_quads() -> Array:
+	const H := 1.4
+	var a := Vector2(0, 0)
+	var b := Vector2(1, 0)
+	var c := Vector2(1, 1)
+	var d := Vector2(0, 1)
+	var sheets := [
+		[31, [Vector3(0.2, H, 1), Vector3(0.7, 0, 1), Vector3(0.7, 0, 0), Vector3(0.2, H, 0)], [b, c, d, a]],
+		[31, [Vector3(0.8, H, 0), Vector3(0.3, 0, 0), Vector3(0.3, 0, 1), Vector3(0.8, H, 1)], [b, c, d, a]],
+		[31, [Vector3(1, H, 0.8), Vector3(1, 0, 0.3), Vector3(0, 0, 0.3), Vector3(0, H, 0.8)], [b, c, d, a]],
+		[31, [Vector3(0, H, 0.2), Vector3(0, 0, 0.7), Vector3(1, 0, 0.7), Vector3(1, H, 0.2)], [b, c, d, a]],
+		[47, [Vector3(0.1, H, 0), Vector3(0, 0, 0), Vector3(0, 0, 1), Vector3(0.1, H, 1)], [a, d, c, b]],
+		[47, [Vector3(0.9, H, 1), Vector3(1, 0, 1), Vector3(1, 0, 0), Vector3(0.9, H, 0)], [a, d, c, b]],
+		[47, [Vector3(0, H, 0.9), Vector3(0, 0, 1), Vector3(1, 0, 1), Vector3(1, H, 0.9)], [a, d, c, b]],
+		[47, [Vector3(1, H, 0.1), Vector3(1, 0, 0), Vector3(0, 0, 0), Vector3(0, H, 0.1)], [a, d, c, b]],
+	]
+	var quads := []
+	for sheet: Array in sheets:
+		quads.append({"quad": PackedVector3Array(sheet[1]), "uvs": PackedVector2Array(sheet[2]),
+			"layer": sheet[0], "normal": Vector3.UP})
+	return quads
 
 
 ## Which blocks burn, like the classic game (spread encouragement, burn

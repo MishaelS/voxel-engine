@@ -13,6 +13,14 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- Squids' tentacles open like Beta 1.7.3's ModelSquid: each one away from the body's middle, a fan of eight at a stroke, straight down again between strokes (they all swung the same way). The body no longer spins about its own length on every push (it turned about half round each time); it still leans and turns toward where it swims.
+- Fire looks like Beta 1.7.3's (RenderBlocks.renderBlockFire): instead of two crossed pictures, eight sheets 1.4 blocks high - four crossing in the middle, leaning out toward the top, and four round the sides leaning in - with both fire tiles (31 inside, 47 outside), full bright.
+- Burning creatures look like Beta 1.7.3's (Render.renderEntityOnFire): instead of a fire block stretched over them, sheets of fire turned to the camera, the first 1.4 x the creature's width square, each next one 0.45 of that higher, 10% narrower and a little farther back, until they reach over its head; the two fire tiles by turns, every other pair mirrored.
+
+### Fixed
+- A mob skin of another size than 64 x 32 (the new 330 x 165 squid.png) made the mob invisible: the models took the picture's own size for the layout their texture places count in. Skins are now laid out 64 wide (32 or 64 high by their shape) whatever their size, so bigger, finer pictures work too.
+
 ## [0.0.28] - 2026-11-16
 
 ### Changed

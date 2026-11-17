@@ -14,6 +14,9 @@ extends RefCounted
 ## A box may be tilted: "rotation": {"axis": "x" or "z", "angle": degrees,
 ## "origin": Vector3 (pixels)} (the wall torch leans 22.5 degrees).
 ## Textures are seen from outside, left to right and top to bottom.
+## A free quad (fire's slanted sheets) is {"quad": its 4 corners (blocks)
+## in Beta's Tessellator order (counter-clockwise seen from the front),
+## "uvs": theirs (0..1), "layer", optionally "normal" (the light's side)}.
 
 const UP := 0
 const DOWN := 1
@@ -56,6 +59,9 @@ static func _build(boxes: Array, degrees: float, uvlock: bool = false) -> Array:
 	var middle := Vector3(0.5, 0.0, 0.5)
 	var result := []
 	for box: Dictionary in boxes:
+		if box.has("quad"):
+			result.append(_free_quad(box, rotation, middle))
+			continue
 		var from: Vector3 = box.from / 16.0
 		var to: Vector3 = box.to / 16.0
 		var faces: Dictionary = box.faces
@@ -89,6 +95,19 @@ static func _build(boxes: Array, degrees: float, uvlock: bool = false) -> Array:
 					uvs.append(_locked_uv(point, normal))
 			result.append([corners, normal, uvs, int(spec.layer)])
 	return result
+
+
+## A free quad: its corners turned into ours (clockwise from the front).
+static func _free_quad(box: Dictionary, rotation: Basis, middle: Vector3) -> Array:
+	var points: PackedVector3Array = box.quad
+	var given: PackedVector2Array = box.uvs
+	var corners := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	for c in [0, 3, 2, 1]:
+		corners.append(rotation * (points[c] - middle) + middle)
+		uvs.append(given[c])
+	var normal: Vector3 = box.get("normal", (points[1] - points[0]).cross(points[2] - points[0]).normalized())
+	return [corners, rotation * normal, uvs, int(box.layer)]
 
 
 ## Where in the texture (0..1) a point of a face pointing `normal` falls,

@@ -563,7 +563,7 @@ static func _build_layer(padded: PackedInt32Array, light: PackedByteArray, cells
 					vertices.append(origin + corners[c])
 					normals.append(quad[1])
 					uvs.append(quad_uvs[c])
-					layers.append(Vector2(model_layer, -1.0))
+					layers.append(Vector2(model_layer, -2.0 if face_overlays[id * 6 + 2] == -2 else -1.0)) # (-2: fire glows)
 					colors.append(model_color)
 					glow.append(model_glow)
 					glow.append(0)

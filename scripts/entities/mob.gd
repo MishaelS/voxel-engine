@@ -88,9 +88,6 @@ var _squid_cycle_speed := 0.0
 var _squid_tentacles := 0.0
 var _squid_prev_tentacles := 0.0
 var _squid_speed := 0.0
-var _squid_spin_speed := 0.0
-var _squid_spin := 0.0
-var _squid_prev_spin := 0.0
 var _squid_pitch := 0.0
 var _squid_prev_pitch := 0.0
 var _squid_heading := Vector3.ZERO
@@ -1162,15 +1159,13 @@ static func guard_owner(attacker: Node3D) -> void:
 ## Squids like Beta 1.7.3's EntitySquid, number for number: a stroke cycle
 ## turns at 0.1..0.2 a tick (a new pace 1 in 10 strokes); in the first half
 ## of it the tentacles open and close (sin(f^2 pi) x pi/4), at 3/4 of it a
-## push (speed 1) that then dies away (x 0.9 a tick) while the body spins
-## about itself; every tick 1 in 50 (or when it has none) it picks a new
+## push (speed 1) that then dies away (x 0.9 a tick); every tick 1 in 50 (or when it has none) it picks a new
 ## way (0.2 sideways, -0.1..0.1 up or down) and moves that way x the speed,
 ## no gravity or drag in water; its body turns toward where it goes and
 ## leans along it (10% a tick). Out of water it falls, tentacles flapping,
 ## and tips over onto its side.
 func _squid_tick() -> void:
 	_squid_prev_tentacles = _squid_tentacles
-	_squid_prev_spin = _squid_spin
 	_squid_prev_pitch = _squid_pitch
 	if _squid_cycle_speed == 0.0:
 		_squid_cycle_speed = 1.0 / (randf() + 1.0) * 0.2
@@ -1189,18 +1184,13 @@ func _squid_tick() -> void:
 			_squid_tentacles = sin(f * f * PI) * PI * 0.25
 			if f > 0.75:
 				_squid_speed = 1.0
-				_squid_spin_speed = 1.0
-			else:
-				_squid_spin_speed *= 0.8
 		else:
 			_squid_tentacles = 0.0
 			_squid_speed *= 0.9
-			_squid_spin_speed *= 0.99
 		velocity = _squid_heading * _squid_speed
 		var flat := Vector2(velocity.x, velocity.z).length()
 		if flat > 1e-6:
 			_yaw += angle_difference(_yaw, atan2(velocity.x, velocity.z)) * 0.1
-		_squid_spin += PI * _squid_spin_speed * 1.5 # (degrees a tick, like Beta's)
 		_squid_pitch += (-rad_to_deg(atan2(flat, velocity.y)) - _squid_pitch) * 0.1
 	else:
 		_squid_tentacles = absf(sin(_squid_cycle)) * PI * 0.25
@@ -1677,8 +1667,11 @@ func _process(delta: float) -> void:
 				var flap := 0.0 if on_ground else sin(Time.get_ticks_msec() / 40.0) * 0.8 + 0.8
 				node.rotation.z = flap if part.role == "wing_left" else -flap
 			"tentacle":
-				# Beta's ModelSquid: every tentacle opened by the stroke's angle.
-				node.rotation.x = lerpf(_squid_prev_tentacles, _squid_tentacles, TickLoop.alpha)
+				# Beta's ModelSquid: each tentacle opens outward, away from
+				# the body's middle, by the stroke's angle (all of them at
+				# once: a fan when they open, straight down when closed).
+				node.rotation = Vector3(lerpf(_squid_prev_tentacles, _squid_tentacles, TickLoop.alpha),
+					atan2(-node.position.x, -node.position.z), 0.0)
 			"tail":
 				# Wild wolves hold the tail low; tame ones high, lower when hurt
 				# (the classic health gauge).
@@ -1703,14 +1696,13 @@ func _process(delta: float) -> void:
 		_model.root.scale = MobAnimation.slime_scale(_squish, size) * _base_scale
 	if mob_type == "squid":
 		# Beta's RenderSquid: leaned along its way (its pitch: -90 swimming
-		# level, 0 going up), then spun about its own length, around its
-		# middle; both between the last two ticks.
-		var alpha_t := TickLoop.alpha
-		var lean := deg_to_rad(-lerpf(_squid_prev_pitch, _squid_pitch, alpha_t))
-		var spin := deg_to_rad(lerpf(_squid_prev_spin, _squid_spin, alpha_t))
+		# level, 0 going up), around its middle, between the last two ticks.
+		# (Not spun about its own length on every push like Beta's: it
+		# turned half round each time.)
+		var lean := deg_to_rad(-lerpf(_squid_prev_pitch, _squid_pitch, TickLoop.alpha))
 		var middle := Vector3(0, height * 0.5, 0)
 		var size := float(MobModels.model("squid").get("scale", 1.0)) / 16.0
-		_model.root.transform = Transform3D(Basis(Vector3.RIGHT, lean) * Basis(Vector3.UP, spin), middle) \
+		_model.root.transform = Transform3D(Basis(Vector3.RIGHT, lean), middle) \
 			* Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * size), -middle)
 	var brightness := world.brightness_at(center()) if world else 1.0
 	var flash := 0.0

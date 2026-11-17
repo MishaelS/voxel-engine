@@ -292,7 +292,7 @@ void build_layer(const Tables &t, const Input &in, const std::vector<int> &cells
 				continue;
 			for (const Quad &q : t.models[model]) {
 				const int start = int(s.vertices.size());
-				const Vector2 layer(float(double(q.layer) + 0.75), -1.0f);
+				const Vector2 layer(float(double(q.layer) + 0.75), t.face_overlays[id * 6 + 2] == -2 ? -2.0f : -1.0f); // (-2: fire glows)
 				for (int c = 0; c < 4; c++) {
 					s.add(origin + q.corners[c], q.normal, layer, model_color, model_glow);
 					s.uvs.push_back(q.uvs[c]);

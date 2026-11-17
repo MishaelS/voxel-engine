@@ -494,23 +494,90 @@ func _show_shadow() -> void:
 		mesh.surface_end()
 
 
-## Burning creatures are wrapped in flames like the game's: the animated
-## fire block's crossed pictures, as big as the creature.
+## Burning creatures in flames like Beta 1.7.3's Render.renderEntityOnFire:
+## sheets of the animated fire tiles (31 and 47 by turns, every other pair
+## mirrored) turned to the camera, the first one 1.4 x the creature's width
+## square, each next one 0.45 of that higher, 10% narrower and a little
+## farther back, till they reach over its height. Full bright.
 func _show_flames() -> void:
 	var burning := fire_ticks > 0 and not is_dead()
 	if not burning:
 		if _flames:
 			_flames.visible = false
 		return
+	var size := half_width * 2.0 * 1.4
 	if _flames == null:
 		_flames = MeshInstance3D.new()
-		_flames.mesh = FallingBlocks.block_mesh(Blocks.variant("fire"))
 		_flames.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(_flames)
-	var width := half_width * 2.0 * 1.4
+	var key := Vector2(size, height)
+	if _flames.get_meta("key", Vector2.ZERO) != key:
+		_flames.set_meta("key", key)
+		_flames.mesh = flames_mesh(height / size)
 	_flames.visible = true
-	_flames.scale = Vector3(width, height * 1.15, width)
-	_flames.position = Vector3(-width * 0.5, 0.0, -width * 0.5)
+	var camera := get_viewport().get_camera_3d()
+	var yaw := 0.0
+	if camera:
+		var toward := camera.global_position - global_position
+		yaw = atan2(toward.x, toward.z)
+	_flames.global_transform = Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * size), global_position)
+
+
+static var _flame_meshes := {}
+
+
+## The fire sheets for a creature `tall` times as high as its sheets are
+## wide (in those units; +Z toward the camera).
+static func flames_mesh(tall: float) -> ArrayMesh:
+	var key := snappedf(tall, 0.01)
+	if _flame_meshes.has(key):
+		return _flame_meshes[key]
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var layers := PackedVector2Array()
+	var colors := PackedColorArray()
+	var glow := PackedByteArray()
+	var indices := PackedInt32Array()
+	var half := 0.5
+	var bottom := 0.0
+	var depth := 0.3 - int(tall) * 0.02
+	var left := tall
+	var sheet := 0
+	while left > 0.0:
+		var tile := 31 if sheet % 2 == 0 else 47
+		var mirrored := (sheet / 2) % 2 == 0
+		var start := vertices.size()
+		var corners := [Vector3(-half, bottom + 1.4, depth), Vector3(half, bottom + 1.4, depth),
+			Vector3(half, bottom, depth), Vector3(-half, bottom, depth)]
+		for c in 4:
+			vertices.append(corners[c])
+			normals.append(Vector3.UP)
+			var uv := ChunkMesher.CORNER_UVS[c]
+			uvs.append(Vector2(1.0 - uv.x, uv.y) if mirrored else uv)
+			layers.append(Vector2(tile + 0.75, -2.0)) # (glowing: full bright)
+			colors.append(Color(1, 1, 1, 1))
+			glow.append_array(PackedByteArray([255, 0, 0, 0]))
+		indices.append_array(PackedInt32Array([start, start + 1, start + 2, start, start + 2, start + 3]))
+		left -= 0.45
+		bottom += 0.45
+		half *= 0.9
+		depth -= 0.03
+		sheet += 1
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = layers
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_CUSTOM0] = glow
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, ChunkMesher.MESH_FLAGS)
+	mesh.surface_set_material(0, BlockMaterials.get_material(Blocks.Layer.CUTOUT))
+	_flame_meshes[key] = mesh
+	return mesh
 
 
 # --- Saving ---------------------------------------------------------------------------
