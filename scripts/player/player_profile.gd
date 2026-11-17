@@ -24,6 +24,8 @@ static var name_color := 0
 ## A random secret made once when the computer gives no id of its own.
 static var _fallback_secret := ""
 ## Mixed into the computer's id before hashing (so the hash is this game's own).
+## Kept from the game's old name (Bedrock Edition): a new one would give
+## every player a new id, and servers would no longer know them.
 const APP_SALT := "voxel-engine-bedrock-edition/player"
 ## The custom skin (null: the default one).
 static var skin: ImageTexture

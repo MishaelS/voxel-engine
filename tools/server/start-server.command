@@ -9,12 +9,12 @@
 # Privacy & Security > Open Anyway.)
 
 cd "$(dirname "$0")" || exit 1
-APP="./Voxel Engine Bedrock Edition.app"
+APP="./Voxel Engine Godot Edition.app"
 if [ ! -d "$APP" ]; then
 	APP="$(ls -d ./*.app 2>/dev/null | head -n 1)"
 fi
 if [ -z "$APP" ] || [ ! -d "$APP/Contents/MacOS" ]; then
-	echo "The game (Voxel Engine Bedrock Edition.app) was not found next to this file"
+	echo "The game (Voxel Engine Godot Edition.app) was not found next to this file"
 	read -r -p "Press Return to close" _
 	exit 1
 fi

@@ -9,7 +9,7 @@ rem stops the server without saving the last minutes.
 rem   start-server.bat [--port N] [--world NAME]
 setlocal
 cd /d "%~dp0"
-set "NAME=Voxel Engine Bedrock Edition"
+set "NAME=Voxel Engine Godot Edition"
 set "GAME="
 rem The console build (if there is one) keeps this window for its input.
 if exist "%NAME%.console.exe" set "GAME=%NAME%.console.exe"

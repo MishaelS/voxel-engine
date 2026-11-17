@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="Voxel Engine Bedrock Edition"
+config/name="Voxel Engine Godot Edition"
 config/version="0.0.29"
 run/main_scene="uid://6r4lkmcwjoy"
 config/use_custom_user_dir=true

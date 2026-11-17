@@ -93,19 +93,32 @@ void sky() {
 	vec3 zenith = mix(night_zenith, day_zenith, day);
 	vec3 horizon = mix(night_horizon, day_horizon, day);
 
-	// Sunrise / sunset: orange glow on the horizon on the sun's side.
+	// (the sun's redness below)
 	float low_sun = 1.0 - smoothstep(0.0, 0.4, abs(sun.y + 0.05));
-	float toward_sun = 0.0;
-	if (length(dir.xz) > 1e-4 && length(sun.xz) > 1e-4) {
-		toward_sun = max(dot(normalize(dir.xz), normalize(sun.xz)), 0.0);
-	}
-	horizon = mix(horizon, sunset_color, low_sun * toward_sun * toward_sun * 0.85);
 
 	vec3 color;
 	if (dir.y >= 0.0) {
 		color = mix(horizon, zenith, pow(dir.y, 0.6));
 	} else {
 		color = mix(horizon, void_color * (0.15 + 0.85 * day), smoothstep(0.0, 0.25, -dir.y));
+	}
+
+	// Sunrise / sunset like Beta 1.7.3's (WorldProvider.calcSunriseSunsetColors,
+	// RenderGlobal's fan): while the sun is within 0.4 of the horizon, a
+	// glow lies along the horizon on its side - widest there (90 degrees
+	// each way) and flat (about 18 degrees up and down), fading out to its
+	// edge - orange at the middle of the dawn, its strength rising and
+	// falling with it; blended over the sky in its plain colors as Beta's.
+	if (abs(sun.y) <= 0.4 && length(sun.xz) > 1e-4 && length(dir.xz) > 1e-4) {
+		float f5 = sun.y / 0.4 * 0.5 + 0.5;
+		float f6 = 1.0 - (1.0 - sin(f5 * PI)) * 0.99;
+		f6 *= f6;
+		vec3 dawn = vec3(f5 * 0.3 + 0.7, f5 * f5 * 0.7 + 0.2, 0.2);
+		float across = acos(clamp(dot(normalize(dir.xz), normalize(sun.xz)), -1.0, 1.0)) / (PI * 0.5);
+		float up = asin(clamp(dir.y, -1.0, 1.0)) / radians(18.0 * max(f6, 0.2));
+		float fan = clamp(1.0 - length(vec2(across, up)), 0.0, 1.0) * f6;
+		vec3 plain = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
+		color = pow(mix(plain, dawn, fan), vec3(2.2));
 	}
 
 	// Details are skipped in the radiance cubemap (ambient light and

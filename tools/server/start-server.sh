@@ -7,7 +7,7 @@
 #   ./start-server.sh [--port N] [--world NAME]
 
 cd "$(dirname "$0")" || exit 1
-NAME="Voxel Engine Bedrock Edition"
+NAME="Voxel Engine Godot Edition"
 case "$(uname -m)" in
 	aarch64|arm64) GAME="./$NAME.arm64" ;;
 	*) GAME="./$NAME.x86_64" ;;

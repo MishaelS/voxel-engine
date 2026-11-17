@@ -44,8 +44,8 @@ Linux ones in Docker, imports the project, exports each preset and zips it.
 Outputs (the `build/` folder is not in git):
 
 ```
-build/<platform>/Voxel Engine Bedrock Edition/                    the game folder
-build/<platform>/Voxel Engine Bedrock Edition <version>-<platform>.zip
+build/<platform>/Voxel Engine Godot Edition/                    the game folder
+build/<platform>/Voxel Engine Godot Edition <version>-<platform>.zip
 build/export-<platform>.log                                       Godot's export log
 ```
 
@@ -107,8 +107,8 @@ the `native/godot-cpp` submodule to the matching tag.
 ## What is in each zip
 
 ```
-Voxel Engine Bedrock Edition/
-  Voxel Engine Bedrock Edition(.app|.exe|.x86_64|.arm64)   (+ .pck, + the native library on Windows/Linux)
+Voxel Engine Godot Edition/
+  Voxel Engine Godot Edition(.app|.exe|.x86_64|.arm64)   (+ .pck, + the native library on Windows/Linux)
   CHANGELOG.md, SERVER.md
   start-server.*, server.properties.example                the dedicated server
 ```
@@ -124,6 +124,6 @@ skipped.
 ## Notes
 
 - macOS builds are signed ad-hoc and not notarized: on another Mac, the first
-  start needs right-click > Open (or `xattr -dr com.apple.quarantine "Voxel Engine Bedrock Edition.app"`).
+  start needs right-click > Open (or `xattr -dr com.apple.quarantine "Voxel Engine Godot Edition.app"`).
   Signing and notarization are set in the `macOS` preset (codesign/notarization).
 - Windows builds are unsigned: SmartScreen asks once (More info > Run anyway).

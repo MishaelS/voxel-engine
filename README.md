@@ -1,4 +1,4 @@
-# Voxel Engine Bedrock Edition
+# Voxel Engine Godot Edition
 
 A voxel engine for Godot 4.5 by MishaelS.
 
@@ -93,7 +93,7 @@ register(BlockType.cube("grass", 0).set_random_tick(Callable(GrassBehavior, "ran
 ## Building from the console
 No editor needed (Godot and its export templates must be installed; the scripts find Godot in /Applications or use `$GODOT`):
 ```
-tools/build.sh              # release build: build/macos/Voxel Engine Bedrock Edition <version>.zip
+tools/build.sh              # release build: build/macos/Voxel Engine Godot Edition <version>.zip
 tools/build.sh --debug      # debug build (full F3 screen)
 tools/build.sh --app        # a .app instead of the zip
 tools/build.sh --native     # rebuild the C++ library first

@@ -254,7 +254,7 @@ func _right_lines() -> PackedStringArray:
 			lines.append("World on disk: %.1f MB" % (bytes / 1048576.0))
 		return lines
 	lines.append("Renderer: %s, %s" % [RenderingServer.get_current_rendering_driver_name(),
-		ProjectSettings.get_setting("rendering/renderer/rendering_method", "?")])
+		RenderingServer.get_current_rendering_method()]) # (the one running: Mobile on macOS)
 	lines.append("Mem: %d MB (peak %d MB)" % [OS.get_static_memory_usage() >> 20, OS.get_static_memory_peak_usage() >> 20])
 	lines.append("Video mem: %d MB" % (int(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)) >> 20))
 	lines.append("CPU: %d threads, %s" % [OS.get_processor_count(), OS.get_processor_name()])

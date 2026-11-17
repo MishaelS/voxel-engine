@@ -132,14 +132,26 @@ func _process(delta: float) -> void:
 func horizon_color(to_sun: Vector3, view: Vector3) -> Color:
 	var horizon := _sky_color("night_horizon", Color(0.03, 0.04, 0.09)).lerp(
 		_sky_color("day_horizon", Color(0.75, 0.85, 1.0)), daylight)
-	var low_sun := 1.0 - smoothstep(0.0, 0.4, absf(to_sun.y + 0.05))
-	var toward_sun := 0.0
+	# Toward the sun at dawn and dusk the fog takes the dawn's color, like
+	# Beta 1.7.3's (EntityRenderer.updateFogColor, by how much the view
+	# faces the sun times the dawn's strength; the sky shader's fan).
+	var dawn := dawn_color(to_sun.y)
 	var flat_view := Vector2(view.x, view.z)
 	var flat_sun := Vector2(to_sun.x, to_sun.z)
-	if flat_view.length() > 1e-4 and flat_sun.length() > 1e-4:
-		toward_sun = maxf(flat_view.normalized().dot(flat_sun.normalized()), 0.0)
-	horizon = horizon.lerp(_sky_color("sunset_color", Color(1.0, 0.42, 0.12)), low_sun * toward_sun * toward_sun * 0.6)
+	if dawn.a > 0.0 and flat_view.length() > 1e-4 and flat_sun.length() > 1e-4:
+		var toward_sun := maxf(flat_view.normalized().dot(flat_sun.normalized()), 0.0)
+		horizon = horizon.lerp(Color(dawn.r, dawn.g, dawn.b), toward_sun * dawn.a)
 	return _weathered(horizon)
+
+
+## Beta 1.7.3's WorldProvider.calcSunriseSunsetColors by the sun's height
+## (-1..1): the dawn's color and, in alpha, its strength (0: none).
+static func dawn_color(sun_height: float) -> Color:
+	if absf(sun_height) > 0.4:
+		return Color(0, 0, 0, 0)
+	var f5 := sun_height / 0.4 * 0.5 + 0.5
+	var f6 := 1.0 - (1.0 - sin(f5 * PI)) * 0.99
+	return Color(f5 * 0.3 + 0.7, f5 * f5 * 0.7 + 0.2, 0.2, f6 * f6)
 
 
 ## Colors grayed by rain and storms, like the game's sky and fog.

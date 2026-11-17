@@ -54,7 +54,7 @@ Directly:
 
 ```sh
 godot --headless --path /path/to/voxel-engine -- --server [--port N] [--world NAME] [--config FILE]
-"./Voxel Engine Bedrock Edition.x86_64" --headless --server [--port N] [--world NAME] [--config FILE]
+"./Voxel Engine Godot Edition.x86_64" --headless --server [--port N] [--world NAME] [--config FILE]
 ```
 
 - `--port`, `--world` - override `server-port` and `world-name`.

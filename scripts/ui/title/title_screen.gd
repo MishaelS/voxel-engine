@@ -18,7 +18,7 @@ const LOGO_RAISE := 14 * P
 const SPLASH_COLOR := Color("ffff00")
 const SPLASHES := [
 	"Made with Godot!", "Now with 3D clouds!", "Voxels all the way down!",
-	"Sky light 0..15!", "Analemma included!", "Bedrock Edition!",
+	"Sky light 0..15!", "Analemma included!", "Godot Edition!",
 	"100% GDScript!", "Smooth lighting!", "Chunks load 4x faster!",
 	"Look at the moon phases!", "Also try sand!", "Seeds are hashed!",
 	"Falling sand, smoothly!", "Beta 1.7.3 terrain!", "Press F3!",

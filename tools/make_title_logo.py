@@ -6,6 +6,9 @@ a crisp black outline and a soft shadow. The lower line uses smaller blocks.
 Pixel art: drawn at native size (CELL texels per block) and scaled up by
 SCALE with nearest neighbour, so it stays sharp.
 
+The game's logo is now a drawn one (not made by this script): running it
+with that path replaces it.
+
 Usage: python3 tools/make_title_logo.py assets/textures/terrain.png assets/textures/extra/title_logo.png
 Needs Pillow and numpy.
 """
@@ -16,7 +19,7 @@ import numpy as np
 from PIL import Image
 
 TITLE = "VOXEL ENGINE"
-SUBTITLE = "BEDROCK EDITION"
+SUBTITLE = "GODOT EDITION"
 CELL = 8            # texels per block of the title
 SUB_CELL = 4        # texels per block of the subtitle
 DEPTH = 0.75        # 3D side height, in blocks
