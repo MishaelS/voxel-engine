@@ -13,6 +13,10 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- Signs look like Beta 1.7.3's (TileEntitySignRenderer): the text is smaller - a font pixel 1/90 block, so 15 letters just fill the board - with a line every 10 font pixels (the lines touched and ran over the board's edges); a sign post's board stands higher, its top above the block (to 1.08), on a darker post (the log's side) instead of planks; a wall sign hangs a little off the wall.
+- The "Achievement get!" plate is drawn in pixels like the modern game's toasts: a black edge with rounded corners, a grey frame 2 pixels wide and dark grey inside (it was a see-through dark box with a thin bluish line).
+
 ## [0.0.29] - 2026-11-17
 
 ### Changed

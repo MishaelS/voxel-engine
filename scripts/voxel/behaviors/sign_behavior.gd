@@ -23,10 +23,10 @@ static func on_update(world: VoxelWorld, pos: Vector3i) -> void:
 ## turn around Y (radians), for a sign block.
 static func text_place(id: int) -> Array:
 	var turn := 0.0
-	var front := Vector3(0.5, 0.75, 8.67 / 16.0 + 0.004)
+	var front := Vector3(0.5, 13.33 / 16.0, 8.67 / 16.0 + 0.004)
 	if Blocks.family_of(id) == "wall_sign":
 		turn = deg_to_rad(BlockModel.FACING_TURNS[Blocks.facing_table[id]])
-		front = Vector3(0.5, 8.5 / 16.0, 1.33 / 16.0 + 0.004)
+		front = Vector3(0.5, 8.33 / 16.0, 1.67 / 16.0 + 0.004)
 	else:
 		turn = deg_to_rad(-Blocks.family_ids("sign").find(id) * 22.5)
 	var middle := Vector3(0.5, 0.0, 0.5)

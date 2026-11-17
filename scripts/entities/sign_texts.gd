@@ -1,10 +1,13 @@
 class_name SignTexts
 extends Node3D
 ## Draws the text of signs (their block entities) as Label3D nodes on the
-## boards' fronts, black like the game's.
+## boards' fronts, black like the game's, sized like Beta 1.7.3's
+## TileEntitySignRenderer: a font pixel 1/90 block (15 letters fill the
+## board's width), a line every 10 of them, centered.
 
-const PIXEL_SIZE := 0.0034
-const FONT_SIZE := 32
+const FONT_SIZE := 32 # (4 units a font pixel: UiTheme's font is 8 pixels at 16)
+const PIXEL_SIZE := 1.0 / 90.0 / 4.0
+const LINE_PIXELS := 10
 
 var world: VoxelWorld
 var _labels := {} # Vector3i -> Label3D
@@ -27,6 +30,7 @@ func update(pos: Vector3i, lines: Array) -> void:
 		label.double_sided = false
 		label.alpha_cut = Label3D.ALPHA_CUT_DISCARD
 		label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		label.line_spacing = LINE_PIXELS * 4 - label.font.get_height(FONT_SIZE)
 		add_child(label)
 		_labels[pos] = label
 	var place := SignBehavior.text_place(id)

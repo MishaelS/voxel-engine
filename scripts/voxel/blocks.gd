@@ -1140,18 +1140,24 @@ static func _sign(rotation: int, facing: int) -> BlockType:
 		block.on_update = Callable(SignBehavior, "on_update")
 	else:
 		block.on_update = Callable(TorchBehavior, "on_update")
+	# Placed like Beta 1.7.3's TileEntitySignRenderer (its ModelSign at 2/3):
+	# a board 1 block wide, 1/2 high and 1/12 thick; on a post its top
+	# stands above the block (to 1.083), on a wall it hangs a little off it.
+	# The board is planks, the post darker (the log's side).
 	var faces := {}
+	var post := {}
 	for face in 6:
 		faces[face] = {"layer": 4}
+		post[face] = {"layer": 20}
 	block.shape = BlockType.Shape.MODEL
 	if on_wall:
-		block.model = BlockModel.register([{"from": Vector3(0, 4.5, 0), "to": Vector3(16, 12.5, 1.33), "faces": faces}], facing)
+		block.model = BlockModel.register([{"from": Vector3(0, 4.33, 0.33), "to": Vector3(16, 12.33, 1.67), "faces": faces}], facing)
 		var turn := Basis(Vector3.UP, deg_to_rad(BlockModel.FACING_TURNS[facing]))
-		block.selection_box = _turned_box(Vector3(0, 4.5, 0) / 16.0, Vector3(16, 12.5, 1.33) / 16.0, turn)
+		block.selection_box = _turned_box(Vector3(0, 4.33, 0) / 16.0, Vector3(16, 12.33, 1.67) / 16.0, turn)
 	else:
 		block.model = BlockModel.register_turned([
-			{"from": Vector3(0, 8, 7.33), "to": Vector3(16, 16, 8.67), "faces": faces},
-			{"from": Vector3(7.33, 0, 7.33), "to": Vector3(8.67, 8, 8.67), "faces": faces},
+			{"from": Vector3(0, 9.33, 7.33), "to": Vector3(16, 17.33, 8.67), "faces": faces},
+			{"from": Vector3(7.33, 0, 7.33), "to": Vector3(8.67, 9.33, 8.67), "faces": post},
 		], -rotation * 22.5)
 		block.selection_box = AABB(Vector3(0.25, 0, 0.25), Vector3(0.5, 1, 0.5))
 	return block
