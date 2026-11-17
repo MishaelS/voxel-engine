@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.30] - 2026-11-18
+
 ### Added
 - Simulation Distance in Video Settings (4-16 chunks, 8 by default), like the modern game's: around every player only that far the world lives - creatures, dropped items, flowing water and lava, fire, redstone, furnaces, random ticks (they reached 8 columns before); beyond, out to the render distance, the world is only drawn and waits just as it is, going on from there when a player comes near. Monsters out there still go away like Beta's when over 128 blocks from every player.
 - Creatures far and idle are seen to less often, like Paper's entity activation range: over 32 blocks from every player, standing on the ground with nothing going on (no target, not hurt, burning, swimming, panicking, in love, tame or riding), a creature is ticked once a second instead of 20 times; anything that happens to it wakes it at once. Creatures' ticks cost about a fifth of what they did.
@@ -786,7 +788,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.29...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.30...HEAD
+[0.0.30]: https://github.com/MishaelS/voxel-engine/compare/v0.0.29...v0.0.30
 [0.0.29]: https://github.com/MishaelS/voxel-engine/compare/v0.0.28...v0.0.29
 [0.0.28]: https://github.com/MishaelS/voxel-engine/compare/v0.0.27...v0.0.28
 [0.0.27]: https://github.com/MishaelS/voxel-engine/compare/v0.0.26...v0.0.27
