@@ -96,6 +96,7 @@ Graphics=Графика
 Fast=Быстрая
 Fancy=Детальная
 Render Distance=Прорисовка
+Simulation Distance=Симуляция
 %d chunks=%d чанков
 Smooth Lighting=Мягкое освещение
 Minimum=Минимум

@@ -84,6 +84,10 @@ func _register_all() -> void:
 	# 16 (FarTerrain).
 	define("video", Setting.range_of("render_distance", "Render Distance", 2, 32, 6) \
 		.format_with(func(v: float) -> String: return Lang.t("%d chunks") % int(v)))
+	# Like the modern game's: how far around the player the world lives
+	# (blocks and creatures); beyond, it is only drawn (VoxelWorld).
+	define("video", Setting.range_of("simulation_distance", "Simulation Distance", 4, 16, 8) \
+		.format_with(func(v: float) -> String: return Lang.t("%d chunks") % int(v)))
 	define("video", Setting.choice("smooth_lighting", "Smooth Lighting",
 		PackedStringArray(["OFF", "Minimum", "Maximum"]), 2))
 	define("video", Setting.choice("max_fps", "Max Framerate",

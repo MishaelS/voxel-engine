@@ -13,6 +13,10 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Simulation Distance in Video Settings (4-16 chunks, 8 by default), like the modern game's: around every player only that far the world lives - creatures, dropped items, flowing water and lava, fire, redstone, furnaces, random ticks (they reached 8 columns before); beyond, out to the render distance, the world is only drawn and waits just as it is, going on from there when a player comes near. Monsters out there still go away like Beta's when over 128 blocks from every player.
+- Creatures far and idle are seen to less often, like Paper's entity activation range: over 32 blocks from every player, standing on the ground with nothing going on (no target, not hurt, burning, swimming, panicking, in love, tame or riding), a creature is ticked once a second instead of 20 times; anything that happens to it wakes it at once. Creatures' ticks cost about a fifth of what they did.
+
 ### Changed
 - Faster, on macOS especially: the game draws with Godot's Mobile renderer there (made for tiled GPUs like Apple's M chips), a steady 60 frames a second (the window's limit) at render distance 12 where the Forward+ renderer gave 54-57 with stutters while flying; it looks the same. Windows and Linux keep Forward+.
 - Less work each frame: creatures out of the camera's sight are not posed or lit (their animation was the biggest part of a frame's script time); creatures' round shadows are made again only when they would look different; the compass and clock icons are drawn again only when the needle or dial turns a pixel and sent to the graphics card only when they changed (the whole item atlas went 20 times a second), and the compass no longer searches the spawn point anew 20 times a second; the chunk meshing queue is sorted with one check per column instead of per chunk. Scripts take about 4 ms a frame standing instead of 7.5.

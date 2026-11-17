@@ -571,6 +571,38 @@ func is_baby() -> bool:
 	return baby_ticks > 0
 
 
+## Like Paper's entity activation range: a creature far from the players
+## (over ACTIVATION_RANGE blocks) with nothing going on - standing on the
+## ground, no target, not hurt, burning, swimming, in love, tame or riding -
+## may be ticked only now and then (EntityManager); anything else keeps
+## ticking every tick.
+const ACTIVATION_RANGE := 32.0
+
+
+func can_rest(players: Array[Vector3]) -> bool:
+	if not on_ground or in_water or in_lava or fire_ticks > 0 or hurt_ticks > 0 or is_dead() \
+			or target != null or _panic > 0 or love_ticks > 0 or tamed or vehicle != null or rider != null:
+		return false
+	var at := feet()
+	for p in players:
+		if Vector2(p.x - at.x, p.z - at.z).length_squared() <= ACTIVATION_RANGE * ACTIVATION_RANGE:
+			return false
+	return true
+
+
+## A tick out of the simulated area (EntityManager, now and then): nothing
+## moves, but monsters far from every player still go away like Beta's
+## (over 128 blocks: at once).
+func rest() -> void:
+	super()
+	_prev_yaw = _yaw
+
+
+func sleep_tick() -> void:
+	if is_hostile() and not persistent and not no_ai:
+		_despawn(null)
+
+
 func _ai_tick() -> void:
 	_prev_yaw = _yaw
 	_prev_fuse = _fuse

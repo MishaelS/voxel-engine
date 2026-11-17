@@ -129,6 +129,16 @@ var _dirty := {}           # Vector3i -> true: chunks waiting for a new mesh
 var _mesh_jobs := {}       # Vector3i -> MeshJob on a worker thread
 var _gen_jobs := {}        # Vector2i -> GenerationJob on a worker thread
 var _scheduled := {}       # game_time -> {Vector3i: true}
+## Like the modern game's simulation distance: around every player only
+## this many columns are simulated (block and random ticks, furnaces,
+## creatures: EntityManager); beyond, the loaded world is only drawn and
+## waits as it is. The players' areas this tick: Vector3i(column x, z,
+## radius).
+var simulation_distance := 8
+var _sim_areas: Array[Vector3i] = []
+## Scheduled ticks that came due out of the simulated area: column ->
+## {pos: true}, run again (1 tick later) when a player comes near.
+var _sleeping_ticks := {}
 var _scheduled_count := 0
 var _modified := {}        # Vector2i -> true: columns changed since they were saved
 var _column_colors := {}   # Vector2i -> [grass, foliage] (WorldGenerator.column_colors)
@@ -419,6 +429,8 @@ func generate() -> void:
 	moving_blocks.clear()
 	_block_entities.clear()
 	_scheduled.clear()
+	_sleeping_ticks.clear()
+	_sim_areas.clear()
 	_scheduled_count = 0
 	_modified.clear()
 	_connectivity.clear()
@@ -1819,7 +1831,7 @@ func block_entity(pos: Vector3i) -> Dictionary:
 func _tick_block_entities() -> void:
 	for pos: Vector3i in _block_entities.keys():
 		var entity: Dictionary = _block_entities[pos]
-		if entity.type != "furnace" or not is_inside(pos):
+		if entity.type != "furnace" or not is_inside(pos) or not is_simulated_column(Vector2i(pos.x >> 4, pos.z >> 4)):
 			continue
 		_tick_furnace(pos, entity)
 
@@ -1898,6 +1910,7 @@ func _tick(_tick_index: int) -> void:
 		_mood_tick()
 		return
 	var t0 := Time.get_ticks_usec()
+	_update_sim_areas()
 	clock.tick()
 	weather.tick()
 	WeatherEffects.world_tick(self)
@@ -2035,10 +2048,51 @@ func _run_scheduled_ticks() -> void:
 		if processed >= MAX_SCHEDULED_TICKS_PER_TICK or Time.get_ticks_usec() - started > SCHEDULED_TICK_BUDGET_US:
 			schedule_tick(pos, 1) # over the limit: wait for the next tick
 			continue
+		var column := Vector2i(pos.x >> 4, pos.z >> 4)
+		if not is_simulated_column(column):
+			if not _sleeping_ticks.has(column):
+				_sleeping_ticks[column] = {}
+			(_sleeping_ticks[column] as Dictionary)[pos] = true
+			continue
 		processed += 1
 		var handler := Blocks.get_type(get_block(pos)).scheduled_tick
 		if handler.is_valid():
 			handler.call(self, pos)
+
+
+## The simulated areas around the players this tick (simulation_distance;
+## a network player's no further than the world is loaded around it).
+## When they changed, the scheduled ticks that slept in columns now inside
+## wake up.
+func _update_sim_areas() -> void:
+	var areas: Array[Vector3i] = []
+	var own := player as Player
+	for at in player_positions(false):
+		var radius := simulation_distance if own and at == own.global_position else mini(simulation_distance, remote_radius)
+		areas.append(Vector3i(floori(at.x) >> 4, floori(at.z) >> 4, radius))
+	if areas == _sim_areas:
+		return
+	_sim_areas = areas
+	for column: Vector2i in _sleeping_ticks.keys():
+		if is_simulated_column(column):
+			for pos: Vector3i in _sleeping_ticks[column]:
+				schedule_tick(pos, 1)
+			_sleeping_ticks.erase(column)
+
+
+## Whether the column is in a player's simulated area (see
+## simulation_distance). True before the first tick (nothing known yet).
+func is_simulated_column(column: Vector2i) -> bool:
+	if _sim_areas.is_empty():
+		return true
+	for area in _sim_areas:
+		if absi(column.x - area.x) <= area.z and absi(column.y - area.y) <= area.z:
+			return true
+	return false
+
+
+func is_simulated(at: Vector3) -> bool:
+	return is_simulated_column(Vector2i(floori(at.x) >> 4, floori(at.z) >> 4))
 
 
 ## Where the players are: this one and, hosting, the network game's
@@ -2056,9 +2110,8 @@ func player_positions(alive_only: bool = true) -> Array[Vector3]:
 	return result
 
 
-## Random ticks reach this many columns around the player, like the game's
-## (9 chunks there; the rest of the loaded world just waits).
-const RANDOM_TICK_RADIUS := 8
+## Random ticks reach simulation_distance columns around the players, like
+## the game's (9 chunks in Beta; the rest of the loaded world just waits).
 ## Main-thread time random ticks may take per tick; what's left over goes on
 ## next tick from where it stopped, so a tick never stalls a frame.
 const RANDOM_TICK_BUDGET_US := 2000
@@ -2120,7 +2173,7 @@ func _run_random_ticks() -> void:
 		var radii := PackedInt32Array()
 		for at in player_positions(false):
 			centers.append(Vector2i(floori(at.x) >> 4, floori(at.z) >> 4))
-			radii.append(RANDOM_TICK_RADIUS if player and at == player.global_position else mini(RANDOM_TICK_RADIUS, remote_radius))
+			radii.append(simulation_distance if player and at == player.global_position else mini(simulation_distance, remote_radius))
 		if _random_dirty:
 			_random_dirty = false
 			_random_chunks.clear()

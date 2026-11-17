@@ -208,6 +208,12 @@ func center() -> Vector3:
 # --- Tick ----------------------------------------------------------------------------
 
 ## One game tick (EntityManager calls it).
+## A tick skipped (EntityManager: out of the simulated area, or far and
+## idle): stands still where it is, drawn without sliding back and forth.
+func rest() -> void:
+	_prev = Vector3(_x, _y, _z)
+
+
 func tick() -> void:
 	_prev = Vector3(_x, _y, _z)
 	age += 1

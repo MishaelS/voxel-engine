@@ -134,7 +134,12 @@ func clear() -> void:
 var tick_times := {}
 
 
-func _tick(_tick_index: int) -> void:
+## Creatures far and idle, and those out of the simulated area, are seen
+## to once in this many ticks.
+const REST_EVERY := 20
+
+
+func _tick(tick_index: int) -> void:
 	tick_times.clear()
 	var started := Time.get_ticks_usec()
 	if spawner == null and world and not world.remote: # (a client's creatures come from the host: next step)
@@ -142,16 +147,28 @@ func _tick(_tick_index: int) -> void:
 	if spawner:
 		spawner.tick()
 	tick_times["spawner"] = Time.get_ticks_usec() - started
+	var players := world.player_positions(false)
 	var i := 0
 	while i < _entities.size():
 		var entity := _entities[i]
+		# (spread over the ticks: each its own turn of every REST_EVERY)
+		var turn := (tick_index + entity.get_instance_id()) % REST_EVERY == 0
 		if entity.puppet and not entity.removed:
 			entity.puppet_tick() # (a client: the host's snapshots move it)
 		elif not entity.removed and world.is_inside(Vector3i(entity.feet().floor())):
-			var before := Time.get_ticks_usec()
-			entity.tick()
-			var kind := entity.type_name()
-			tick_times[kind] = tick_times.get(kind, 0) + Time.get_ticks_usec() - before
+			if not world.is_simulated(entity.feet()):
+				# Out of the simulated area: waits as it is (the modern
+				# game's simulation distance).
+				entity.rest()
+				if turn and entity is Mob:
+					(entity as Mob).sleep_tick()
+			elif entity is Mob and not turn and (entity as Mob).can_rest(players):
+				entity.rest() # far and idle: ticked only now and then (Mob.can_rest)
+			else:
+				var before := Time.get_ticks_usec()
+				entity.tick()
+				var kind := entity.type_name()
+				tick_times[kind] = tick_times.get(kind, 0) + Time.get_ticks_usec() - before
 		if entity.removed:
 			entity.queue_free()
 			_entities.remove_at(i)
