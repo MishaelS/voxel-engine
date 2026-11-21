@@ -8,6 +8,7 @@
 #include "native_beta_generator.h"
 #include "native_particles.h"
 #include "native_path.h"
+#include "native_texture_fx.h"
 
 using namespace godot;
 
@@ -20,6 +21,7 @@ static void initialize(ModuleInitializationLevel level) {
 	GDREGISTER_CLASS(voxel::NativeBetaGenerator);
 	GDREGISTER_CLASS(voxel::NativeParticles);
 	GDREGISTER_CLASS(voxel::NativePath);
+	GDREGISTER_CLASS(voxel::NativeTextureFx);
 }
 
 static void uninitialize(ModuleInitializationLevel level) {

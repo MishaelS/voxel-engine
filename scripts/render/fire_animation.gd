@@ -14,6 +14,7 @@ const STEP := 1.0 / 20.0
 var _fields: Array[PackedFloat32Array] = []
 var _next := PackedFloat32Array()
 var _accumulator := 0.0
+var _native: Array = [] # NativeTextureFx per tile (empty: the GDScript below)
 
 
 func _ready() -> void:
@@ -23,11 +24,16 @@ func _ready() -> void:
 		var field := PackedFloat32Array()
 		field.resize(SIZE * ROWS)
 		_fields.append(field)
+	if ClassDB.class_exists("NativeTextureFx"):
+		# The same simulation in C++ (NativeTextureFx), one object a tile.
+		for k in TILES.size():
+			var fx: Object = ClassDB.instantiate("NativeTextureFx")
+			fx.call("setup", 0, randi())
+			_native.append(fx)
 	# Warm up so the fire is there from the start, then show it once.
-	for i in 40:
-		for k in _fields.size():
-			_step(k)
-	_upload()
+	for i in 39:
+		_advance(false)
+	_advance(true)
 
 
 func _process(delta: float) -> void:
@@ -37,9 +43,24 @@ func _process(delta: float) -> void:
 	if _accumulator < STEP:
 		return
 	_accumulator = minf(_accumulator - STEP, STEP)
+	_advance(true)
+
+
+## One step of every fire; `show`: its pixels go to the tile array.
+func _advance(show: bool) -> void:
+	if not _native.is_empty():
+		var tiles := BlockMaterials.tiles()
+		for k in _native.size():
+			var data: PackedByteArray = _native[k].call("step", 0)
+			if show:
+				var image := Image.create_from_data(SIZE, SIZE, false, Image.FORMAT_RGBA8, data)
+				image.generate_mipmaps()
+				tiles.update_layer(image, TILES[k])
+		return
 	for k in _fields.size():
 		_step(k)
-	_upload()
+	if show:
+		_upload()
 
 
 func _step(k: int) -> void:

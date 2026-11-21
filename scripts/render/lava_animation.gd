@@ -62,8 +62,18 @@ class _Heat:
 		return data
 
 
+## The same simulations in C++ (NativeTextureFx): [still, flowing], or
+## empty without the native library (then the GDScript above).
+var _native: Array = []
+
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
+	if ClassDB.class_exists("NativeTextureFx"):
+		for kind: int in [1, 1]:
+			var fx: Object = ClassDB.instantiate("NativeTextureFx")
+			fx.call("setup", kind, randi())
+			_native.append(fx)
 
 
 func _process(delta: float) -> void:
@@ -74,9 +84,13 @@ func _process(delta: float) -> void:
 		return
 	_accumulator = minf(_accumulator - STEP, STEP)
 	_ticks += 1
+	var tiles := BlockMaterials.tiles()
+	if not _native.is_empty():
+		tiles.update_layer(_image(_native[0].call("step", 0)), STILL_TILE)
+		tiles.update_layer(_image(_native[1].call("step", _ticks / 3)), FLOW_TILE)
+		return
 	_still.step()
 	_flow.step()
-	var tiles := BlockMaterials.tiles()
 	tiles.update_layer(_image(_still.pixels(0)), STILL_TILE)
 	tiles.update_layer(_image(_flow.pixels(_ticks / 3)), FLOW_TILE)
 

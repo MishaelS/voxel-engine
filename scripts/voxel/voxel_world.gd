@@ -30,8 +30,9 @@ enum Generator {
 	BETA,          ## Beta 1.7.3 style terrain, biomes, caves, ores, trees.
 	RANDOM_BLOCKS, ## Debug: every block type scattered randomly.
 	FLOATING_ISLANDS, ## Islands in the sky over the void (FloatingIslandsGenerator).
-	ISLAND,        ## One big island in the sea (IslandGenerator).
+	ISLAND,        ## One big island in the sea (IslandGenerator): worlds made before SMALL_ISLANDS.
 	DEBUG,         ## Every block in every state and every creature (DebugGenerator).
+	SMALL_ISLANDS, ## A small island and a few islets in a deep sea (SmallIslandsGenerator).
 }
 
 const NEIGHBORS: Array[Vector3i] = [
@@ -452,6 +453,10 @@ func generate() -> void:
 			var island := IslandGenerator.new(world_seed)
 			island.set_layout(layout)
 			world_generator = island
+		Generator.SMALL_ISLANDS:
+			var islands := SmallIslandsGenerator.new(world_seed)
+			islands.set_layout(layout)
+			world_generator = islands
 		Generator.DEBUG:
 			world_generator = DebugGenerator.new(world_seed)
 			random_tick_speed = 0 # (the blocks stay as shown)
@@ -595,8 +600,9 @@ func _search_spawn() -> Vector3:
 					var x: int = column.x * 16 + local.x
 					var z: int = column.y * 16 + local.y
 					var top := _top_block_y(x, z)
-					if top >= sea_level - 1 and get_block(Vector3i(x, top, z)) != _water:
-						return Vector3(x + 0.5, top + 1.0, z + 0.5) # feet on the block
+					var top_id := get_block(Vector3i(x, top, z))
+					if top >= sea_level - 1 and top_id != _water and not Blocks.family_of(top_id).ends_with("_leaves"):
+						return Vector3(x + 0.5, top + 1.0, z + 0.5) # feet on the block (not up a tree)
 	return Vector3(8.5, sea_level + 1.0, 8.5)
 
 
@@ -2229,20 +2235,39 @@ func _run_random_ticks() -> void:
 ## The round's picking in C++ (NativePath.random_ticks): only the tries that
 ## hit a block that ticks come back to run here.
 static var _native_ticks := ClassDB.class_exists("NativePath")
+static var _grass_table := PackedByteArray()
+static var _grass_covers := PackedByteArray()
 
 
-func _random_ticks_native(started: int) -> void:
+## A round of random ticks takes this many game ticks: each tick a share of
+## the chunks gets that many times the tries, so a block is ticked as often
+## as before while gathering the chunks (most of the cost) happens for a
+## quarter of them a tick.
+const RANDOM_ROUND_TICKS := 4
+
+
+func _random_ticks_native(_started: int) -> void:
 	var arrays := []
 	var origins: Array[Vector3i] = []
-	while not _random_tick_queue.is_empty():
+	var share := ceili(float(_random_chunks.size()) / RANDOM_ROUND_TICKS)
+	while share > 0 and not _random_tick_queue.is_empty():
+		share -= 1
 		var coord: Vector3i = _random_tick_queue.pop_back()
 		var data: ChunkData = _chunks.get(coord)
 		if data == null or data.tickable_count == 0:
 			continue
 		arrays.append(data.blocks)
 		origins.append(coord * ChunkData.SIZE)
-	var hits: PackedInt32Array = ClassDB.class_call_static("NativePath", "random_ticks", arrays, random_tick_speed,
-		Blocks.ticks_randomly, rng.randi())
+	if _grass_table.is_empty():
+		# For leaving out the grass ticks that can change nothing
+		# (NativePath.random_ticks_pruned, by GrassBehavior's rules).
+		var grass_tick := Callable(GrassBehavior, "random_tick")
+		for block in Blocks.types:
+			_grass_table.append(1 if block.random_tick == grass_tick else 0)
+			_grass_covers.append(1 if Blocks.is_opaque(block.id) or Blocks.liquid_table[block.id] == 1 else 0)
+	var hits: PackedInt32Array = ClassDB.class_call_static("NativePath", "random_ticks_pruned", arrays,
+		random_tick_speed * RANDOM_ROUND_TICKS, Blocks.ticks_randomly, rng.randi(), _grass_table, _grass_covers,
+		Blocks.id_of("dirt"))
 	for i in range(0, hits.size(), 2):
 		var index := hits[i + 1]
 		var origin := origins[hits[i]]
@@ -2391,21 +2416,24 @@ func _rebuild_mesh_queue() -> void:
 	var empty: Array[Vector3i] = []
 	var deep: Array[Vector3i] = []
 	for coord: Vector3i in _dirty:
+		# The column first: most waiting chunks are in columns that can't be
+		# meshed yet (not lit, or their neighbors aren't), passed over at once.
+		var column := Vector2i(coord.x, coord.z)
+		var info: Variant = column_info.get(column)
+		if info == null:
+			info = Vector2i(1 if _can_mesh(coord) else 0, -1 if open_edges or _near_player(column) else _deep_top(column))
+			column_info[column] = info
+		var deep_chunk: bool = coord.y * ChunkData.SIZE + ChunkData.SIZE <= (info as Vector2i).y
+		if (info as Vector2i).x == 0 and not deep_chunk:
+			continue
 		if _mesh_jobs.has(coord):
 			continue
 		var chunk: ChunkData = _chunks.get(coord)
 		if chunk and chunk.air_count == ChunkData.VOLUME:
 			empty.append(coord) # nothing to draw: no job at all
 			continue
-		var column := Vector2i(coord.x, coord.z)
-		var info: Variant = column_info.get(column)
-		if info == null:
-			info = Vector2i(1 if _can_mesh(coord) else 0, -1 if open_edges or _near_player(column) else _deep_top(column))
-			column_info[column] = info
-		if coord.y * ChunkData.SIZE + ChunkData.SIZE <= (info as Vector2i).y:
+		if deep_chunk:
 			deep.append(coord) # far underground: built when the player comes near
-			continue
-		if (info as Vector2i).x == 0:
 			continue
 		# Farthest first after sorting: key = -distance (fixed point), index.
 		# Like the modern game, chunks in front of the camera come first:

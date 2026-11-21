@@ -302,12 +302,74 @@ PackedInt32Array NativePath::random_ticks(const Array &blocks, int count, const 
 	return result;
 }
 
+// random_ticks, leaving out the grass ticks that can change nothing: the
+// grass has air on top (it lives) and, with its whole reach (x/z +-1, y -3..+1)
+// and the blocks over it inside this chunk, no dirt there that grass could
+// grow on (every dirt block is under something opaque or liquid). Most
+// grass ticks of a settled world; GrassBehavior would find the same.
+PackedInt32Array NativePath::random_ticks_pruned(const Array &blocks, int count, const PackedByteArray &ticks,
+		int64_t seed, const PackedByteArray &grass, const PackedByteArray &covers, int dirt) {
+	PackedInt32Array result;
+	Pcg rng{ uint64_t(seed) };
+	const uint8_t *table = ticks.ptr();
+	const int64_t table_size = ticks.size();
+	const uint8_t *is_grass = grass.ptr();
+	const uint8_t *is_cover = covers.ptr();
+	const bool prune = grass.size() >= table_size && covers.size() >= table_size;
+	for (int64_t c = 0; c < blocks.size(); c++) {
+		const PackedInt32Array chunk = blocks[c];
+		if (chunk.size() != 4096) {
+			continue;
+		}
+		const int32_t *data = chunk.ptr();
+		for (int i = 0; i < count; i++) {
+			const int index = int(rng.next() & 4095u);
+			const int id = data[index];
+			if (id < 0 || id >= table_size || table[id] == 0) {
+				continue;
+			}
+			if (prune && is_grass[id] != 0) {
+				const int x = index & 15;
+				const int z = (index >> 4) & 15;
+				const int y = index >> 8;
+				if (x >= 1 && x <= 14 && z >= 1 && z <= 14 && y >= 3 && y <= 13 && data[index + 256] == 0) {
+					bool can_spread = false;
+					for (int dy = -3; dy <= 1 && !can_spread; dy++) {
+						for (int dz = -1; dz <= 1 && !can_spread; dz++) {
+							for (int dx = -1; dx <= 1; dx++) {
+								const int at = (x + dx) + ((z + dz) << 4) + ((y + dy) << 8);
+								if (data[at] != dirt) {
+									continue;
+								}
+								const int above = data[at + 256];
+								if (above < 0 || above >= table_size || is_cover[above] == 0) {
+									can_spread = true;
+									break;
+								}
+							}
+						}
+					}
+					if (!can_spread) {
+						continue;
+					}
+				}
+			}
+			result.push_back(int32_t(c));
+			result.push_back(index);
+		}
+	}
+	return result;
+}
+
 void NativePath::_bind_methods() {
 	ClassDB::bind_static_method("NativePath",
 			D_METHOD("find", "chunks", "start", "goal", "tall", "max_nodes", "solid", "floor", "harmful", "liquid"),
 			&NativePath::find);
 	ClassDB::bind_static_method("NativePath", D_METHOD("random_ticks", "blocks", "count", "ticks", "seed"),
 			&NativePath::random_ticks);
+	ClassDB::bind_static_method("NativePath",
+			D_METHOD("random_ticks_pruned", "blocks", "count", "ticks", "seed", "grass", "covers", "dirt"),
+			&NativePath::random_ticks_pruned);
 }
 
 } // namespace voxel

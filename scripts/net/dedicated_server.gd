@@ -174,7 +174,7 @@ func _world_save(world_name: String) -> WorldSave:
 		log_line("Loading the world '%s' (%s)" % [save.name, ProjectSettings.globalize_path(save.path())])
 		return save
 	var types := {"default": [VoxelWorld.Generator.BETA, WorldSave.CLASSIC], "tall": [VoxelWorld.Generator.BETA, WorldSave.TALL],
-		"floating": [VoxelWorld.Generator.FLOATING_ISLANDS, WorldSave.FLOATING], "island": [VoxelWorld.Generator.ISLAND, WorldSave.CLASSIC]}
+		"floating": [VoxelWorld.Generator.FLOATING_ISLANDS, WorldSave.FLOATING], "island": [VoxelWorld.Generator.SMALL_ISLANDS, WorldSave.CLASSIC]}
 	var type: Array = types.get(config.get_string("world-type").to_lower(), types["default"])
 	save.name = world_name.strip_edges() if world_name.strip_edges() != "" else "world"
 	save.world_seed = WorldSave.seed_from_text(config.get_string("seed"))

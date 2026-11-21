@@ -15,7 +15,7 @@ const TYPES := [
 	["Default", VoxelWorld.Generator.BETA, WorldSave.CLASSIC],
 	["Tall Mountains", VoxelWorld.Generator.BETA, WorldSave.TALL],
 	["Floating Islands", VoxelWorld.Generator.FLOATING_ISLANDS, WorldSave.FLOATING],
-	["Island", VoxelWorld.Generator.ISLAND, WorldSave.CLASSIC],
+	["Island", VoxelWorld.Generator.SMALL_ISLANDS, WorldSave.CLASSIC],
 	["Debug Mode", VoxelWorld.Generator.DEBUG, WorldSave.CLASSIC],
 	["Random Blocks", VoxelWorld.Generator.RANDOM_BLOCKS, WorldSave.CLASSIC],
 ]

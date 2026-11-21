@@ -35,6 +35,13 @@ public:
 	// that ticks (`ticks`: Blocks.ticks_randomly).
 	static godot::PackedInt32Array random_ticks(const godot::Array &blocks, int count,
 			const godot::PackedByteArray &ticks, int64_t seed);
+
+	// The same without the grass ticks that can change nothing (`grass`: 1
+	// for grass blocks; `covers`: 1 for blocks grass can't live or grow
+	// under, opaque or liquid; `dirt`: the dirt block's id).
+	static godot::PackedInt32Array random_ticks_pruned(const godot::Array &blocks, int count,
+			const godot::PackedByteArray &ticks, int64_t seed, const godot::PackedByteArray &grass,
+			const godot::PackedByteArray &covers, int dirt);
 };
 
 } // namespace voxel

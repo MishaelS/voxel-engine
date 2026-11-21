@@ -13,6 +13,13 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- The Island world type is a small island now (SmallIslandsGenerator): a sandy beach round a low, uneven hill with a forest on it (the main island's radius 44-60 blocks, stretched and turned by the seed, its shore going in and out in bays and capes, the beach wide here and narrow there), a deep sea all around (36 blocks) and, by the seed, up to 3 little islets with a tree or two some way off. One biome (forest) everywhere; under the islands Beta's caves, ores and dungeons, under the open sea only ores. It was Beta's whole land with all its biomes cut off 260 blocks from the middle. Island worlds made before keep that generator (no seams).
+- Faster: the fire, lava and water textures' simulations run in C++ (NativeTextureFx; about 0.8 ms of every frame before); random ticks take a quarter of the chunks a tick with four times the tries each (a block is ticked as often as before, gathering the chunks was most of their cost) and grass ticks that can change nothing (air above, no open dirt in reach, all inside one chunk) are left out in C++; the chunk meshing queue passes over columns that can't be meshed yet before looking their chunks up. Scripts take about 1.3-1.7 ms a frame (2.3-2.6 before), a tick's random ticks 1.4 ms (2.75, with peaks of 7.5).
+
+### Fixed
+- The player could appear on top of a tree: leaves no longer count as ground for the spawn point.
+
 ## [0.0.30] - 2026-11-18
 
 ### Added
