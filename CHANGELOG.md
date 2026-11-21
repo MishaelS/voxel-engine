@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.31] - 2026-11-21
+
 ### Added
 - Phone controls: Options -> Controls -> Control Mode: PC / Phone (Phone by default on Android), switched while playing. The game is the same; only the controls and the menus' sizes differ. In Phone mode, like the mobile game: a cross of movement arrows at the bottom left (a finger may slide between them, between two it walks diagonally) with the sneak button in its middle (a tap switches sneaking) and, while walking forward, two diagonal arrows beside the forward one, the jump button at the bottom right (twice quickly: flying in creative), chat and pause at the top right, the inventory button beside the hotbar - drawn like the menus' buttons, seen through, their pictures 16 x 16 PNG files in `assets/textures/extra/touch/` (replace them to change the look). A finger on the world aims exactly where it is (the camera's ray through it, also in the third person view): dragging turns the view, a short tap uses / places (hits a creature; gets into a boat or minecart), holding breaks the block under the finger with a ring there filling up (eats the food, draws the bow in hand); a tap on a hotbar slot selects it. Several fingers work at once (walking, looking and jumping). There is no crosshair: the finger points. Everything goes through the same input actions and code as the keys and the mouse (TouchControls, GameInput). On a PC the mouse works as a finger in this mode, so it can be tried there.
 - Phone mode's windows and menus: the GUI is as large as fits the screen (not only whole scale steps); the inventory, crafting table, furnace, chest and dispenser windows are drawn up to 1.5 times larger and have a close button; a tap on a slot takes / puts / swaps the stack, a long tap takes half / puts one, a tap outside the window throws what is held - no right button, wheel or hover is needed (the creative catalog scrolls by its scrollbar). Lists scroll by dragging them with a finger, also from a button. Android's Back button is Esc.
@@ -801,7 +803,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.30...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.31...HEAD
+[0.0.31]: https://github.com/MishaelS/voxel-engine/compare/v0.0.30...v0.0.31
 [0.0.30]: https://github.com/MishaelS/voxel-engine/compare/v0.0.29...v0.0.30
 [0.0.29]: https://github.com/MishaelS/voxel-engine/compare/v0.0.28...v0.0.29
 [0.0.28]: https://github.com/MishaelS/voxel-engine/compare/v0.0.27...v0.0.28
