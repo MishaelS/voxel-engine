@@ -2,7 +2,8 @@
 # Built by tools/build.sh: on macOS into ../bin/libvoxel_native.framework (universal),
 # on Linux into ../bin/libvoxel_native.linux.<arch>.so, on Windows into
 # ../bin/voxel_native.windows.<arch>.dll (all listed in bin/voxel_native.gdextension).
-# Windows and Linux also in Docker, any host: native/docker/ (BUILDING.md).
+# Windows and Linux also in Docker, any host: native/docker/ (BUILDING.md);
+# Android (arm64) with the Android NDK into ../bin/libvoxel_native.android.arm64.so.
 cmake_minimum_required(VERSION 3.17)
 # Universal (Apple Silicon and Intel): must be set before project().
 if(APPLE)
@@ -49,6 +50,14 @@ elseif(WIN32)
 		LIBRARY_OUTPUT_DIRECTORY "$<1:${BIN_DIR}>"
 		ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}/lib>"
 		PDB_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}/lib>"
+	)
+elseif(ANDROID)
+	# With the Android NDK's toolchain (tools/build.sh android, BUILDING.md).
+	set_target_properties(voxel_native PROPERTIES
+		PREFIX "lib"
+		OUTPUT_NAME "voxel_native.android.${VOXEL_ARCH}"
+		SUFFIX ".so"
+		LIBRARY_OUTPUT_DIRECTORY "$<1:${BIN_DIR}>"
 	)
 else()
 	set_target_properties(voxel_native PROPERTIES

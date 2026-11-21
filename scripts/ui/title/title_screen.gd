@@ -41,7 +41,7 @@ var _starting := false
 func _ready() -> void:
 	GameInput.reset()
 	get_tree().paused = false
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	GameInput.capture(false)
 	GameFolder.ensure()
 	add_child(TitlePanorama.new())
 

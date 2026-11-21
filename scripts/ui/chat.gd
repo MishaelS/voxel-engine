@@ -84,7 +84,9 @@ func _ready() -> void:
 	if player:
 		(player as Player).message.connect(func(text: String) -> void:
 			add_message(text, CommandSource.MessageKind.INFO))
-	add_message(Lang.t("Press T to chat, / to enter a command (Tab completes, /help lists commands)"), CommandSource.MessageKind.INFO)
+	if not GameInput.touch:
+		add_message(Lang.t("Press T to chat, / to enter a command (Tab completes, /help lists commands)"), CommandSource.MessageKind.INFO)
+	_refresh_log() # (no messages: no empty box at the bottom)
 
 
 func is_open() -> bool:
@@ -98,7 +100,7 @@ func open(initial_text: String = "") -> void:
 		return
 	_open = true
 	GameInput.lock()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	GameInput.capture(false)
 	_input.visible = true
 	_input.text = initial_text
 	_input.caret_column = initial_text.length()
@@ -126,6 +128,10 @@ func close() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _open:
+		# Android's Back button (Settings sends it as ui_cancel) closes the line.
+		if event is InputEventAction and event.is_action_pressed("ui_cancel"):
+			close()
+			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("open_chat"):
 		open()

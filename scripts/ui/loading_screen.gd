@@ -49,7 +49,7 @@ func _ready() -> void:
 	layer = 50
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	GameInput.lock()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	GameInput.capture(false)
 	_root = Control.new()
 	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -210,5 +210,5 @@ func _finish() -> void:
 		world.loading_radius = -1
 	GameInput.unlock()
 	active = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	GameInput.capture(true)
 	queue_free()

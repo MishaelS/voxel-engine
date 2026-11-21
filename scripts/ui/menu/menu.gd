@@ -123,7 +123,7 @@ func push(screen: MenuScreen) -> void:
 			GameInput.lock()
 			_dim.visible = true
 			_blur.visible = true
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		GameInput.capture(false)
 		opened.emit()
 	else:
 		_stack[-1].visible = false

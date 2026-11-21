@@ -119,9 +119,9 @@ func set_isometric(enabled: bool) -> void:
 		_panel.queue_free()
 		_panel = null
 	if enabled:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		GameInput.capture(false)
 	elif not GameInput.is_blocked():
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		GameInput.capture(true)
 	_apply_hud()
 
 

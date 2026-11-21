@@ -47,7 +47,7 @@ func _ready() -> void:
 	done.pressed.connect(_finish)
 	box.add_child(done)
 	GameInput.lock()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	GameInput.capture(false)
 	_lines[0].grab_focus.call_deferred()
 
 
@@ -70,5 +70,5 @@ func _finish() -> void:
 		text.append(line.text)
 	world.set_sign_text(pos, text)
 	GameInput.unlock()
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	GameInput.capture(true)
 	queue_free()

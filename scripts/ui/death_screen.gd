@@ -108,7 +108,7 @@ func _show() -> void:
 		_buttons.add_child(_button("Delete World", _delete_world))
 	_shown_at = Time.get_ticks_msec() / 1000.0
 	GameInput.lock()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	GameInput.capture(false)
 	# Like the classic game the buttons appear after a moment.
 	_buttons.visible = false
 	get_tree().create_timer(1.0).timeout.connect(func() -> void: _buttons.visible = true)
@@ -132,5 +132,5 @@ func _respawn() -> void:
 		return
 	visible = false
 	GameInput.unlock()
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	GameInput.capture(true)
 	player.respawn(player.spawn_position())

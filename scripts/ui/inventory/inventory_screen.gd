@@ -33,6 +33,11 @@ extends Control
 ## - catalog: LMB takes a full stack, RMB one more; clicking it while
 ##   holding something deletes what is held; the mouse wheel scrolls it,
 ##   or dragging (clicking) its scrollbar.
+## Phone control mode (GameInput.touch), like the mobile game: the window is
+## drawn larger and has a close button; a tap on a slot is the left click
+## (take / put / swap the stack), a long tap the right one (take half, put
+## one); a tap outside the window throws what is held. No wheel, no hover
+## and no other mouse button is needed.
 ## Closing returns what is held and what is in the crafting grid to the
 ## inventory (what does not fit is thrown out).
 
@@ -106,6 +111,15 @@ var _shift_visited: Array[int] = []
 var _last_click_slot := -1
 var _last_click_time := -DOUBLE_CLICK_MS
 var _last_quick_id := Blocks.AIR
+## Phone: a finger is down on a slot (or outside: -1) since _touch_time and
+## has not acted yet (NO_TOUCH: none); held LONG_TAP_MS it is a long tap.
+const NO_TOUCH := -2
+const LONG_TAP_MS := 350
+## Phone: the window is drawn up to this much larger (what fits).
+const TOUCH_SCALE := 1.5
+var _touch_slot := NO_TOUCH
+var _touch_time := 0
+var _touch_point := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -170,7 +184,7 @@ func _open_mode(mode: Mode) -> void:
 	visible = true
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	GameInput.lock()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	GameInput.capture(false)
 	_refresh()
 
 
@@ -195,11 +209,12 @@ func close() -> void:
 	_container = null
 	_entity = {}
 	_reset_drags()
+	_touch_slot = NO_TOUCH
 	_open = false
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	GameInput.unlock()
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	GameInput.capture(true)
 	closed.emit()
 
 
@@ -261,6 +276,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(_delta: float) -> void:
 	if _open and _mode == Mode.FURNACE:
 		_update_furnace_progress()
+	if _open and _touch_slot != NO_TOUCH and Time.get_ticks_msec() - _touch_time >= LONG_TAP_MS:
+		_touch_tap(true)
 
 
 # --- Layout -----------------------------------------------------------------------
@@ -320,6 +337,19 @@ func _build() -> void:
 	_window.offset_right = _window.offset_left + window_size.x
 	_window.offset_bottom = _window.offset_top + window_size.y
 	add_child(_window)
+	if GameInput.touch:
+		# Larger for fingers, as far as the screen has room.
+		var room := minf(size.x / (window_size.x + 36 * P), size.y / window_size.y) * 0.97
+		_window.pivot_offset = window_size / 2.0
+		_window.scale = Vector2.ONE * clampf(room, 1.0, TOUCH_SCALE)
+		var close_button := Button.new()
+		close_button.text = "X"
+		close_button.focus_mode = Control.FOCUS_NONE
+		# Left of the window: the top right is where achievements show.
+		close_button.position = Vector2(-18 * P, 0)
+		close_button.size = Vector2(16, 16) * P
+		close_button.pressed.connect(close)
+		_window.add_child(close_button)
 
 	var main_y := 84
 	var hotbar_y := 142
@@ -401,6 +431,7 @@ func _build() -> void:
 
 	_held = ItemSlotView.new()
 	_held.visible = false
+	_held.scale = _window.scale
 	add_child(_held)
 
 	_tooltip = PanelContainer.new()
@@ -539,13 +570,17 @@ func _refresh() -> void:
 		var room := SCROLL_TRACK.size.y - SCROLL_THUMB.size.y
 		var t := _scroll / float(_max_scroll()) if _max_scroll() > 0 else 0.0
 		_thumb.position = Vector2(SCROLL_TRACK.position.x, SCROLL_TRACK.position.y + roundi(t * room)) * P
-	_update_hover(get_local_mouse_position())
+	# (Phone: where the finger last was; there is no mouse to ask)
+	_update_hover(_last_point if GameInput.touch else get_local_mouse_position())
 
 
 # --- Mouse ----------------------------------------------------------------------------
 
 func _gui_input(event: InputEvent) -> void:
 	if not _open:
+		return
+	if GameInput.touch:
+		_touch_input(event)
 		return
 	if event is InputEventMouseMotion:
 		if _dragging_scroll:
@@ -570,6 +605,54 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 
 
+## Phone: the finger (the mouse it emulates). Nothing happens on the press:
+## lifted soon it was a tap, kept down a long tap (_process).
+func _touch_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		if _dragging_scroll:
+			_scroll_to(event.position)
+		_update_hover(event.position)
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		_update_hover(event.position)
+		if not event.pressed:
+			_dragging_scroll = false
+			if _touch_slot != NO_TOUCH:
+				_touch_tap(false)
+		elif _creative and _on_scrollbar(event.position):
+			_dragging_scroll = true
+			_scroll_to(event.position)
+		else:
+			_touch_slot = _slot_at(event.position)
+			_touch_time = Time.get_ticks_msec()
+			_touch_point = event.position
+		accept_event()
+
+
+## A tap (the left click) or a long tap (the right click) where the finger
+## went down.
+func _touch_tap(long: bool) -> void:
+	var index := _touch_slot
+	_touch_slot = NO_TOUCH
+	if index >= 0:
+		_click(_slots[index], long, false)
+	elif _held_count > 0 and not _in_window(_touch_point):
+		var thrown := 1 if long else _held_count
+		player.throw_items(_held_id, thrown, _held_damage)
+		_held_count -= thrown
+		_clear_held_if_empty()
+	_refresh()
+
+
+## A point of this screen in the window's own coordinates (it may be drawn
+## larger, see _build).
+func _window_local(point: Vector2) -> Vector2:
+	return _window.get_transform().affine_inverse() * point
+
+
+func _in_window(point: Vector2) -> bool:
+	return Rect2(Vector2.ZERO, _window.size).has_point(_window_local(point))
+
+
 ## A left, right or middle press.
 func _press(event: InputEventMouseButton) -> void:
 	if _drag_button != MOUSE_BUTTON_NONE:
@@ -586,7 +669,7 @@ func _press(event: InputEventMouseButton) -> void:
 	var index := _slot_at(event.position)
 	if index < 0:
 		if _held_count > 0 and button != MOUSE_BUTTON_MIDDLE \
-				and not Rect2(_window.position, _window.size).has_point(event.position):
+				and not _in_window(event.position):
 			# Outside the window: throw the held stack (one with RMB).
 			var thrown := 1 if right else _held_count
 			player.throw_items(_held_id, thrown, _held_damage)
@@ -804,13 +887,13 @@ func _max_scroll() -> int:
 
 
 func _on_scrollbar(point: Vector2) -> bool:
-	var local := (point - _window.position) / P
+	var local := _window_local(point) / P
 	return Rect2(SCROLL_TRACK).grow(1).has_point(local)
 
 
 ## Drags the scrollbar: the thumb's middle follows the mouse.
 func _scroll_to(point: Vector2) -> void:
-	var local_y := (point.y - _window.position.y) / P - SCROLL_TRACK.position.y - SCROLL_THUMB.size.y * 0.5
+	var local_y := _window_local(point).y / P - SCROLL_TRACK.position.y - SCROLL_THUMB.size.y * 0.5
 	var room := float(SCROLL_TRACK.size.y - SCROLL_THUMB.size.y)
 	var scroll := roundi(clampf(local_y / room, 0.0, 1.0) * _max_scroll())
 	if scroll != _scroll:
@@ -819,7 +902,7 @@ func _scroll_to(point: Vector2) -> void:
 
 
 func _slot_at(point: Vector2) -> int:
-	var local := (point - _window.position) / P
+	var local := _window_local(point) / P
 	for i in _slots.size():
 		var pos: Vector2i = _slots[i].pos
 		if local.x >= pos.x - 1 and local.x < pos.x + 17 and local.y >= pos.y - 1 and local.y < pos.y + 17:
@@ -829,7 +912,9 @@ func _slot_at(point: Vector2) -> int:
 
 func _update_hover(point: Vector2) -> void:
 	_last_point = point
-	_held.position = point - Vector2(8, 8) * P
+	_held.position = point - Vector2(8, 8) * P * _held.scale
+	if GameInput.touch:
+		_held.position -= Vector2(5, 5) * P # lifted off the slot under the finger
 	_hover = _slot_at(point)
 	var slot: Dictionary = _slots[_hover] if _hover >= 0 else {}
 	_highlight.visible = _hover >= 0

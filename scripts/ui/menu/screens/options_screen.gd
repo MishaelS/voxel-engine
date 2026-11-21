@@ -221,9 +221,11 @@ func _entries(id: String) -> Array:
 			result.append({"group": "Shaders"})
 			result.append({"label": "Shader Pack", "build": _shader_pack_row})
 		"controls":
+			result.append(_setting_entry(Settings.get_setting("control_mode")))
 			result.append({"group": "Mouse"})
 			for setting: Setting in Settings.in_category("controls"):
-				result.append(_setting_entry(setting))
+				if setting.key != "control_mode":
+					result.append(_setting_entry(setting))
 			var category := ""
 			for binding: Array in KeyBindings.ACTIONS:
 				if binding[2] != category:

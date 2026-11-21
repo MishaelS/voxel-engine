@@ -49,8 +49,8 @@ func _process(_delta: float) -> void:
 	_fade.color.a = player.sleep_darkness() if asleep else 0.0
 	var menu_open := menu != null and menu.is_open()
 	_leave.visible = asleep and not menu_open
-	if _leave.visible and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE # for the button
+	if _leave.visible and GameInput.is_captured():
+		GameInput.capture(false) # for the button
 
 
 func _unhandled_input(event: InputEvent) -> void:

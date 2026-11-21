@@ -38,6 +38,8 @@ var _loading := false
 ## Texture Packs, used from the next start. Saved by name.
 var texture_packs := PackedStringArray()
 const PACKS_SECTION := "texture_packs"
+## Phone: how far (GUI units) a finger moves on a list before it scrolls.
+const TOUCH_SCROLL_DEADZONE := 12
 
 
 func _ready() -> void:
@@ -48,6 +50,36 @@ func _ready() -> void:
 	for key: String in _settings:
 		_apply_global(key, _values[key])
 	get_tree().root.size_changed.connect(_apply_gui_scale)
+	get_tree().quit_on_go_back = false # (see _notification)
+	get_tree().node_added.connect(_on_node_added)
+
+
+## Phone: a list is scrolled by dragging it with a finger, also when the
+## finger starts on one of its buttons (the button then is not pressed).
+func _on_node_added(node: Node) -> void:
+	if not GameInput.touch:
+		return
+	if node is ScrollContainer:
+		# A finger never rests quite still: a small move is still a tap.
+		(node as ScrollContainer).scroll_deadzone = TOUCH_SCROLL_DEADZONE
+	if not node is BaseButton:
+		return
+	var parent := node.get_parent()
+	while parent is Control:
+		if parent is ScrollContainer:
+			(node as Control).mouse_filter = Control.MOUSE_FILTER_PASS
+			return
+		parent = parent.get_parent()
+
+
+## Android's Back button is Esc: closes the window, opens the Game Menu.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		for pressed in [true, false]:
+			var event := InputEventAction.new()
+			event.action = "ui_cancel"
+			event.pressed = pressed
+			Input.parse_input_event(event)
 
 
 func _exit_tree() -> void:
@@ -153,7 +185,11 @@ func _register_all() -> void:
 		PackedStringArray(["2048 px", "4096 px", "8192 px"]), 1))
 	define("isometric", Setting.choice("iso_background", "Screenshot Background",
 		PackedStringArray(["Sky", "Transparent"]), 0))
-	# Controls (mouse; keys are KeyBindings)
+	# Controls (mouse; keys are KeyBindings). The control mode: a PC's mouse
+	# and keys, or a phone's touch screen (TouchControls) - the game is the
+	# same, only the controls and the menus' sizes differ.
+	define("controls", Setting.choice("control_mode", "Control Mode", PackedStringArray(["PC", "Phone"]),
+		1 if OS.has_feature("mobile") else 0))
 	define("controls", Setting.range_of("mouse_sensitivity", "Sensitivity", 10, 200, 100, 5) \
 		.format_with(func(v: float) -> String: return "%d%%" % int(v)))
 	define("controls", Setting.toggle("invert_mouse", "Invert Mouse", false))
@@ -274,6 +310,8 @@ func _apply_gui_scale() -> void:
 			factor = step
 	if factor == 0.0:
 		factor = clampf(fits, 0.5, 1.0) # (a window smaller than the GUI: shrink below 1)
+	if GameInput.touch and wanted == 0.0:
+		factor = maxf(factor, fits) # Phone: as large as fits (not only whole steps), for fingers
 	if is_equal_approx(factor, _gui_factor):
 		return
 	_gui_factor = factor
@@ -309,4 +347,7 @@ func _apply_global(key: String, value: Variant) -> void:
 		"anisotropic":
 			viewport.anisotropic_filtering_level = ANISOTROPY_LEVELS[value]
 		"gui_scale":
+			_apply_gui_scale()
+		"control_mode":
+			GameInput.set_touch(value == 1)
 			_apply_gui_scale()

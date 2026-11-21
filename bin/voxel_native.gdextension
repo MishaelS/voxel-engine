@@ -6,7 +6,7 @@ compatibility_minimum = "4.5"
 [libraries]
 
 ; Built by tools/build.sh: the current OS's with its compiler, Windows and
-; Linux in Docker (native/docker/), or every platform in CI
+; Linux in Docker (native/docker/), Android with the NDK, or every platform in CI
 ; (.github/workflows/build.yml). One release build per platform (no
 ; .debug/.release tags) serves the editor and both kinds of export. Without
 ; its platform's file the game runs the GDScript fallback (tools/build.sh
@@ -15,3 +15,4 @@ macos = "res://bin/libvoxel_native.framework"
 windows.x86_64 = "res://bin/voxel_native.windows.x86_64.dll"
 linux.x86_64 = "res://bin/libvoxel_native.linux.x86_64.so"
 linux.arm64 = "res://bin/libvoxel_native.linux.arm64.so"
+android.arm64 = "res://bin/libvoxel_native.android.arm64.so"

@@ -33,6 +33,18 @@ func _ready() -> void:
 	_update_back_buffer.call_deferred()
 
 
+## The Phone control mode has no crosshair: the finger points (TouchControls).
+var _picture: Texture2D
+
+
+func _process(_delta: float) -> void:
+	if _picture == null:
+		_picture = texture
+	var wanted := null if GameInput.touch else _picture
+	if texture != wanted:
+		texture = wanted
+
+
 func _update_back_buffer() -> void:
 	# The copy rectangle is in screen pixels: apply the GUI scale (content
 	# scale) that controls are laid out with.

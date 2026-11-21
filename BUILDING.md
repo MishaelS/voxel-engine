@@ -1,6 +1,6 @@
 # Building release versions
 
-The game is exported for four targets, the presets in `export_presets.cfg`:
+The game is exported for five targets, the presets in `export_presets.cfg`:
 
 | Platform    | Preset            | Output                                     |
 |-------------|-------------------|--------------------------------------------|
@@ -8,6 +8,7 @@ The game is exported for four targets, the presets in `export_presets.cfg`:
 | Windows     | `Windows Desktop` | x86_64 `.exe` + `.pck`                     |
 | Linux       | `Linux`           | x86_64 binary + `.pck`                     |
 | Linux ARM64 | `Linux ARM64`     | arm64 binary + `.pck`                      |
+| Android     | `Android`         | arm64 `.apk` (landscape, touch controls)   |
 
 ## Requirements
 
@@ -24,11 +25,14 @@ The game is exported for four targets, the presets in `export_presets.cfg`:
   [Docker](https://www.docker.com/products/docker-desktop/) running
   (Docker Desktop on macOS/Windows). See [Native libraries in Docker](#native-libraries-in-docker).
 
+- For Android: a JDK 17, the Android SDK and, for the native library, the
+  Android NDK. See [Android](#android).
+
 ## Local build
 
 ```sh
 tools/build.sh                 # every platform whose templates are installed
-tools/build.sh macos           # only some: macos, windows, linux, linux-arm64
+tools/build.sh macos           # only some: macos, windows, linux, linux-arm64, android
 tools/build.sh --debug         # debug builds
 tools/build.sh --native        # rebuild the native library for this OS first
 tools/build.sh --docker        # rebuild the Windows/Linux native libraries in Docker first
@@ -37,8 +41,8 @@ tools/build.sh --native-only   # only the native libraries (add --docker for Win
 tools/build.sh --no-zip        # leave the folders unzipped
 ```
 
-With Docker running, `tools/build.sh all` makes all four builds with their
-native libraries. It builds the native library for the current OS when it is
+With Docker running, `tools/build.sh all` makes the four desktop builds with
+their native libraries (and Android's, with its tools installed). It builds the native library for the current OS when it is
 missing (its own compiler, `native/build` folder), the missing Windows and
 Linux ones in Docker, imports the project, exports each preset and zips it.
 Outputs (the `build/` folder is not in git):
@@ -56,7 +60,53 @@ still exported, without it: the game then uses the slower GDScript code
 `bin/voxel_native.gdextension` lists them:
 `bin/libvoxel_native.framework` (macOS, universal),
 `bin/voxel_native.windows.x86_64.dll`, `bin/libvoxel_native.linux.x86_64.so`,
-`bin/libvoxel_native.linux.arm64.so`.
+`bin/libvoxel_native.linux.arm64.so`, `bin/libvoxel_native.android.arm64.so`.
+
+## Android
+
+The game on a phone is the same game with the Phone control mode (Options >
+Controls > Control Mode, the default on Android): touch controls and larger
+windows. On a PC the same mode works with the mouse as a finger.
+
+Install once (none of it is needed for the desktop builds):
+
+1. **JDK 17** - for example `brew install --cask temurin@17` (macOS), or
+   Android Studio's own (`JAVA_HOME` pointing at it).
+2. **Android SDK** - Android Studio installs it into `~/Library/Android/sdk`
+   (macOS), `~/Android/Sdk` (Linux) or `%LOCALAPPDATA%\Android\Sdk` (Windows).
+   Without Android Studio, with the command line tools:
+
+   ```sh
+   sdkmanager --sdk_root="$HOME/Library/Android/sdk" \
+     "platform-tools" "build-tools;35.0.0" "platforms;android-35" "ndk;28.1.13356709"
+   ```
+
+   (the versions Godot 4.5 names; the NDK is only for the native library).
+3. The export templates (the same download as for the desktop builds).
+
+`tools/build.sh` finds the SDK in `$ANDROID_HOME` / `$ANDROID_SDK_ROOT` or
+the default folders above, the NDK in `$ANDROID_NDK_ROOT` / `$ANDROID_NDK_HOME`
+or the newest in the SDK's `ndk/` folder, the JDK in `$JAVA_HOME` or the
+system's, and passes them to Godot (the editor's own Editor Settings > Export >
+Android paths work too).
+
+```sh
+tools/build.sh --native-only android   # only bin/libvoxel_native.android.arm64.so
+tools/build.sh android                 # the library when missing, then the .apk
+```
+
+- The library is built with the NDK's CMake toolchain (arm64-v8a, Android 7.0
+  and later, the C++ library linked statically) in `native/build-android/`.
+  Without the NDK the `.apk` is still made, with the slower GDScript code.
+- Output: `build/android/Voxel Engine Godot Edition <version>-android.apk`.
+- A release `.apk` must be signed with your own key: set
+  `GODOT_ANDROID_KEYSTORE_RELEASE_PATH`, `GODOT_ANDROID_KEYSTORE_RELEASE_USER`
+  and `GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD`. Without them the build makes
+  a debug-signed `.apk` (Godot's debug keystore), good for testing:
+  `adb install -r "build/android/Voxel Engine Godot Edition <version>-android.apk"`.
+- With no JDK or SDK, `tools/build.sh` (everything) skips Android and says
+  so; `tools/build.sh android` then fails.
+- The CI workflow does not build Android.
 
 ## Native libraries in Docker
 

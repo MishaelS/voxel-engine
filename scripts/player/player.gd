@@ -326,7 +326,7 @@ func sleep_in(bed: Vector3i) -> void:
 	_yaw = atan2(-toward_foot.x, -toward_foot.z)
 	_pitch = 0.0
 	rotation = Vector3(0, _yaw, 0)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	GameInput.capture(false)
 
 
 func wake_up() -> void:
@@ -335,7 +335,7 @@ func wake_up() -> void:
 	sleeping = false
 	sleep_ticks = 0
 	if not dead and not GameInput.is_blocked() and not get_tree().paused:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED # back to playing
+		GameInput.capture(true) # back to playing
 
 
 ## How dark the screen is while falling asleep (0..0.95), for SleepScreen.
@@ -379,18 +379,25 @@ func intersects_block(pos: Vector3i) -> bool:
 
 # --- Input ----------------------------------------------------------------------
 
+## Turns the view by a mouse's (or a finger's, TouchControls) move.
+func turn(relative: Vector2) -> void:
+	var sensitivity: float = MOUSE_SENSITIVITY * Settings.get_value("mouse_sensitivity") / 100.0
+	var invert := -1.0 if Settings.get_value("invert_mouse") else 1.0
+	_yaw -= relative.x * sensitivity
+	_pitch = clampf(_pitch - relative.y * sensitivity * invert, -PI / 2 + 0.001, PI / 2 - 0.001)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if GameInput.is_blocked():
 		return
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not sleeping:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if GameInput.touch:
+		pass # (Phone: TouchControls turns the view and captures by itself)
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if not GameInput.is_captured() and not sleeping:
+			GameInput.capture(true)
 			get_viewport().set_input_as_handled() # this click only captures
-	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not sleeping:
-		var sensitivity: float = MOUSE_SENSITIVITY * Settings.get_value("mouse_sensitivity") / 100.0
-		var invert := -1.0 if Settings.get_value("invert_mouse") else 1.0
-		_yaw -= event.relative.x * sensitivity
-		_pitch = clampf(_pitch - event.relative.y * sensitivity * invert, -PI / 2 + 0.001, PI / 2 - 0.001)
+	elif event is InputEventMouseMotion and GameInput.is_captured() and not sleeping:
+		turn(event.relative)
 	elif event.is_action_pressed("toggle_perspective") and not event.is_echo():
 		third_person = not third_person
 		get_viewport().set_input_as_handled()

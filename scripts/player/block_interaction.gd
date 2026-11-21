@@ -78,20 +78,44 @@ func _ready() -> void:
 	add_child(_cracks)
 
 
-func _process(delta: float) -> void:
-	target = world.raycast(player.eye_position(), player.look_direction(), player.reach()) if player and world else {}
+## The last aiming ray: [from, direction, length] (_update_target).
+var _ray := [Vector3.ZERO, Vector3.ZERO, 0.0]
+
+
+## What is aimed at: a block (target), a creature or a player. On a PC along
+## the view (the crosshair); on a phone where the finger is on the screen
+## (GameInput.aim), nothing with no finger on the world.
+func _update_target() -> void:
+	if player == null or world == null:
+		return
+	var aim := player.look_direction()
+	var eye := player.eye_position()
+	var reach := player.reach()
+	if GameInput.touch:
+		# From the camera through the finger; as far as the player reaches
+		# (the camera may be behind them, the third person view).
+		aim = GameInput.aim
+		reach += GameInput.aim_from.distance_to(eye)
+		eye = GameInput.aim_from
+	_ray = [eye, aim, reach]
 	target_entity = null
-	if player and world and world.entities:
-		var reach := player.reach() if not target.get("hit", false) else float(target.distance)
-		var found := world.entities.raycast(player.eye_position(), player.look_direction(), reach)
+	target_player = null
+	if aim == Vector3.ZERO:
+		target = {}
+		return
+	target = world.raycast(eye, aim, reach)
+	target_entity = null
+	if world.entities:
+		if target.get("hit", false):
+			reach = float(target.distance)
+		var found := world.entities.raycast(eye, aim, reach)
 		if not found.is_empty() and not (found[0] as Entity).is_dead():
 			target_entity = found[0]
 			target = {}
 		# Other players (network games): aimed at like creatures.
 		target_player = null
 		var nearest := reach if found.is_empty() else float(found[1])
-		var eye := player.eye_position()
-		var to := eye + player.look_direction() * nearest
+		var to := eye + aim * nearest
 		for avatar: RemotePlayer in Net.avatars.values():
 			if not is_instance_valid(avatar) or avatar.dead:
 				continue
@@ -102,6 +126,10 @@ func _process(delta: float) -> void:
 				target_player = avatar
 				target_entity = null
 				target = {}
+
+
+func _process(delta: float) -> void:
+	_update_target()
 	var hit: bool = target.get("hit", false)
 	_outline.visible = hit and not player.sleeping
 	if hit:
@@ -116,11 +144,11 @@ func _process(delta: float) -> void:
 	_break_delay = maxf(_break_delay - ticks, 0.0)
 	_place_delay = maxf(_place_delay - ticks, 0.0)
 	var active := _captured() and not GameInput.is_blocked() and not player.dead and not player.sleeping
-	if active and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and hit:
+	if active and _attack_held() and hit:
 		_continue_breaking(target.pos, ticks)
 	else:
 		_stop_breaking()
-	var using := active and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	var using := active and _use_held()
 	if _drawing >= 0.0:
 		if Items.name_of(player.held_block()) != "bow" or not active:
 			_stop_drawing()
@@ -157,20 +185,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not (event is InputEventMouseButton and event.pressed):
 		return
+	if GameInput.touch and event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE]:
+		return # (Phone: the fingers do it, touch_tap / touch_hold)
 	match event.button_index:
 		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
 			hotbar.scroll(-1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
 			get_viewport().set_input_as_handled()
 		MOUSE_BUTTON_LEFT:
 			if _captured():
-				_break_delay = 0.0 # a fresh click breaks right away in creative
-				if target_player and not player.dead and not player.sleeping:
-					_attack_player(target_player)
-				elif target_entity and not player.dead and not player.sleeping:
-					_attack(target_entity)
-				elif target.get("hit", false) and Blocks.family_of(target.block) == "note_block":
-					MusicBehavior.play_note(world, target.pos)
-					Stats.grant("musician")
+				_press_attack()
 				get_viewport().set_input_as_handled()
 		MOUSE_BUTTON_RIGHT:
 			if _captured():
@@ -183,7 +206,86 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _captured() -> bool:
-	return Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	return GameInput.is_captured()
+
+
+## The attack button goes down: hits what is aimed at.
+func _press_attack() -> void:
+	_break_delay = 0.0 # a fresh click breaks right away in creative
+	if target_player and not player.dead and not player.sleeping:
+		_attack_player(target_player)
+	elif target_entity and not player.dead and not player.sleeping:
+		_attack(target_entity)
+	elif target.get("hit", false) and Blocks.family_of(target.block) == "note_block":
+		MusicBehavior.play_note(world, target.pos)
+		Stats.grant("musician")
+
+
+func _attack_held() -> bool:
+	if GameInput.touch:
+		return GameInput.hold and not _hold_uses
+	return Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+
+
+func _use_held() -> bool:
+	if GameInput.touch:
+		return GameInput.hold and _hold_uses
+	return Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+
+
+# --- Phone (TouchControls) -------------------------------------------------------
+
+## The held finger uses the item in hand (food is eaten, a bow drawn)
+## rather than breaking the block under it.
+var _hold_uses := false
+
+
+func _touch_active() -> bool:
+	return _captured() and not GameInput.is_blocked() and not player.dead and not player.sleeping
+
+
+## A short tap on the world, like the mobile game: hits the creature under
+## the finger (or does what the item does with it: shears, a saddle), else
+## uses the block or the item in hand - places a block.
+func touch_tap() -> void:
+	if not _touch_active():
+		return
+	_update_target()
+	if target_player or (target_entity and not _entity_used_by_tap()):
+		_press_attack()
+		return
+	_use()
+	_place_delay = PLACE_DELAY_TICKS
+	if _eating >= 0.0 or _drawing >= 0.0:
+		# Food and the bow need the finger held; a tap throws an egg.
+		var tapped := THROWN.has(Items.name_of(player.held_block()))
+		_stop_eating()
+		_stop_drawing()
+		if tapped:
+			_throw_projectile()
+
+
+## A tap on this creature uses it rather than hitting it: boats and
+## minecarts (getting in), and what the item in hand is for.
+func _entity_used_by_tap() -> bool:
+	if target_entity is Boat or target_entity is Minecart:
+		return true
+	return Items.name_of(player.held_block()) in ["shears", "saddle", "bucket", "wheat", "bone", "dye", "flint_and_steel"]
+
+
+## The finger stays on the world: breaks the block under it (hits the
+## creature), or eats the food / draws the bow in hand.
+func touch_hold() -> void:
+	if not _touch_active():
+		return
+	_update_target()
+	var id := player.held_block()
+	var item := Items.get_type(id)
+	_hold_uses = item != null and (item.name == "bow" or (item.food > 0 and player.can_eat(id)))
+	if _hold_uses:
+		_place_delay = 0.0
+	else:
+		_press_attack()
 
 
 func _throw_held(whole_stack: bool) -> void:
@@ -545,7 +647,7 @@ func _place_cell() -> Variant:
 
 ## Where the targeted block was hit (world units).
 func _hit_point() -> Vector3:
-	return player.eye_position() + player.look_direction().normalized() * float(target.get("distance", 0.0))
+	return _ray[0] + (_ray[1] as Vector3).normalized() * float(target.get("distance", 0.0))
 
 
 ## Whether a block placed now takes the upper half of its cell (top slabs,
@@ -825,7 +927,7 @@ func _strike_flint() -> void:
 
 ## An empty bucket scoops up a water or lava source.
 func _fill_bucket() -> void:
-	var hit := world.raycast(player.eye_position(), player.look_direction(), player.reach(), true)
+	var hit := world.raycast(_ray[0], _ray[1], _ray[2], true)
 	if not hit.get("hit", false) or Blocks.liquid_level_table[hit.block] != 0:
 		return
 	var filled := Items.id_of(Blocks.family_of(hit.block) + "_bucket")

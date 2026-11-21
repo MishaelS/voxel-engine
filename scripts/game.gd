@@ -43,6 +43,7 @@ func _ready() -> void:
 	Stats.add("saves_loaded")
 	get_tree().auto_accept_quit = false # save first (NOTIFICATION_WM_CLOSE_REQUEST)
 	_add_sleep_screen()
+	_add_touch_controls()
 	var loading := LoadingScreen.new()
 	loading.world = world
 	add_child(loading)
@@ -84,6 +85,24 @@ func _add_sleep_screen() -> void:
 	ui.add_child(sleep_screen)
 	if below:
 		ui.move_child(sleep_screen, below.get_index())
+
+
+## The Phone control mode's stick and buttons (TouchControls): over the
+## HUD, under the screens and windows. Shown only in that mode.
+func _add_touch_controls() -> void:
+	var ui := get_node_or_null("UI")
+	if ui == null or player == null:
+		return
+	var controls := TouchControls.new()
+	controls.name = "TouchControls"
+	controls.player = player
+	controls.hotbar = ui.get_node_or_null("Hotbar") as Hotbar
+	controls.interaction = get_node_or_null("BlockInteraction") as BlockInteraction
+	controls.screenshots = get_node_or_null("Screenshots")
+	var below := ui.get_node_or_null("DeathScreen")
+	ui.add_child(controls)
+	if below:
+		ui.move_child(controls, below.get_index())
 
 
 func _exit_tree() -> void:
@@ -146,6 +165,6 @@ func quit_to_title() -> void:
 	Net.leave() # stops hosting / leaves the host's game
 	get_tree().paused = false
 	GameInput.reset()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	GameInput.capture(false)
 	WorldSave.current = null
 	get_tree().change_scene_to_file(TITLE_SCENE)

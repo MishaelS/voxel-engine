@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Builds the game from the console, without opening the Godot editor: the
 # native libraries (native/, C++ GDExtension) when missing - this OS's with
-# its own compiler, Linux and Windows in Docker when it runs - the project's
+# its own compiler, Linux and Windows in Docker when it runs, Android's with
+# the Android NDK when it is installed - the project's
 # import, then one export per platform (export_presets.cfg) into
 # build/<platform>/, each zipped with the dedicated server's files next to
 # the game (BUILDING.md).
 #
 #   tools/build.sh                     every platform whose export templates are installed
-#   tools/build.sh macos linux         only these (macos, windows, linux, linux-arm64)
+#   tools/build.sh macos linux         only these (macos, windows, linux, linux-arm64, android)
 #   tools/build.sh --debug             debug builds (console wrapper, full F3 screen)
 #   tools/build.sh --native            rebuild the native library for this OS first
 #   tools/build.sh --docker            rebuild the Linux and Windows libraries in Docker first
@@ -21,6 +22,8 @@
 # Godot: $GODOT, else the editor in /Applications, else `godot` on the PATH.
 # It needs the export templates of the same version: Godot editor > Editor >
 # Manage Export Templates > Download and Install (once).
+# Android also needs a JDK 17 and the Android SDK (and the NDK for the native
+# library): BUILDING.md. Without them a build of everything skips it.
 set -e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -44,16 +47,16 @@ while [ $# -gt 0 ]; do
 		--no-docker) docker_mode="no" ;;
 		--no-zip|--app) zip_it=false ;;
 		--open) open_after=true ;;
-		macos|windows|linux|linux-arm64) platforms+=("$1") ;;
-		all) platforms=(macos windows linux linux-arm64) ;;
-		-h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+		macos|windows|linux|linux-arm64|android) platforms+=("$1") ;;
+		all) platforms=(macos windows linux linux-arm64 android) ;;
+		-h|--help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 		*) echo "Unknown option: $1 (see --help)"; exit 1 ;;
 	esac
 	shift
 done
 explicit=true
 if [ ${#platforms[@]} -eq 0 ]; then
-	platforms=(macos windows linux linux-arm64)
+	platforms=(macos windows linux linux-arm64 android)
 	explicit=false
 fi
 
@@ -73,6 +76,7 @@ preset_of() {
 		windows) echo "Windows Desktop" ;;
 		linux) echo "Linux" ;;
 		linux-arm64) echo "Linux ARM64" ;;
+		android) echo "Android" ;;
 	esac
 }
 template_of() {
@@ -81,6 +85,7 @@ template_of() {
 		windows) echo "windows_${mode}_x86_64.exe" ;;
 		linux) echo "linux_${mode}.x86_64" ;;
 		linux-arm64) echo "linux_${mode}.arm64" ;;
+		android) echo "android_${mode}.apk" ;;
 	esac
 }
 native_of() {
@@ -89,6 +94,7 @@ native_of() {
 		windows) echo "bin/voxel_native.windows.x86_64.dll" ;;
 		linux) echo "bin/libvoxel_native.linux.x86_64.so" ;;
 		linux-arm64) echo "bin/libvoxel_native.linux.arm64.so" ;;
+		android) echo "bin/libvoxel_native.android.arm64.so" ;;
 	esac
 }
 gdext_key_of() {
@@ -97,6 +103,7 @@ gdext_key_of() {
 		windows) echo "windows.x86_64" ;;
 		linux) echo "linux.x86_64" ;;
 		linux-arm64) echo "linux.arm64" ;;
+		android) echo "android.arm64" ;;
 	esac
 }
 server_files_of() {
@@ -107,6 +114,52 @@ server_files_of() {
 	esac
 }
 docker_running() { command -v docker > /dev/null && docker info > /dev/null 2>&1; }
+
+# --- Android: where its tools are ----------------------------------------------------
+# The SDK: $ANDROID_HOME / $ANDROID_SDK_ROOT, else Android Studio's default
+# folder. The NDK: $ANDROID_NDK_ROOT / $ANDROID_NDK_HOME, else the newest in
+# the SDK's ndk/ folder. The JDK: $JAVA_HOME, else the system's.
+android_sdk() {
+	local dir
+	for dir in "$ANDROID_HOME" "$ANDROID_SDK_ROOT" "$HOME/Library/Android/sdk" "$HOME/Android/Sdk" \
+			"$LOCALAPPDATA/Android/Sdk"; do
+		if [ -n "$dir" ] && [ -d "$dir/platform-tools" ] && [ -d "$dir/build-tools" ]; then echo "$dir"; return 0; fi
+	done
+	return 1
+}
+android_ndk() {
+	local dir sdk
+	for dir in "$ANDROID_NDK_ROOT" "$ANDROID_NDK_HOME"; do
+		if [ -n "$dir" ] && [ -f "$dir/build/cmake/android.toolchain.cmake" ]; then echo "$dir"; return 0; fi
+	done
+	sdk="$(android_sdk)" || sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+	[ -n "$sdk" ] && [ -d "$sdk/ndk" ] || return 1
+	dir="$(ls -d "$sdk"/ndk/*/ 2>/dev/null | sort -V | tail -1)"
+	[ -n "$dir" ] && [ -f "${dir}build/cmake/android.toolchain.cmake" ] && echo "${dir%/}"
+}
+android_java() {
+	if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then echo "$JAVA_HOME"; return 0; fi
+	if [ -x /usr/libexec/java_home ]; then /usr/libexec/java_home 2>/dev/null && return 0; fi
+	command -v javac > /dev/null && javac -version > /dev/null 2>&1 && dirname "$(dirname "$(command -v javac)")"
+}
+
+# --- Native library for Android (arm64), with the Android NDK -----------------------
+# On any host: the NDK's own CMake toolchain, the C++ library linked
+# statically, into bin/libvoxel_native.android.arm64.so. Build folder
+# native/build-android (the first build compiles godot-cpp).
+build_native_android() { # ndk
+	local build_dir=native/build-android jobs
+	[ -f native/godot-cpp/CMakeLists.txt ] || git submodule update --init native/godot-cpp
+	jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+	cmake -S native -B "$build_dir" -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_TOOLCHAIN_FILE="$1/build/cmake/android.toolchain.cmake" \
+		-DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 -DANDROID_STL=c++_static > /dev/null
+	if ! cmake --build "$build_dir" --parallel "$jobs" > "$build_dir/build.log" 2>&1; then
+		grep -E "error|Error" -A3 "$build_dir/build.log" | head -40
+		echo "   failed: $build_dir/build.log"
+		exit 1
+	fi
+}
 
 # --- Native library for this OS, with its own compiler ------------------------------
 # CMake 3.17+, a C++17 compiler and Python 3 (godot-cpp's binding generator).
@@ -193,6 +246,7 @@ build_native_docker() { # platforms (linux, linux-arm64, windows)
 # goes to Docker, by default only the missing ones and only when Docker runs.
 $native_only && [ "$native" = "auto" ] && native="yes"
 host_build=false
+android_build=false
 docker_targets=()
 for platform in "${platforms[@]}"; do
 	case "$platform" in windows|linux|linux-arm64) dockerable=true ;; *) dockerable=false ;; esac
@@ -200,6 +254,8 @@ for platform in "${platforms[@]}"; do
 	[ -f "$(native_of "$platform")" ] || missing=true
 	if [ "$platform" = "$own" ] && ! { $dockerable && [ "$docker_mode" = "yes" ]; }; then
 		if [ "$native" = "yes" ] || { [ "$native" = "auto" ] && $missing; }; then host_build=true; fi
+	elif [ "$platform" = "android" ]; then
+		if [ "$native" = "yes" ] || { [ "$native" = "auto" ] && $missing; }; then android_build=true; fi
 	elif $dockerable; then
 		if [ "$docker_mode" = "yes" ] || { [ "$docker_mode" = "auto" ] && $missing; } \
 				|| { $native_only && [ "$docker_mode" = "auto" ] && docker_running; }; then
@@ -226,6 +282,15 @@ if [ ${#docker_targets[@]} -gt 0 ]; then
 		exit 1
 	else
 		echo "== Docker is not running: no native library for ${docker_targets[*]} (start Docker to build them)"
+	fi
+fi
+if $android_build; then
+	if ndk="$(android_ndk)"; then
+		echo "== Native library for android (native/, the NDK in $ndk)"
+		build_native_android "$ndk"
+		echo "   -> $(native_of android) ($(du -h "$(native_of android)" | cut -f1))"
+	else
+		echo "== No Android NDK: no native library for android (BUILDING.md says how to install it)"
 	fi
 fi
 $native_only && exit 0
@@ -289,7 +354,26 @@ failed=()
 suffix="$([ "$mode" = "debug" ] && echo " debug" || echo "")"
 for platform in "${platforms[@]}"; do
 	preset="$(preset_of "$platform")"
+	export_mode="$mode"
+	if [ "$platform" = "android" ]; then
+		# Godot reads the JDK and the SDK from the editor settings, else from
+		# these variables.
+		sdk="$(android_sdk)" || sdk=""
+		java="$(android_java)" || java=""
+		if [ -z "$sdk" ] || [ -z "$java" ]; then
+			echo "== android: skipped, needs a JDK 17 and the Android SDK (BUILDING.md)"
+			skipped+=("android (no $([ -z "$java" ] && echo "JDK")$([ -z "$java$sdk" ] && echo " and no ")$([ -z "$sdk" ] && echo "Android SDK"))")
+			continue
+		fi
+		export ANDROID_HOME="$sdk" JAVA_HOME="$java"
+		if [ "$mode" = "release" ] && [ -z "$GODOT_ANDROID_KEYSTORE_RELEASE_PATH" ]; then
+			# A release .apk must be signed with the author's own key.
+			echo "== android: no release keystore (GODOT_ANDROID_KEYSTORE_RELEASE_PATH): a debug-signed .apk, for testing"
+			export_mode="debug"
+		fi
+	fi
 	template="$(template_of "$platform")"
+	[ "$platform" = "android" ] && template="android_${export_mode}.apk"
 	if [ ! -f "$templates/$template" ]; then
 		echo "== $platform: skipped, no export template $templates/$template"
 		skipped+=("$platform (no export templates $template_version)")
@@ -328,8 +412,9 @@ for platform in "${platforms[@]}"; do
 			windows) binary="$game_name.exe" ;;
 			linux) binary="$game_name.x86_64" ;;
 			linux-arm64) binary="$game_name.arm64" ;;
+			android) binary="$game_name.apk" ;;
 		esac
-		"$GODOT" --headless --path . --export-$mode "$preset" "$stage/$binary" > "$log" 2>&1 || true
+		"$GODOT" --headless --path . --export-$export_mode "$preset" "$stage/$binary" > "$log" 2>&1 || true
 		[ -f "$stage/$binary" ] || ok=false
 	fi
 	if [ -f "$GDEXT_BACKUP" ]; then
@@ -343,6 +428,15 @@ for platform in "${platforms[@]}"; do
 		continue
 	fi
 
+	if [ "$platform" = "android" ]; then
+		# One file to install; no server beside it.
+		result="$out_dir/$game_name $game_version-android$suffix.apk"
+		mv "$stage/$binary" "$result"
+		rm -rf "$stage"
+		echo "   -> $result ($(du -sh "$result" | cut -f1))"
+		built+=("$platform")
+		continue
+	fi
 	# The dedicated server's files next to the game (Godot exports only into
 	# the .pck/.app, so they are copied here).
 	cp CHANGELOG.md SERVER.md "$stage/"
@@ -377,7 +471,7 @@ done
 echo "== Done in $(( $(date +%s) - started )) s"
 [ ${#built[@]} -gt 0 ] && echo "   built:   ${built[*]}"
 for s in "${skipped[@]}"; do echo "   skipped: $s"; done
-if [ ${#skipped[@]} -gt 0 ]; then
+if printf '%s\n' "${skipped[@]}" | grep -q "export templates"; then
 	echo "   Install the templates once: Godot editor > Editor > Manage Export Templates"
 	echo "   > Download and Install (they go to $templates_root/)."
 fi

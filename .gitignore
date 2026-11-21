@@ -41,6 +41,7 @@ ROADMAP.md
 # --- Native code (tools/build.sh; build-docker-*: its Docker builds) ---
 /native/build/
 /native/build-docker-*/
+/native/build-android/
 
 # --- Dedicated server (made when it runs in the project folder) ---
 server.properties
