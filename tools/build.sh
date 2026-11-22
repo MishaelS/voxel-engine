@@ -13,7 +13,7 @@
 #   tools/build.sh --native            rebuild the native library for this OS first
 #   tools/build.sh --docker            rebuild the Linux and Windows libraries in Docker first
 #   tools/build.sh --no-docker         never use Docker (a missing library: GDScript fallback)
-#   tools/build.sh --no-native         never build native/ (CI puts the libraries in bin/)
+#   tools/build.sh --no-native         never build native/ (the libraries already in bin/)
 #   tools/build.sh --native-only       only build the native libraries (with --docker:
 #                                      Linux and Windows in Docker), no export
 #   tools/build.sh --no-zip            leave the folders, skip the zips

@@ -108,7 +108,6 @@ tools/build.sh android                 # the library when missing, then the .apk
   `adb install -r "build/android/Voxel Engine Godot Edition <version>-android.apk"`.
 - With no JDK or SDK, `tools/build.sh` (everything) skips Android and says
   so; `tools/build.sh android` then fails.
-- The CI workflow does not build Android.
 
 ## Native libraries in Docker
 
@@ -135,26 +134,6 @@ tools/build.sh --native-only --docker windows linux    # only some
   on Windows): the `.dll` needs only Windows' own DLLs, the `.so` only glibc.
 - Outputs: `bin/voxel_native.windows.x86_64.dll`,
   `bin/libvoxel_native.linux.x86_64.so`, `bin/libvoxel_native.linux.arm64.so`.
-
-## CI release (optional)
-
-Everything above builds locally. GitHub Actions is an alternative (free for
-public repositories; private ones use the account's paid minutes).
-
-`.github/workflows/build.yml` runs on a pushed tag `v*` (for example
-`git tag v0.0.23 && git push origin v0.0.23`) or by hand (Actions > Build >
-Run workflow):
-
-1. builds the native library on macOS (universal) and, in the same Docker
-   image as a local build, for Windows and Linux x86_64/arm64
-   (`tools/build.sh --native-only ...`);
-2. on Linux, downloads Godot 4.5.1 and its export templates (cached), puts the
-   four libraries into `bin/` and runs `tools/build.sh --no-native all`;
-3. uploads the zips as the `voxel-engine-builds` artifact and, for a tag,
-   attaches them to a GitHub Release with generated notes.
-
-To move to another Godot version change `GODOT_VERSION` in the workflow and
-the `native/godot-cpp` submodule to the matching tag.
 
 ## What is in each zip
 

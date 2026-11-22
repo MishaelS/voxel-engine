@@ -13,6 +13,9 @@ Sections:
 
 ## [Unreleased]
 
+### Removed
+- The GitHub Actions build (`.github/workflows/build.yml`): it started by itself on a version tag. The game is built only locally, with `tools/build.sh` (BUILDING.md).
+
 ## [0.0.33] - 2026-11-22
 
 ### Fixed
