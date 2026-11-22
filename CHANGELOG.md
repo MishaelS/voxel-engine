@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.1.0-beta] - 2026-11-22
+
 ### Changed
 - The Phone control mode and the Android build are put aside for now (they stutter too much on phones): their code stays, but only debug builds offer Control Mode and Button Size - a release build has no such settings and always plays as a PC, whatever the settings file says - and `tools/build.sh` leaves Android out of a build of everything (`VOXEL_ANDROID=1 tools/build.sh android` to work on it).
 
@@ -825,7 +827,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.33...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.1.0-beta...HEAD
+[0.1.0-beta]: https://github.com/MishaelS/voxel-engine/compare/v0.0.33...v0.1.0-beta
 [0.0.33]: https://github.com/MishaelS/voxel-engine/compare/v0.0.32...v0.0.33
 [0.0.32]: https://github.com/MishaelS/voxel-engine/compare/v0.0.31...v0.0.32
 [0.0.31]: https://github.com/MishaelS/voxel-engine/compare/v0.0.30...v0.0.31
