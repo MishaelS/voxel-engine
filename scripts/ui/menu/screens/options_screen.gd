@@ -221,9 +221,10 @@ func _entries(id: String) -> Array:
 			result.append({"group": "Shaders"})
 			result.append({"label": "Shader Pack", "build": _shader_pack_row})
 		"controls":
-			result.append(_setting_entry(Settings.get_setting("control_mode")))
-			result.append({"group": "Touch Screen"})
-			result.append(_setting_entry(Settings.get_setting("touch_button_size")))
+			if Settings.phone_mode_available: # (debug builds only for now)
+				result.append(_setting_entry(Settings.get_setting("control_mode")))
+				result.append({"group": "Touch Screen"})
+				result.append(_setting_entry(Settings.get_setting("touch_button_size")))
 			result.append({"group": "Mouse"})
 			for setting: Setting in Settings.in_category("controls"):
 				if not setting.key in ["control_mode", "touch_button_size"]:

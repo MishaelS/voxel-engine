@@ -739,6 +739,7 @@ func _update_streaming() -> void:
 	_remote_centers = others
 	var moved := center != _player_column and _player_column.x != 2147483647
 	_player_column = center
+	_heavy_frame = Engine.get_process_frames() # (the scans below: this frame's heavy step)
 	if moved:
 		_remesh_leaf_ring()
 		if open_edges:
@@ -2333,6 +2334,23 @@ func _enqueue_column(column: Vector2i) -> void:
 
 var _mesh_backlog: Array[Vector3i] = []
 
+## The frame's heavy step is taken: when the player crosses into another
+## column the streaming scan, the meshing queue's sort and the start of the
+## cave culling (copies of big dictionaries) all came due at once - 20 ms
+## and more in one frame, a stutter every 16 blocks walked. Each now takes a
+## frame of its own (_take_heavy_frame).
+var _heavy_frame := -1
+
+
+## True once a frame: the caller may do its heavy step now; false if another
+## did one this frame (it comes again next frame).
+func _take_heavy_frame() -> bool:
+	var frame := Engine.get_process_frames()
+	if frame == _heavy_frame:
+		return false
+	_heavy_frame = frame
+	return true
+
 
 func _start_mesh_jobs() -> void:
 	var free_slots := _max_jobs - _busy_jobs()
@@ -2343,7 +2361,8 @@ func _start_mesh_jobs() -> void:
 	if free_slots <= 0:
 		return
 	var now := Time.get_ticks_msec()
-	if _mesh_scan_needed and (_mesh_queue.is_empty() or now - _queue_sorted_at >= MESH_QUEUE_INTERVAL_MS):
+	if _mesh_scan_needed and (_mesh_queue.is_empty() or now - _queue_sorted_at >= MESH_QUEUE_INTERVAL_MS) \
+			and _take_heavy_frame():
 		_mesh_scan_needed = false
 		_queue_sorted_at = now
 		_rebuild_mesh_queue()
@@ -2702,7 +2721,7 @@ func _update_culling(delta: float) -> void:
 		WorkerThreadPool.wait_for_task_completion(_cull_task)
 		_cull_task = -1
 		_apply_culling(_cull_job)
-	if not _cull_dirty or _cull_timer > 0.0:
+	if not _cull_dirty or _cull_timer > 0.0 or not _take_heavy_frame():
 		return
 	_cull_dirty = false
 	_cull_timer = CULL_INTERVAL
@@ -2786,15 +2805,20 @@ func _apply_culling(job: Dictionary) -> void:
 
 ## Writes every changed loaded column to the save (columns unloaded earlier
 ## were written when they unloaded).
-func save_columns() -> void:
+## `in_background` (the autosave while playing): the columns are
+## compressed and written on worker threads - written here, some 70 columns
+## held a frame for 50 ms every autosave. Leaving the world saves here and
+## waits for everything still being written.
+func save_columns(in_background: bool = false) -> void:
 	if save == null:
 		return
 	PistonBehavior.finish_all(self) # no half-moved blocks in the save
-	for column: Vector2i in _save_tasks.keys():
-		_finish_save(column)
+	if not in_background:
+		for column: Vector2i in _save_tasks.keys():
+			_finish_save(column)
 	for column: Vector2i in _modified.keys():
 		if _columns.has(column):
-			_save_column(column)
+			_save_column(column, in_background)
 	_modified.clear()
 
 

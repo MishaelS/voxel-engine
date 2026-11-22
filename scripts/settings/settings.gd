@@ -40,6 +40,11 @@ var texture_packs := PackedStringArray()
 const PACKS_SECTION := "texture_packs"
 ## Phone: how far (GUI units) a finger moves on a list before it scrolls.
 const TOUCH_SCROLL_DEADZONE := 12
+## The Phone control mode (touch controls, the Android build) is put aside
+## for now: it stutters too much. Its code stays, but only debug builds
+## offer it; a release build has no such settings and always plays as a PC,
+## whatever the settings file says.
+static var phone_mode_available := OS.is_debug_build()
 
 
 func _ready() -> void:
@@ -48,7 +53,7 @@ func _ready() -> void:
 	KeyBindings.capture_defaults()
 	load_settings()
 	for key: String in _settings:
-		_apply_global(key, _values[key])
+		_apply_global(key, get_value(key))
 	get_tree().root.size_changed.connect(_apply_gui_scale)
 	get_tree().quit_on_go_back = false # (see _notification)
 	get_tree().node_added.connect(_on_node_added)
@@ -222,6 +227,8 @@ func in_category(category: String) -> Array:
 
 
 func get_value(key: String) -> Variant:
+	if key == "control_mode" and not phone_mode_available:
+		return 0 # (PC: see phone_mode_available; the saved choice is kept for debug builds)
 	return forced.get(key, _values.get(key))
 
 
@@ -352,5 +359,5 @@ func _apply_global(key: String, value: Variant) -> void:
 		"gui_scale":
 			_apply_gui_scale()
 		"control_mode":
-			GameInput.set_touch(value == 1)
+			GameInput.set_touch(value == 1 and phone_mode_available)
 			_apply_gui_scale()

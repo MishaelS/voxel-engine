@@ -13,6 +13,12 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- The Phone control mode and the Android build are put aside for now (they stutter too much on phones): their code stays, but only debug builds offer Control Mode and Button Size - a release build has no such settings and always plays as a PC, whatever the settings file says - and `tools/build.sh` leaves Android out of a build of everything (`VOXEL_ANDROID=1 tools/build.sh android` to work on it).
+
+### Fixed
+- Stutters while playing (frames of 40-60 ms where the rest took 10-15): the autosave every 45 seconds wrote the changed columns on the main thread (some 70 columns, about 50 ms) - they are compressed and written on worker threads now, leaving the world still saves at once and waits for them; and when the player crossed into another column, the streaming scan, the meshing queue's sort and the start of the cave culling all ran in the same frame (20 ms and more, every 16 blocks walked) - each takes a frame of its own now. At render distance 16 the worst frame of a minute's play went from 60 ms to 32.
+
 ### Removed
 - The GitHub Actions build (`.github/workflows/build.yml`): it started by itself on a version tag. The game is built only locally, with `tools/build.sh` (BUILDING.md).
 

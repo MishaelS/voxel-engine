@@ -123,7 +123,7 @@ func _process(delta: float) -> void:
 	_autosave_timer += delta
 	if _autosave_timer >= (Net.autosave_seconds if Net.dedicated else AUTOSAVE_SECONDS):
 		_autosave_timer = 0.0
-		save_game()
+		save_game(true)
 
 
 func is_saved() -> bool:
@@ -131,11 +131,13 @@ func is_saved() -> bool:
 
 
 ## Writes the changed columns and the world / player state.
-func save_game() -> void:
+## `in_background`: the autosave (the columns are written on worker
+## threads, VoxelWorld.save_columns); leaving the world writes them here.
+func save_game(in_background: bool = false) -> void:
 	if not is_saved():
 		return
 	var save := world.save
-	world.save_columns()
+	world.save_columns(in_background)
 	# The network game's other players (by tag): kept even when not hosting now.
 	var others: Dictionary = Net.saved_players if Net.is_host() else save.state.get("net_players", {})
 	var own: Dictionary = save.state.get("player", {}) # (a server keeps the single player's)

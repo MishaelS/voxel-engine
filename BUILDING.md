@@ -32,7 +32,7 @@ The game is exported for five targets, the presets in `export_presets.cfg`:
 
 ```sh
 tools/build.sh                 # every platform whose templates are installed
-tools/build.sh macos           # only some: macos, windows, linux, linux-arm64, android
+tools/build.sh macos           # only some: macos, windows, linux, linux-arm64
 tools/build.sh --debug         # debug builds
 tools/build.sh --native        # rebuild the native library for this OS first
 tools/build.sh --docker        # rebuild the Windows/Linux native libraries in Docker first
@@ -64,6 +64,12 @@ still exported, without it: the game then uses the slower GDScript code
 
 ## Android
 
+> **Put aside for now.** The Phone control mode stutters too much on phones,
+> so it is in debug builds only (`Settings.phone_mode_available`) and
+> `tools/build.sh` leaves Android out of a build of everything. To work on
+> it, ask for it by name with `VOXEL_ANDROID=1 tools/build.sh android`. The
+> rest of this section says how.
+
 The game on a phone is the same game with the Phone control mode (Options >
 Controls > Control Mode, the default on Android): touch controls and larger
 windows. On a PC the same mode works with the mouse as a finger.
@@ -93,8 +99,8 @@ wins: set it there to the JDK (`/usr/libexec/java_home` prints it on macOS);
 the build says so when it is missing.
 
 ```sh
-tools/build.sh --native-only android   # only bin/libvoxel_native.android.arm64.so
-tools/build.sh android                 # the library when missing, then the .apk
+VOXEL_ANDROID=1 tools/build.sh --native-only android   # only bin/libvoxel_native.android.arm64.so
+VOXEL_ANDROID=1 tools/build.sh android                 # the library when missing, then the .apk
 ```
 
 - The library is built with the NDK's CMake toolchain (arm64-v8a, Android 7.0

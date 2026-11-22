@@ -8,7 +8,7 @@
 # the game (BUILDING.md).
 #
 #   tools/build.sh                     every platform whose export templates are installed
-#   tools/build.sh macos linux         only these (macos, windows, linux, linux-arm64, android)
+#   tools/build.sh macos linux         only these (macos, windows, linux, linux-arm64)
 #   tools/build.sh --debug             debug builds (console wrapper, full F3 screen)
 #   tools/build.sh --native            rebuild the native library for this OS first
 #   tools/build.sh --docker            rebuild the Linux and Windows libraries in Docker first
@@ -22,8 +22,8 @@
 # Godot: $GODOT, else the editor in /Applications, else `godot` on the PATH.
 # It needs the export templates of the same version: Godot editor > Editor >
 # Manage Export Templates > Download and Install (once).
-# Android also needs a JDK 17 and the Android SDK (and the NDK for the native
-# library): BUILDING.md. Without them a build of everything skips it.
+# Android is put aside for now (VOXEL_ANDROID=1 tools/build.sh android to
+# work on it; a JDK 17, the Android SDK and the NDK: BUILDING.md).
 set -e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -48,7 +48,7 @@ while [ $# -gt 0 ]; do
 		--no-zip|--app) zip_it=false ;;
 		--open) open_after=true ;;
 		macos|windows|linux|linux-arm64|android) platforms+=("$1") ;;
-		all) platforms=(macos windows linux linux-arm64 android) ;;
+		all) platforms=(macos windows linux linux-arm64) ;; # (Android is put aside: see below)
 		-h|--help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 		*) echo "Unknown option: $1 (see --help)"; exit 1 ;;
 	esac
@@ -56,9 +56,19 @@ while [ $# -gt 0 ]; do
 done
 explicit=true
 if [ ${#platforms[@]} -eq 0 ]; then
-	platforms=(macos windows linux linux-arm64 android)
+	platforms=(macos windows linux linux-arm64)
 	explicit=false
 fi
+# Android (the Phone control mode) is put aside for now: it stutters too much
+# on phones. Its build stays here, but only runs when asked for by name with
+# VOXEL_ANDROID=1 (for working on it); the game's Phone mode is in debug
+# builds only (Settings.phone_mode_available).
+for platform in "${platforms[@]}"; do
+	if [ "$platform" = "android" ] && [ "${VOXEL_ANDROID:-0}" != "1" ]; then
+		echo "Android is put aside for now (the Phone mode is not ready). To build it anyway: VOXEL_ANDROID=1 tools/build.sh android"
+		exit 1
+	fi
+done
 
 host="$(uname -s)"
 case "$host" in
