@@ -13,6 +13,9 @@ Sections:
 
 ## [Unreleased]
 
+### Fixed
+- The Android native library is built for arm64 (`bin/libvoxel_native.android.arm64.so`, the name the game looks for): built on a Mac it came out as a "universal" Mac-style library under another name. `tools/build.sh` says how to set the Java SDK path when Godot's editor settings lack it.
+
 ## [0.0.32] - 2026-11-22
 
 ### Added

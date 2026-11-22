@@ -5,8 +5,9 @@
 # Windows and Linux also in Docker, any host: native/docker/ (BUILDING.md);
 # Android (arm64) with the Android NDK into ../bin/libvoxel_native.android.arm64.so.
 cmake_minimum_required(VERSION 3.17)
-# Universal (Apple Silicon and Intel): must be set before project().
-if(APPLE)
+# Universal (Apple Silicon and Intel): must be set before project(). Only
+# for the Mac itself: not with a cross toolchain (Android's NDK on a Mac).
+if(APPLE AND NOT CMAKE_TOOLCHAIN_FILE)
 	set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 endif()
 project(voxel_native LANGUAGES CXX)

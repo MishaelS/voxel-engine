@@ -87,8 +87,10 @@ Install once (none of it is needed for the desktop builds):
 `tools/build.sh` finds the SDK in `$ANDROID_HOME` / `$ANDROID_SDK_ROOT` or
 the default folders above, the NDK in `$ANDROID_NDK_ROOT` / `$ANDROID_NDK_HOME`
 or the newest in the SDK's `ndk/` folder, the JDK in `$JAVA_HOME` or the
-system's, and passes them to Godot (the editor's own Editor Settings > Export >
-Android paths work too).
+system's, and passes them to Godot. Once the editor has saved its own
+Editor Settings > Export > Android > Java SDK Path (even empty), that setting
+wins: set it there to the JDK (`/usr/libexec/java_home` prints it on macOS);
+the build says so when it is missing.
 
 ```sh
 tools/build.sh --native-only android   # only bin/libvoxel_native.android.arm64.so

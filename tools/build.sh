@@ -423,6 +423,10 @@ for platform in "${platforms[@]}"; do
 	grep -q "Project export for preset .* failed" "$log" && ok=false
 	if ! $ok; then
 		grep -iE "error" "$log" | head -10
+		if grep -q "valid Java SDK path" "$log"; then
+			# The editor's own setting wins over JAVA_HOME once saved (empty).
+			echo "   Set it once: Godot editor > Editor > Editor Settings > Export > Android > Java SDK Path = $java"
+		fi
 		echo "== $platform: export failed ($log)"
 		failed+=("$platform")
 		continue
