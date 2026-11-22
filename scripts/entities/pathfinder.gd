@@ -17,14 +17,21 @@ extends RefCounted
 
 const MAX_NODES := 400
 const MAX_DROP := 3
-## Cells searched in one game tick, for all creatures together.
-const NODE_BUDGET := 500
+## Cells searched in one game tick, for all creatures together (in C++ a
+## cell costs under a microsecond: 1200 is about a millisecond a tick; with
+## 500 a crowd at night ran out and the rest walked straight into walls).
+const NODE_BUDGET := 1200
 const NEIGHBORS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
 	Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1)]
 
 static var _solid := PackedByteArray()  # has a collision box
 static var _floor := PackedByteArray()  # its top can be stood on (not a fence)
 static var _harmful := PackedByteArray() # lava, fire, cactus
+## The liquids table for a creature that doesn't swim off (animals): none, so
+## water is only walked where there is ground under it (a block deep).
+static var _dry := PackedByteArray()
+## find_script's swimming (standable reads it while a dry search runs).
+static var _swim := true
 static var _budget := NODE_BUDGET
 static var _budget_age := -1
 
@@ -35,6 +42,7 @@ static func _tables() -> void:
 	_solid.resize(Blocks.count())
 	_floor.resize(Blocks.count())
 	_harmful.resize(Blocks.count())
+	_dry.resize(Blocks.count())
 	for id in Blocks.count():
 		var boxes: Array = Blocks.collision_table[id]
 		var top := 0.0
@@ -66,7 +74,7 @@ static func standable(world: VoxelWorld, cell: Vector3i, tall: int) -> bool:
 		if _solid[id] == 1 or _harmful[id] == 1:
 			return false
 	var here := world.get_block(cell)
-	if Blocks.liquid_table[here] == 1:
+	if _swim and Blocks.liquid_table[here] == 1:
 		return true # swimming
 	var below := world.get_block(cell + Vector3i.DOWN)
 	return _floor[below] == 1 and _harmful[below] == 0
@@ -100,12 +108,18 @@ static var _native := ClassDB.class_exists("NativePath")
 
 ## A path of cells from `start` toward `goal` (the goal itself, or the
 ## nearest cell found); empty if nothing better than standing still.
-static func find(world: VoxelWorld, start: Vector3i, goal: Vector3i, tall: int, max_nodes: int = MAX_NODES) -> Array[Vector3i]:
+## `swim` false (animals): no swimming off, only water with ground a block
+## under it is walked through.
+static func find(world: VoxelWorld, start: Vector3i, goal: Vector3i, tall: int, max_nodes: int = MAX_NODES,
+		swim: bool = true) -> Array[Vector3i]:
 	_tables()
 	if not _native:
-		return find_script(world, start, goal, tall, max_nodes)
+		_swim = swim
+		var path := find_script(world, start, goal, tall, max_nodes)
+		_swim = true
+		return path
 	var found: PackedInt32Array = ClassDB.class_call_static("NativePath", "find", world.get("_chunks"), start, goal, tall,
-		max_nodes, _solid, _floor, _harmful, Blocks.liquid_table)
+		max_nodes, _solid, _floor, _harmful, Blocks.liquid_table if swim else _dry)
 	var result: Array[Vector3i] = []
 	var visited := found[0]
 	last_visited = visited
@@ -156,7 +170,7 @@ static func find_script(world: VoxelWorld, start: Vector3i, goal: Vector3i, tall
 				step += 1.0
 			elif next.y < current.y:
 				step += 0.5 * (current.y - next.y)
-			if Blocks.liquid_table[world.get_block(next)] == 1:
+			if _swim and Blocks.liquid_table[world.get_block(next)] == 1:
 				step *= 2.0
 			var total: float = cost[current] + step
 			if total < cost.get(next, INF):

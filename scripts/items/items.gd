@@ -118,6 +118,12 @@ static func _register_all() -> bool:
 	register(ItemType.make("boat", 136).stack(1).set_fuel(1200))
 	# Ours, registered last (item numbers follow this order: saves keep them).
 	register(ItemType.make("quiver", 38).stack(1)) # (Beta's unused picture: Quiver)
+	# Meat from Beta 1.8 (pictures in items.png at Beta 1.8's places): what cows and
+	# chickens drop, cooked in a furnace; healing like its porkchop / fish.
+	register(ItemType.make("raw_beef", 105).set_food(3, 0.3, 3))
+	register(ItemType.make("cooked_beef", 106).set_food(8, 0.8, 8))
+	register(ItemType.make("raw_chicken", 121).set_food(2, 0.3, 2))
+	register(ItemType.make("cooked_chicken", 122).set_food(6, 0.6, 6))
 	return true
 
 

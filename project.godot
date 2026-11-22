@@ -210,6 +210,7 @@ isometric_rotate_right={
 
 [rendering]
 
+limits/global_shader_variables/buffer_size=524288
 textures/vram_compression/import_etc2_astc=true
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0
 anti_aliasing/quality/screen_space_aa=1

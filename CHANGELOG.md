@@ -13,6 +13,18 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Meat from Beta 1.8: raw beef (heals 3) and steak (8) from cows, 1-3 each; raw chicken (2) and cooked chicken (6) from chickens, 1 each; cooked in a furnace, and dropped cooked by an animal burnt to death (porkchops too, as before). Their pictures are in items.png at Beta 1.8's places (105, 106, 121, 122).
+
+### Changed
+- Animals keep to dry land: they come down to the water and walk where it is a block deep, but no longer pick spots in deep water to wander to, plan paths across it or panic into it (unless burning); one that ends up in deep water makes for the nearest shore. Six cows by a deep pond spent no time in it in a minute instead of 55 cow-seconds.
+- Animals always drop something when killed, from 1 up to Beta 1.7.3's most: a pig 1-2 porkchops, a cow 1-2 leather (and 1-3 raw beef, below), a chicken 1-2 feathers (and a raw chicken) (often none before: Beta's 0-2); sheep and squid as before.
+- Monsters are easier to get away from, like the modern game's: next to it (1.5 blocks) a monster notices the player without seeing it, farther it must see it (it noticed through walls from 3 blocks); a monster after a player it no longer sees goes to where it saw it last instead of to the player's real place, and gives the player up when it gets there and can't see it, when it has no way there for 5 seconds, or after 15 seconds unseen; it follows no farther than 24 blocks (32). Seeing the player again it looks for a path at once. Hits and spider leaps go at the player itself, never at where it was seen.
+- Monsters find their way round walls better: path searches have a budget of 1200 cells a tick for all creatures together (500: at night a crowd ran out and the rest walked straight into walls) and a chase may search 700 cells (400). A zombie that sees the player on a 3 high platform with steps on the far side gets up in about 11 seconds (20 before).
+
+### Fixed
+- Errors by the thousand in the console ("Too many instances using shader instance variables") and stalls with them at large render distances: the blocks' and creatures' shaders keep a few values per drawn object in Godot's global buffer, 16 slots each, and its default room (65536: some 4000 objects) ran out with every chunk mesh counted - now 524288 (some 32000).
+
 ## [0.1.0-beta] - 2026-11-22
 
 ### Changed

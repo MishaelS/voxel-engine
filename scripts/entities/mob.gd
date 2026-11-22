@@ -33,10 +33,10 @@ extends Entity
 ## type -> spec. speed: walking speed in blocks per tick; hostile: attacks
 ## the player; damage: per hit (Normal); drops: [item, min, max].
 const TYPES := {
-	"pig": {"health": 10, "speed": 0.09, "drops": [["porkchop", 0, 2]], "sound": "pig"},
-	"cow": {"health": 10, "speed": 0.08, "drops": [["leather", 0, 2]], "sound": "cow"},
+	"pig": {"health": 10, "speed": 0.09, "drops": [["porkchop", 1, 2]], "sound": "pig"},
+	"cow": {"health": 10, "speed": 0.08, "drops": [["leather", 1, 2], ["raw_beef", 1, 3]], "sound": "cow"},
 	"sheep": {"health": 10, "speed": 0.09, "drops": [], "sound": "sheep"},
-	"chicken": {"health": 4, "speed": 0.09, "drops": [["feather", 0, 2]], "sound": "chicken"},
+	"chicken": {"health": 4, "speed": 0.09, "drops": [["feather", 1, 2], ["raw_chicken", 1, 1]], "sound": "chicken"},
 	"wolf": {"health": 8, "speed": 0.12, "drops": [], "sound": "wolf"},
 	"squid": {"health": 10, "speed": 0.04, "drops": [["ink_sac", 1, 3]], "sound": "", "water": true},
 	"zombie": {"health": 20, "speed": 0.1, "hostile": true, "damage": 4, "drops": [["feather", 0, 2]], "sound": "zombie", "undead": true},
@@ -45,6 +45,8 @@ const TYPES := {
 	"spider": {"health": 16, "speed": 0.13, "hostile": true, "damage": 2, "drops": [["string", 0, 2]], "sound": "spider"},
 	"slime": {"health": 4, "speed": 0.1, "hostile": true, "damage": 1, "drops": [["slimeball", 0, 2]], "sound": "slime"},
 }
+## Meat a creature burnt to death drops cooked.
+const COOKED := {"porkchop": "cooked_porkchop", "raw_beef": "cooked_beef", "raw_chicken": "cooked_chicken"}
 ## Shadow sizes of Beta's renderers (the rest 0.5); slimes' grow with them.
 const SHADOW_SIZES := {"pig": 0.7, "cow": 0.7, "sheep": 0.7, "chicken": 0.3, "squid": 0.7, "spider": 1.0, "slime": 0.25}
 const ANIMALS := ["pig", "cow", "sheep", "chicken"]
@@ -168,7 +170,22 @@ const PACK := 16.0
 ## Monsters notice a sneaking player from this share of SIGHT (modern's
 ## visibility); farther than NOTICE_BLIND they must see the player first.
 const SNEAK_SIGHT := 0.8
-const NOTICE_BLIND := 3.0
+## Right next to it (touching distance) a monster notices the player even
+## without seeing it; farther it must see it (it noticed through walls from
+## 3 blocks before).
+const NOTICE_BLIND := 1.5
+## A monster after a player it no longer sees makes for where it saw it
+## last (it kept going after the player's real place before, through walls,
+## as long as it was within 32): it gives up when it gets there and the
+## player isn't to be seen, when it has no way there for FORGET_TICKS (5 s),
+## and in any case after CHASE_MEMORY (15 s) without seeing it.
+const FORGET_TICKS := 100
+const CHASE_MEMORY := 300
+## Nor does it follow farther than this.
+const CHASE_RANGE := 24.0
+## A chase's path search may look at this many cells (a longer way round a
+## wall or a house than a walk's).
+const CHASE_NODES := 700
 ## Hurt animals run (modern's PanicGoal) this long, this much faster.
 const PANIC_TICKS := 100
 const PANIC_SPEED := 1.5
@@ -728,8 +745,10 @@ func _animal_tick(player) -> void:
 	if player and randi_range(0, 49) == 0 and player.global_position.distance_to(feet()) < 6.0:
 		_look_at = player.eye_position()
 		_look_ticks = randi_range(20, 60) # like the game: looks for a while
-	if _wander == Vector3.INF and randi_range(0, 119) == 0:
-		_wander = _wander_spot()
+	var stranded := _keeps_dry() and _in_deep_water()
+	if _wander == Vector3.INF and (randi_range(0, 119) == 0 or stranded):
+		# (in deep water: straight for the nearest shore)
+		_wander = _shore_spot() if stranded else _wander_spot()
 		_goal_age = 0
 	if _wander != Vector3.INF:
 		if _walk_over(_wander) or randi_range(0, 199) == 0:
@@ -767,7 +786,7 @@ func _panic_spot() -> Vector3:
 	if _flee_from != Vector3.INF:
 		away = (feet() - _flee_from) * Vector3(1, 0, 1)
 	away = away.normalized() if away.length_squared() > 1e-4 else Vector3.FORWARD.rotated(Vector3.UP, randf() * TAU)
-	var water_bonus := 6.0 if fire_ticks > 0 else -6.0
+	var water_bonus := 6.0 if fire_ticks > 0 else (-INF if _keeps_dry() else -6.0)
 	var best := Vector3.INF
 	var best_score := -INF
 	for attempt in 10:
@@ -786,12 +805,40 @@ func _panic_spot() -> Vector3:
 
 
 ## A wander goal up to 10 blocks off, on the ground; the undead keep to the
-## shade by day (INF: stays for now).
+## shade by day, animals to dry land (INF: stays for now).
 func _wander_spot() -> Vector3:
 	var cell := _ground_near(_feet_cell() + Vector3i(randi_range(-10, 10), 0, randi_range(-10, 10)), 3)
-	if cell == Vector3i.MAX or (_fears_sun() and not _shaded(cell)):
+	if cell == Vector3i.MAX or (_fears_sun() and not _shaded(cell)) or (_keeps_dry() and _water_at(cell)):
 		return Vector3.INF
 	return Vector3(cell) + Vector3(0.5, 0.0, 0.5)
+
+
+## Animals keep to dry land: they come down to the water (it may be walked
+## where it is a block deep) but don't swim off into it; in deep water they
+## make for the nearest shore.
+func _keeps_dry() -> bool:
+	return mob_type in ANIMALS
+
+
+## In water with no ground right under its feet.
+func _in_deep_water() -> bool:
+	if not in_water:
+		return false
+	var under := world.get_block(_feet_cell() + Vector3i.DOWN)
+	return Blocks.liquid_table[under] == 1 or under == Blocks.AIR
+
+
+## The nearest dry ground to stand on, ring by ring up to 12 blocks off
+## (INF: none found: it swims about as before).
+func _shore_spot() -> Vector3:
+	var here := _feet_cell()
+	for ring in range(1, 13):
+		for dx in range(-ring, ring + 1):
+			for dz: int in ([-ring, ring] if absi(dx) != ring else range(-ring, ring + 1)):
+				var cell := _ground_near(here + Vector3i(dx, 0, dz), 3)
+				if cell != Vector3i.MAX and not _water_at(cell):
+					return Vector3(cell) + Vector3(0.5, 0.0, 0.5)
+	return Vector3.INF
 
 
 ## The cell nearest `cell`'s height in its column (up to `vertical` up or
@@ -975,9 +1022,9 @@ func _sees(player) -> bool:
 
 
 ## Zombies, spiders and creepers: go after the player they notice (seen
-## within 16 blocks, like Beta's; less far while it sneaks), following it
-## along paths even out of sight until twice as far; hit it when close
-## (spiders leap). Burning undead go for shade first.
+## within 16 blocks, like Beta's; less far while it sneaks), along paths
+## round walls; out of sight to where they saw it last, and they give it up
+## (_keep_track); hit it when close (spiders leap). Burning undead go for shade first.
 ## Spiders are calm where it is brighter than this (the night taken off),
 ## like Beta's EntitySpider: its brightness under 0.5 is light 11 or less.
 const SPIDER_CALM_LIGHT := 11
@@ -990,33 +1037,78 @@ func _monster_tick(player) -> void:
 		and world.get_combined_light(Vector3i(center().floor()), MobSpawner.sky_darkness(world)) > SPIDER_CALM_LIGHT
 	if calm and target != null and randi_range(0, 99) == 0:
 		target = null
-	if target and _is_player(target) and (target.dead or target.is_creative() \
-			or (target.global_position as Vector3).distance_to(feet()) > SIGHT * 2.0):
-		target = null
 	if not calm and player and player != target and (target == null or _is_player(target)) and _notices(player):
 		target = player
+		_unseen = 0
+		_path_goal = Vector3i.MAX # (a path to it at once, not at the next refresh)
+	_keep_track()
 	if _flee_sun():
 		return
 	if target == null:
 		_animal_tick(null)
 		return
-	var goal: Vector3 = target.global_position
-	_look_at = target.eye_position()
-	_look_ticks = 5
-	var flat := Vector2(goal.x - _x, goal.z - _z).length()
+	var goal: Vector3 = _chase_goal()
+	if _unseen == 0:
+		_look_at = target.eye_position()
+		_look_ticks = 5
+	# (leaps and hits at the player itself, never at where it was last seen)
+	var real: Vector3 = target.global_position
+	var flat := Vector2(real.x - _x, real.z - _z).length()
 	if mob_type == "creeper" and _fuse > 0:
 		return # stands still while it swells
-	if mob_type == "spider" and flat < 3.0 and flat > 1.5 and on_ground and randi_range(0, 9) == 0:
-		var leap := Vector3(goal.x - _x, 0, goal.z - _z).normalized()
+	if mob_type == "spider" and _unseen == 0 and flat < 3.0 and flat > 1.5 and on_ground and randi_range(0, 9) == 0:
+		var leap := Vector3(real.x - _x, 0, real.z - _z).normalized()
 		velocity = Vector3(leap.x * 0.4, 0.4, leap.z * 0.4)
 		return
-	_navigate(goal, spec.speed)
-	if mob_type != "creeper" and flat < half_width + 0.9 and absf(goal.y - _y) < height and _attack_cooldown == 0:
+	_navigate(goal, spec.speed, true, CHASE_NODES)
+	if mob_type != "creeper" and flat < half_width + 0.9 and absf(real.y - _y) < height and _attack_cooldown == 0:
 		_attack_cooldown = ATTACK_COOLDOWN
 		target.damage(_scaled_damage(_melee_damage()))
 		target.knockback(center())
 		if _is_player(target):
 			guard_owner(self)
+
+
+## Ticks since the monster last saw the player it is after, and where.
+var _unseen := 0
+var _last_seen := Vector3.INF
+
+
+## Keeps track of the player a monster is after: seen, it knows where the
+## player is; unseen, it makes for where it saw it last (see FORGET_TICKS
+## for when it gives up); gone, dead, in creative or out of CHASE_RANGE,
+## it lets go.
+func _keep_track() -> void:
+	if target == null or not _is_player(target):
+		return
+	if target.dead or target.is_creative() or (target.global_position as Vector3).distance_to(feet()) > CHASE_RANGE:
+		_forget()
+		return
+	if _sees(target):
+		_unseen = 0
+		_last_seen = target.global_position
+		return
+	_unseen += 1
+	var there := _last_seen != Vector3.INF and Vector2(_last_seen.x - _x, _last_seen.z - _z).length() < 1.5 \
+		and absf(_last_seen.y - _y) < 2.0
+	var lost := _unseen > FORGET_TICKS and (_path.is_empty() or _stuck > 10) # (no way there)
+	if there or lost or _unseen > CHASE_MEMORY:
+		_forget()
+
+
+func _forget() -> void:
+	target = null
+	_unseen = 0
+	_last_seen = Vector3.INF
+	_path.clear()
+
+
+## Where it goes after its player: the player while seen, else the spot it
+## saw it last.
+func _chase_goal() -> Vector3:
+	if _is_player(target) and _unseen > 0 and _last_seen != Vector3.INF:
+		return _last_seen
+	return target.global_position
 
 
 ## Damage by difficulty like Beta: easy half + 1, hard x1.5.
@@ -1043,8 +1135,8 @@ func _creeper_tick(player) -> void:
 
 
 ## Skeletons like Beta's (EntitySkeleton.attackEntity in EntityCreature):
-## they go after the player they notice and keep it until it is gone (out
-## of sight too, walking its way); within 10 blocks and in sight they shoot
+## they go after the player they notice (out of sight to where they saw it
+## last, then they give it up: _keep_track); within 10 blocks and in sight they shoot
 ## every 30 ticks, face the player and keep walking the path they had (no
 ## new one: so they step about while shooting), now and then (1 in 100)
 ## dropping it.
@@ -1053,26 +1145,25 @@ const SKELETON_RELOAD := 30
 
 
 func _skeleton_tick(player) -> void:
-	if target and _is_player(target) and (target.dead or target.is_creative() \
-			or (target.global_position as Vector3).distance_to(feet()) > SIGHT * 2.0):
-		target = null
 	var noticed := false
 	if player and player != target and (target == null or _is_player(target)) and not player.is_creative() \
 			and _sees(player) and _notices(player):
 		target = player
 		noticed = true
+		_unseen = 0
+	_keep_track()
 	if _flee_sun():
 		return
 	if target == null:
 		_animal_tick(null)
 		return
-	var goal: Vector3 = target.global_position
+	var goal: Vector3 = _chase_goal()
 	var distance := goal.distance_to(feet())
 	if noticed:
 		# (Beta: a path to the player found the moment it is noticed)
 		_path_goal = Vector3i.MAX
-		_navigate(goal, spec.speed)
-	elif distance < SKELETON_RANGE and _sees(target):
+		_navigate(goal, spec.speed, true, CHASE_NODES)
+	elif distance < SKELETON_RANGE and _unseen == 0:
 		if randi_range(0, 99) == 0:
 			_path.clear()
 		_follow_path(spec.speed)
@@ -1083,9 +1174,10 @@ func _skeleton_tick(player) -> void:
 			_attack_cooldown = SKELETON_RELOAD
 			Arrow.shoot(world, center() + Vector3(0, height * 0.3, 0), target.eye_position() - Vector3(0, 0.4, 0), 0.6 * 1.6, 12.0, self)
 	else:
-		_look_at = target.eye_position()
-		_look_ticks = 5
-		_navigate(goal, spec.speed)
+		if _unseen == 0:
+			_look_at = target.eye_position()
+			_look_ticks = 5
+		_navigate(goal, spec.speed, true, CHASE_NODES)
 
 
 ## Slimes hop toward the player (or about) and hurt it on touch (big ones).
@@ -1402,7 +1494,9 @@ func _navigate(goal: Vector3, speed: float, moving: bool = true, reach: int = Pa
 		or (moving and _path_age >= PATH_REFRESH)
 	var allowed := Pathfinder.budget(world.clock.game_time, reach) if stale else 0
 	if allowed > 0:
-		_path = Pathfinder.find(world, _feet_cell(), goal_cell, _tall(), allowed)
+		# (animals don't plan swims; one already in deep water may, to get out)
+		var swim := not _keeps_dry() or _in_deep_water()
+		_path = Pathfinder.find(world, _feet_cell(), goal_cell, _tall(), allowed, swim)
 		_path_goal = goal_cell
 		_path_age = 0
 		_stuck = 0
@@ -1633,8 +1727,8 @@ func _on_death() -> void:
 	for drop: Array in spec.drops:
 		var count := randi_range(drop[1], drop[2])
 		var item: String = drop[0]
-		if item == "porkchop" and fire_ticks > 0:
-			item = "cooked_porkchop"
+		if fire_ticks > 0 and COOKED.has(item):
+			item = COOKED[item] # (burnt to death: cooked)
 		if count > 0:
 			world.items.spawn(Items.id_of(item), count, center(), Vector3(randf_range(-0.1, 0.1), 0.2, randf_range(-0.1, 0.1)))
 	if mob_type == "sheep" and not sheared:

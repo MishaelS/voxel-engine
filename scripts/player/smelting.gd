@@ -11,7 +11,7 @@ const RECIPES := {
 	"iron_ore": "iron_ingot", "gold_ore": "gold_ingot", "diamond_ore": "diamond",
 	"coal_ore": "coal", "redstone_ore": "redstone", "lapis_ore": "lapis_lazuli",
 	"clay_ball": "brick", "cactus": "cactus_green",
-	"porkchop": "cooked_porkchop", "raw_fish": "cooked_fish",
+	"porkchop": "cooked_porkchop", "raw_fish": "cooked_fish", "raw_beef": "cooked_beef", "raw_chicken": "cooked_chicken",
 }
 
 
