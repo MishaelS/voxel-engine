@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.32] - 2026-11-22
+
 ### Added
 - Options > Controls > Touch Screen > Button Size (50-200%, 100% by default): how large Phone mode's movement cross, jump, chat and pause buttons are, changed while playing.
 
@@ -809,7 +811,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.31...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.32...HEAD
+[0.0.32]: https://github.com/MishaelS/voxel-engine/compare/v0.0.31...v0.0.32
 [0.0.31]: https://github.com/MishaelS/voxel-engine/compare/v0.0.30...v0.0.31
 [0.0.30]: https://github.com/MishaelS/voxel-engine/compare/v0.0.29...v0.0.30
 [0.0.29]: https://github.com/MishaelS/voxel-engine/compare/v0.0.28...v0.0.29
