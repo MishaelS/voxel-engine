@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.0.33] - 2026-11-22
+
 ### Fixed
 - The Android native library is built for arm64 (`bin/libvoxel_native.android.arm64.so`, the name the game looks for): built on a Mac it came out as a "universal" Mac-style library under another name. `tools/build.sh` says how to set the Java SDK path when Godot's editor settings lack it.
 
@@ -814,7 +816,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.32...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.0.33...HEAD
+[0.0.33]: https://github.com/MishaelS/voxel-engine/compare/v0.0.32...v0.0.33
 [0.0.32]: https://github.com/MishaelS/voxel-engine/compare/v0.0.31...v0.0.32
 [0.0.31]: https://github.com/MishaelS/voxel-engine/compare/v0.0.30...v0.0.31
 [0.0.30]: https://github.com/MishaelS/voxel-engine/compare/v0.0.29...v0.0.30
