@@ -15,11 +15,12 @@ extends Control
 ## Each finger has its own job, so walking, looking and jumping work at once.
 
 const P := UiTheme.PIXEL
-const BUTTON := 32 * P
-const SMALL_BUTTON := 24 * P
+## Button sizes at 100% (Options > Controls > Button Size scales them).
+const BASE_BUTTON := 32 * P
+const BASE_SMALL_BUTTON := 24 * P
 const MARGIN := 10 * P
 ## One button of the movement cross (it is 3 x 3 of them).
-const PAD_CELL := 32 * P
+const BASE_PAD_CELL := 32 * P
 ## The breaking ring under a held finger (its radius).
 const RING := 14 * P
 ## A finger that moved less than this is still a tap / a hold.
@@ -29,9 +30,9 @@ const HOLD_SECONDS := 0.3
 ## View turn per GUI unit of a finger's move, in mouse pixels.
 const LOOK_SCALE := 1.5
 
-## The buttons are the menus' buttons (UiTheme), seen through, with
-## pictures from assets/textures/extra/touch/ (16 x 16 pixels each, drawn
-## at whole multiples: replace them to change the look).
+## The buttons' pictures are in assets/textures/extra/touch/ (replace them
+## to change the look): a 16 x 16 icon is drawn on a menu button (UiTheme),
+## a larger picture is the whole button, stretched over it. Seen through.
 const OPACITY := 0.6
 const ICONS := "res://assets/textures/extra/touch/"
 var _icons := {} # name -> Texture2D
@@ -51,7 +52,17 @@ var _sneaking := false
 var _was_active := false
 
 
+var _button_size := BASE_BUTTON
+var _small_button := BASE_SMALL_BUTTON
+## One button of the movement cross, as large as the setting makes it.
+var _cell_size := BASE_PAD_CELL
+
+
 func _ready() -> void:
+	_apply_size()
+	Settings.changed.connect(func(key: String, _value: Variant) -> void:
+		if key == "touch_button_size":
+			_apply_size())
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	resized.connect(queue_redraw)
@@ -241,20 +252,29 @@ func _release_all() -> void:
 	GameInput.hold = false
 
 
+## The buttons' size setting (percent), in whole GUI units.
+func _apply_size() -> void:
+	var factor := float(Settings.get_value("touch_button_size")) / 100.0
+	_button_size = roundf(BASE_BUTTON * factor)
+	_small_button = roundf(BASE_SMALL_BUTTON * factor)
+	_cell_size = roundf(BASE_PAD_CELL * factor)
+	queue_redraw()
+
+
 # --- Layout -----------------------------------------------------------------------
 
 func _pad_rect() -> Rect2:
-	return Rect2(MARGIN, size.y - MARGIN - PAD_CELL * 3, PAD_CELL * 3, PAD_CELL * 3)
+	return Rect2(MARGIN, size.y - MARGIN - _cell_size * 3, _cell_size * 3, _cell_size * 3)
 
 
 ## The cross's button under a point: (-1..1, -1..1), (0, 0) its middle.
 func _pad_cell(at: Vector2) -> Vector2i:
-	var cell := ((at - _pad_rect().position) / PAD_CELL).floor()
+	var cell := ((at - _pad_rect().position) / _cell_size).floor()
 	return Vector2i(clampi(int(cell.x), 0, 2) - 1, clampi(int(cell.y), 0, 2) - 1)
 
 
 func _pad_button(cell: Vector2i) -> Rect2:
-	return Rect2(_pad_rect().position + Vector2(cell + Vector2i.ONE) * PAD_CELL, Vector2(PAD_CELL, PAD_CELL)).grow(-P)
+	return Rect2(_pad_rect().position + Vector2(cell + Vector2i.ONE) * _cell_size, Vector2(_cell_size, _cell_size)).grow(-P)
 
 
 func _hotbar_rect() -> Rect2:
@@ -264,9 +284,9 @@ func _hotbar_rect() -> Rect2:
 func _buttons() -> Dictionary:
 	var right := size.x - MARGIN
 	var result := {
-		"jump": Rect2(right - BUTTON, size.y - MARGIN - BUTTON, BUTTON, BUTTON),
-		"pause": Rect2(right - SMALL_BUTTON, MARGIN / 2.0, SMALL_BUTTON, SMALL_BUTTON),
-		"chat": Rect2(right - SMALL_BUTTON * 2 - 4 * P, MARGIN / 2.0, SMALL_BUTTON, SMALL_BUTTON),
+		"jump": Rect2(right - _button_size, size.y - MARGIN - _button_size, _button_size, _button_size),
+		"pause": Rect2(right - _small_button, MARGIN / 2.0, _small_button, _small_button),
+		"chat": Rect2(right - _small_button * 2 - 4 * P, MARGIN / 2.0, _small_button, _small_button),
 	}
 	if hotbar and hotbar.is_visible_in_tree():
 		var bar := hotbar.get_global_rect()
@@ -292,8 +312,7 @@ func _draw() -> void:
 	var buttons := _buttons()
 	for id: String in buttons:
 		var rect: Rect2 = buttons[id]
-		_box(rect, pressed.has(id))
-		_icon(id, rect)
+		_button(id, rect, pressed.has(id))
 	# The movement cross: four arrows, sneak in the middle; walking forward,
 	# like the mobile game, two more beside the forward one go forward
 	# diagonally (the finger slides onto them).
@@ -303,10 +322,8 @@ func _draw() -> void:
 	for cell: Vector2i in cells:
 		var lit := _stick == cell or (cell.x == 0 or cell.y == 0) and \
 			((cell.x != 0 and cell.x == _stick.x) or (cell.y != 0 and cell.y == _stick.y))
-		_box(_pad_button(cell), lit)
-		_arrow(_pad_button(cell), cell)
-	_box(_pad_button(Vector2i.ZERO), _sneaking)
-	_icon("sneak", _pad_button(Vector2i.ZERO))
+		_button(WALK_ICONS[cell], _pad_button(cell), lit)
+	_button("sneak", _pad_button(Vector2i.ZERO), _sneaking)
 	# Breaking: a ring under the finger fills up, like the mobile game's.
 	for finger: Dictionary in _fingers.values():
 		if finger.aims and finger.held and interaction and interaction.break_progress > 0.0:
@@ -324,23 +341,27 @@ const WALK_ICONS := {
 }
 
 
-func _arrow(rect: Rect2, way: Vector2i) -> void:
-	_icon(WALK_ICONS[way], rect)
+## Pictures up to this size are icons drawn on a menu button; larger ones
+## are the whole button (its own background), filling it.
+const ICON_SIZE := 16
+## A whole-button picture while pressed: lighter.
+const PRESSED := Color(1.35, 1.35, 1.35)
 
 
-## A menu button's box: the plain one, or the highlighted one while pressed.
-func _box(rect: Rect2, lit: bool) -> void:
-	draw_style_box(UiTheme.theme().get_stylebox("hover" if lit else "normal", "Button"), rect)
-
-
-## A button's picture (ICONS), as large as whole pixels fit, centered.
-func _icon(id: String, rect: Rect2) -> void:
+## A button: its picture (ICONS) on a menu button's box (the highlighted
+## one while pressed), as large as whole pixels fit; or, a picture larger
+## than an icon, the picture alone stretched over the button.
+func _button(id: String, rect: Rect2, lit: bool) -> void:
 	if not _icons.has(id):
 		_icons[id] = TexturePacks.load_texture(ICONS + id + ".png")
 	var texture: Texture2D = _icons[id]
+	var picture := texture.get_size() if texture else Vector2.ZERO
+	if picture.x > ICON_SIZE or picture.y > ICON_SIZE:
+		draw_texture_rect(texture, rect, false, PRESSED if lit else Color.WHITE)
+		return
+	draw_style_box(UiTheme.theme().get_stylebox("hover" if lit else "normal", "Button"), rect)
 	if texture == null:
 		return
-	var picture := texture.get_size()
 	var scale := maxf(floorf(minf(rect.size.x / picture.x, rect.size.y / picture.y)), 1.0)
 	var drawn := picture * scale
 	draw_texture_rect(texture, Rect2((rect.position + (rect.size - drawn) / 2.0).round(), drawn), false)

@@ -190,6 +190,9 @@ func _register_all() -> void:
 	# same, only the controls and the menus' sizes differ.
 	define("controls", Setting.choice("control_mode", "Control Mode", PackedStringArray(["PC", "Phone"]),
 		1 if OS.has_feature("mobile") else 0))
+	# Phone mode: how large its buttons are (TouchControls).
+	define("controls", Setting.range_of("touch_button_size", "Button Size", 50, 200, 100, 10) \
+		.format_with(func(v: float) -> String: return "%d%%" % int(v)))
 	define("controls", Setting.range_of("mouse_sensitivity", "Sensitivity", 10, 200, 100, 5) \
 		.format_with(func(v: float) -> String: return "%d%%" % int(v)))
 	define("controls", Setting.toggle("invert_mouse", "Invert Mouse", false))

@@ -13,6 +13,12 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Options > Controls > Touch Screen > Button Size (50-200%, 100% by default): how large Phone mode's movement cross, jump, chat and pause buttons are, changed while playing.
+
+### Changed
+- Phone mode's buttons: new pictures, whole buttons like the mobile game's. A picture in `assets/textures/extra/touch/` larger than 16 x 16 is the whole button and fills it (lighter while pressed); a 16 x 16 one is still an icon on a menu button.
+
 ## [0.0.31] - 2026-11-21
 
 ### Added

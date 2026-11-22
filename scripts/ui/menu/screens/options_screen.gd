@@ -222,9 +222,11 @@ func _entries(id: String) -> Array:
 			result.append({"label": "Shader Pack", "build": _shader_pack_row})
 		"controls":
 			result.append(_setting_entry(Settings.get_setting("control_mode")))
+			result.append({"group": "Touch Screen"})
+			result.append(_setting_entry(Settings.get_setting("touch_button_size")))
 			result.append({"group": "Mouse"})
 			for setting: Setting in Settings.in_category("controls"):
-				if setting.key != "control_mode":
+				if not setting.key in ["control_mode", "touch_button_size"]:
 					result.append(_setting_entry(setting))
 			var category := ""
 			for binding: Array in KeyBindings.ACTIONS:
