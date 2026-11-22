@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.1.1-beta] - 2026-11-22
+
 ### Added
 - Meat from Beta 1.8: raw beef (heals 3) and steak (8) from cows, 1-3 each; raw chicken (2) and cooked chicken (6) from chickens, 1 each; cooked in a furnace, and dropped cooked by an animal burnt to death (porkchops too, as before). Their pictures are in items.png at Beta 1.8's places (105, 106, 121, 122).
 
@@ -839,7 +841,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.1.0-beta...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.1.1-beta...HEAD
+[0.1.1-beta]: https://github.com/MishaelS/voxel-engine/compare/v0.1.0-beta...v0.1.1-beta
 [0.1.0-beta]: https://github.com/MishaelS/voxel-engine/compare/v0.0.33...v0.1.0-beta
 [0.0.33]: https://github.com/MishaelS/voxel-engine/compare/v0.0.32...v0.0.33
 [0.0.32]: https://github.com/MishaelS/voxel-engine/compare/v0.0.31...v0.0.32
