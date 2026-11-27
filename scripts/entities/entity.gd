@@ -104,6 +104,13 @@ var puppet := false
 var remote_rider := 0
 var _net_target := Vector3.ZERO
 var _net_yaw := 0.0
+## Ticks left to reach the latest snapshot (Beta's client moves an entity to
+## where the server says over 3 ticks: snapshots come every other tick, so
+## it moves on every tick instead of a step and a stop).
+var _net_steps := 0
+const NET_STEPS := 3
+## Farther than this from the snapshot: put there at once (a teleport).
+const NET_SNAP := 8.0
 
 
 ## What changes often and shows: sent 10 times a second (with the position
@@ -116,6 +123,7 @@ func net_state() -> Dictionary:
 func apply_net_state(at: Vector3, yaw: float, state: Dictionary) -> void:
 	_net_target = at
 	_net_yaw = yaw
+	_net_steps = NET_STEPS
 	hurt_ticks = int(state.get("hurt", 0))
 	death_ticks = int(state.get("death", -1))
 	fire_ticks = int(state.get("fire", 0))
@@ -126,18 +134,24 @@ func net_yaw() -> float:
 	return float(get("_yaw")) if "_yaw" in self else rotation.y
 
 
-## A client's tick of a host entity: one step toward the latest snapshot.
+## A client's tick of a host entity: one step toward the latest snapshot
+## (the rest of the way over the ticks left, NET_STEPS from each snapshot).
 func puppet_tick() -> void:
 	_prev = Vector3(_x, _y, _z)
 	age += 1
-	velocity = _net_target - _prev
-	_x = _net_target.x
-	_y = _net_target.y
-	_z = _net_target.z
+	var share := 1.0
+	if _net_steps > 1 and _prev.distance_to(_net_target) < NET_SNAP:
+		share = 1.0 / _net_steps
+	_net_steps = maxi(_net_steps - 1, 0)
+	var at := _prev.lerp(_net_target, share)
+	velocity = at - _prev
+	_x = at.x
+	_y = at.y
+	_z = at.z
 	if "_yaw" in self:
-		set("_yaw", _net_yaw)
+		set("_yaw", lerp_angle(float(get("_yaw")), _net_yaw, share))
 	else:
-		rotation.y = lerp_angle(rotation.y, _net_yaw, 0.6)
+		rotation.y = lerp_angle(rotation.y, _net_yaw, maxf(share, 0.6))
 
 
 # --- Riding (boats and minecarts carry one rider) ------------------------------------

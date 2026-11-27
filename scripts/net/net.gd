@@ -617,6 +617,7 @@ func leave() -> void:
 	players.clear()
 	looks.clear()
 	_puppets.clear()
+	_puppet_states.clear()
 	_known_entities.clear()
 	_known_items.clear()
 	for avatar: Node in avatars.values():
@@ -1980,8 +1981,10 @@ func _avatar_of(peer: int) -> RemotePlayer:
 
 
 ## Host: each client gets the entities and items near its player: new ones
-## whole (SNAPSHOT_NEW at a time), all with where they are now, and which
-## ones went; at most SNAPSHOT_ENTITIES / SNAPSHOT_ITEMS in one.
+## whole (SNAPSHOT_NEW at a time), the others only when they moved, turned or
+## their look changed (the state only then too: a creature standing still
+## costs nothing), and which ones went; at most SNAPSHOT_ENTITIES /
+## SNAPSHOT_ITEMS in one (the rest come with the next).
 func _send_snapshots() -> void:
 	var world := _world()
 	if world == null:
@@ -1993,13 +1996,12 @@ func _send_snapshots() -> void:
 		if avatar == null:
 			continue
 		var at := avatar.target_position
+		# Per entity what this client was last sent: [feet, yaw, state].
 		var known: Dictionary = _known_entities.get(peer, {})
 		var seen := {}
 		var entries := []
 		var new_ones := 0
 		for entity in world.entities.all():
-			if entries.size() >= SNAPSHOT_ENTITIES:
-				break
 			if entity.removed or entity.type_name() == "fishing_bobber":
 				continue
 			if Vector2(entity.feet().x - at.x, entity.feet().z - at.z).length() > ENTITY_RANGE:
@@ -2007,38 +2009,62 @@ func _send_snapshots() -> void:
 			if entity.net_id == 0:
 				entity.net_id = _next_net_id
 				_next_net_id += 1
-			var is_new := not known.has(entity.net_id)
-			if is_new:
+			var last: Array = known.get(entity.net_id, [])
+			if entries.size() >= SNAPSHOT_ENTITIES:
+				if not last.is_empty():
+					seen[entity.net_id] = last # (still there: it comes next time)
+				continue
+			if last.is_empty():
 				if new_ones >= SNAPSHOT_NEW:
 					continue # (next time)
 				new_ones += 1
-			seen[entity.net_id] = true
-			entries.append([entity.net_id, entity.feet(), entity.net_yaw(), entity.net_state(), entity.save_state() if is_new else null])
+			var feet := entity.feet()
+			var yaw := entity.net_yaw()
+			var state := entity.net_state()
+			seen[entity.net_id] = [feet, yaw, state]
+			if last.is_empty():
+				entries.append([entity.net_id, feet, yaw, state, entity.save_state()])
+				continue
+			var state_changed: bool = state != last[2]
+			if state_changed or feet.distance_squared_to(last[0]) > 1e-6 or absf(angle_difference(yaw, float(last[1]))) > 0.001:
+				entries.append([entity.net_id, feet, yaw, state if state_changed else null, null])
 		var gone := PackedInt32Array()
 		for id: int in known:
 			if not seen.has(id):
 				gone.append(id)
 		_known_entities[peer] = seen
+		# Per item: [where, count] as last sent.
 		var known_items: Dictionary = _known_items.get(peer, {})
 		var seen_items := {}
 		var items := []
 		for item: Dictionary in world.items.net_items():
-			if items.size() >= SNAPSHOT_ITEMS:
-				break
 			var pos: Vector3 = item.pos
 			if Vector2(pos.x - at.x, pos.z - at.z).length() > ITEM_RANGE:
 				continue
 			if not item.has("nid"):
 				item.nid = _next_net_id
 				_next_net_id += 1
-			seen_items[item.nid] = true
-			items.append([item.nid, item.id, item.count, item.damage, pos])
+			var last: Array = known_items.get(item.nid, [])
+			if items.size() >= SNAPSHOT_ITEMS:
+				if not last.is_empty():
+					seen_items[item.nid] = last
+				continue
+			seen_items[item.nid] = [pos, item.count]
+			if last.is_empty() or pos.distance_squared_to(last[0]) > 1e-6 or int(last[1]) != int(item.count):
+				items.append([item.nid, item.id, item.count, item.damage, pos])
 		var items_gone := PackedInt32Array()
 		for id: int in known_items:
 			if not seen_items.has(id):
 				items_gone.append(id)
 		_known_items[peer] = seen_items
+		if entries.is_empty() and gone.is_empty() and items.is_empty() and items_gone.is_empty():
+			continue # (nothing moved: nothing to say)
 		_snapshot.rpc_id(peer, entries, gone, items, items_gone)
+
+
+## Client: the latest state of each of the host's entities (snapshots send
+## it only when it changed).
+var _puppet_states := {}
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -2048,11 +2074,13 @@ func _snapshot(entries: Array, gone: PackedInt32Array, items: Array, items_gone:
 	if world == null:
 		return
 	for entry: Array in entries:
+		if entry.size() != 5 or not entry[1] is Vector3:
+			continue
 		var id: int = entry[0]
 		var puppet: Entity = _puppets.get(id)
 		if puppet == null or not is_instance_valid(puppet) or puppet.removed:
 			var whole: Variant = entry[4]
-			if whole == null:
+			if not whole is Dictionary:
 				continue # (its whole state comes again: seen anew)
 			puppet = world.entities.create(str((whole as Dictionary).get("type", "")))
 			if puppet == null:
@@ -2062,12 +2090,15 @@ func _snapshot(entries: Array, gone: PackedInt32Array, items: Array, items_gone:
 			world.entities.spawn(puppet, entry[1])
 			puppet.load_state(whole)
 			_puppets[id] = puppet
-		puppet.apply_net_state(entry[1], entry[2], entry[3])
+		if entry[3] is Dictionary:
+			_puppet_states[id] = entry[3]
+		puppet.apply_net_state(entry[1], float(entry[2]), _puppet_states.get(id, {}))
 	for id in gone:
 		var puppet: Entity = _puppets.get(id)
 		if puppet and is_instance_valid(puppet):
 			puppet.removed = true
 		_puppets.erase(id)
+		_puppet_states.erase(id)
 	world.items.apply_net_items(items, items_gone)
 
 

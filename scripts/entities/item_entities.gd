@@ -474,6 +474,7 @@ func apply_net_items(items: Array, gone: PackedInt32Array) -> void:
 			_items.append(item)
 		else:
 			item.target = entry[4]
+			item.steps = Entity.NET_STEPS
 			if item.count != entry[2]:
 				item.count = entry[2]
 				_update_copies(item)
@@ -498,7 +499,11 @@ func _puppet_tick() -> void:
 				_items.remove_at(i)
 				continue
 		else:
-			item.pos = item.get("target", item.pos)
+			# (over the ticks left to the snapshot, like creatures: Entity.puppet_tick)
+			var target: Vector3 = item.get("target", item.pos)
+			var steps := int(item.get("steps", 0))
+			item.pos = (item.pos as Vector3).lerp(target, 1.0 / steps if steps > 1 and (item.pos as Vector3).distance_to(target) < Entity.NET_SNAP else 1.0)
+			item.steps = maxi(steps - 1, 0)
 			if item.age - int(item.get("asked_at", -100)) > 20 and player and not player.dead and _near_player(item) \
 					and player.inventory.room_for(item.id, item.damage) > 0:
 				item.asked_at = item.age # (asked again a second later if the host said no)

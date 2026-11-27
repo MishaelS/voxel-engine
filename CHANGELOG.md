@@ -13,6 +13,12 @@ Sections:
 
 ## [Unreleased]
 
+### Changed
+- Online: the host sends each client only the creatures, vehicles, arrows and dropped items that moved, turned or changed since the last snapshot (and their state only when it changed); a creature standing still costs nothing. With about 50 creatures near a client the host sends it about 5 KB/s instead of 50 KB/s, so a host with several players no longer chokes a home connection.
+
+### Fixed
+- Online: creatures, vehicles, arrows and dropped items move smoothly on clients. Like Beta's client they go to each new snapshot over 3 ticks (snapshots come every other tick); before they jumped there and stood still the tick after, moving on only half the ticks. Ones that jump far (8+ blocks) are put there at once.
+
 ## [0.1.1-beta] - 2026-11-22
 
 ### Added
