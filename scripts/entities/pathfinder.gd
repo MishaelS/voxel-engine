@@ -80,6 +80,26 @@ static func standable(world: VoxelWorld, cell: Vector3i, tall: int) -> bool:
 	return _floor[below] == 1 and _harmful[below] == 0
 
 
+## Whether a creature may step into `cell` (its feet there) without coming
+## to harm: no lava, fire or cactus there or under it, and ground (or water)
+## at most MAX_DROP below (`drops`: false for a creature that floats down,
+## like a chicken). A wall there counts as safe (it just bumps or climbs).
+static func safe_step(world: VoxelWorld, cell: Vector3i, drops: bool = true) -> bool:
+	_tables()
+	var here := world.get_block(cell)
+	if _harmful[here] == 1 or _harmful[world.get_block(cell + Vector3i.UP)] == 1:
+		return false
+	if _solid[here] == 1 or Blocks.liquid_table[here] == 1:
+		return true
+	for dy in range(1, MAX_DROP + 2):
+		var below := world.get_block(cell - Vector3i(0, dy, 0))
+		if _harmful[below] == 1:
+			return false
+		if Blocks.liquid_table[below] == 1 or _floor[below] == 1 or _solid[below] == 1:
+			return true
+	return not drops
+
+
 ## Where a creature at `cell` ends up stepping toward the column (x, z):
 ## the same height, one up (if it can jump: free above its head), or the
 ## first floor at most MAX_DROP down; Vector3i.MAX if nowhere.

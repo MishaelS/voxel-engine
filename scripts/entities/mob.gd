@@ -1061,7 +1061,10 @@ func _monster_tick(player) -> void:
 		velocity = Vector3(leap.x * 0.4, 0.4, leap.z * 0.4)
 		return
 	_navigate(goal, spec.speed, true, CHASE_NODES)
-	if mob_type != "creeper" and flat < half_width + 0.9 and absf(real.y - _y) < height and _attack_cooldown == 0:
+	# (like Beta's: it hits only a player it can see - not round a corner or
+	# through a door)
+	if mob_type != "creeper" and _unseen == 0 and flat < half_width + 0.9 and absf(real.y - _y) < height \
+			and _attack_cooldown == 0 and _sees(target):
 		_attack_cooldown = ATTACK_COOLDOWN
 		target.damage(_scaled_damage(_melee_damage()))
 		target.knockback(center())
@@ -1111,19 +1114,23 @@ func _chase_goal() -> Vector3:
 	return target.global_position
 
 
-## Damage by difficulty like Beta: easy half + 1, hard x1.5.
+## Damage by difficulty like Beta's EntityPlayer.attackEntityFrom: easy a
+## third + 1, hard x1.5.
 static func _scaled_damage(amount: int) -> int:
 	match Settings.get_value("difficulty"):
 		1:
-			return amount / 2 + 1
+			return amount / 3 + 1
 		3:
 			return amount * 3 / 2
 	return amount
 
 
 func _creeper_tick(player) -> void:
-	var close: bool = player != null and player.global_position.distance_to(feet()) < 3.0 and _sees(player)
-	if close or (_fuse > 0 and player != null and player.global_position.distance_to(feet()) < 7.0):
+	# (it keeps hissing only while it sees the player: it blew up behind
+	# walls before)
+	var sees := player != null and _sees(player)
+	var close: bool = sees and player.global_position.distance_to(feet()) < 3.0
+	if close or (_fuse > 0 and sees and player.global_position.distance_to(feet()) < 7.0):
 		if _fuse == 0:
 			Sounds.play("mob/creeper/fuse", center(), 1.0, 0.5)
 		_fuse += 1
@@ -1141,6 +1148,10 @@ func _creeper_tick(player) -> void:
 ## new one: so they step about while shooting), now and then (1 in 100)
 ## dropping it.
 const SKELETON_RANGE := 10.0
+const SKELETON_KEEP := 6.0
+## How unsteady its arrows are (Beta's EntitySkeleton: 12).
+const SKELETON_SPREAD := 12.0
+const SKELETON_BACK := 3.0
 const SKELETON_RELOAD := 30
 
 
@@ -1164,15 +1175,33 @@ func _skeleton_tick(player) -> void:
 		_path_goal = Vector3i.MAX
 		_navigate(goal, spec.speed, true, CHASE_NODES)
 	elif distance < SKELETON_RANGE and _unseen == 0:
-		if randi_range(0, 99) == 0:
+		# Keeps its distance while it shoots, like the modern game's archers:
+		# farther than SKELETON_KEEP it comes on along its path, closer it
+		# stands, within SKELETON_BACK it steps back (it walked right into
+		# the player before, shooting past it from there).
+		if distance > SKELETON_KEEP:
+			if randi_range(0, 99) == 0:
+				_path.clear()
+			_follow_path(spec.speed)
+		else:
 			_path.clear()
-		_follow_path(spec.speed)
+			if distance < SKELETON_BACK:
+				var away := Vector3(_x - goal.x, 0, _z - goal.z)
+				_walk_toward(feet() + (away.normalized() if away.length_squared() > 1e-4 else Vector3.BACK) * 2.0, spec.speed)
 		_face(goal)
 		_look_at = target.eye_position()
 		_look_ticks = 5
 		if _attack_cooldown == 0:
 			_attack_cooldown = SKELETON_RELOAD
-			Arrow.shoot(world, center() + Vector3(0, height * 0.3, 0), target.eye_position() - Vector3(0, 0.4, 0), 0.6 * 1.6, 12.0, self)
+			# Beta's EntitySkeleton: 0.6 fast (it was 0.96: hard to dodge),
+			# falling like Beta's arrows (0.03 a tick), as unsteady; aimed
+			# at the chest and up by the drop on the way.
+			var from := center() + Vector3(0, height * 0.3, 0)
+			var at: Vector3 = target.eye_position() - Vector3(0, 0.6, 0)
+			var flight := Vector2(at.x - from.x, at.z - from.z).length() / 0.6
+			at.y += 0.5 * Arrow.BETA_GRAVITY * flight * flight
+			var shot := Arrow.shoot(world, from, at, 0.6, SKELETON_SPREAD, self, false)
+			shot.fall_speed = Arrow.BETA_GRAVITY
 	else:
 		if _unseen == 0:
 			_look_at = target.eye_position()
@@ -1445,6 +1474,15 @@ func _walk_toward(point: Vector3, speed: float) -> void:
 		return
 	dir = dir.normalized()
 	_face(point)
+	if on_ground and not in_water and not in_lava:
+		# Not off a cliff or into lava, fire or a cactus: the step ahead is
+		# looked at first (straight walks - out of a path's reach, chasing,
+		# fleeing - went over edges and into lava).
+		var ahead := Vector3(_x, _y + 0.01, _z) + dir * (half_width + 0.35)
+		if not Pathfinder.safe_step(world, Vector3i(ahead.floor()), mob_type != "chicken"):
+			velocity.x *= 0.5
+			velocity.z *= 0.5
+			return
 	var accel: float
 	if in_water or in_lava:
 		accel = speed * 0.2 * 0.6

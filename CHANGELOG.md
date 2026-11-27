@@ -13,11 +13,23 @@ Sections:
 
 ## [Unreleased]
 
+### Added
+- Trapdoors in the upper half of a cell, like the modern game: put against the upper half of a wall they hang at the top of the cell, against the lower half they lie at the bottom as before; open, both stand up against the wall, and close back to their own half (by hand and by redstone).
+
 ### Changed
 - Online: the host sends each client only the creatures, vehicles, arrows and dropped items that moved, turned or changed since the last snapshot (and their state only when it changed); a creature standing still costs nothing. With about 50 creatures near a client the host sends it about 5 KB/s instead of 50 KB/s, so a host with several players no longer chokes a home connection.
+- Fairer fights, like Beta 1.7.3's: a monster hits only a player it can see (zombies and spiders hit round wall corners and through doors); a creeper keeps hissing only while it sees the player (it blew up behind walls); Easy takes a monster's hit down to a third + 1 (it was half + 1); skeletons' arrows fly at Beta's 0.6 (0.96: hard to dodge) and fall like Beta's, aimed at the chest and up by the drop, and an arrow hits within 0.3 of a player like Beta's (it had to touch).
+- Skeletons keep their distance while they shoot, like the modern game's archers: farther than 6 blocks they come on, closer they stand, within 3 they step back (they walked right into the player and shot past it from there).
+- Creatures push each other apart like Beta's (applyEntityCollision): a crowd spreads out instead of standing in one spot and holding itself up.
+- Creatures don't walk off cliffs (more than 3 blocks down) or into lava, fire or cactus: the step ahead is looked at first (walking straight - past the end of a path, chasing, fleeing - went over edges and into lava). A zombie on a ledge with the player below stays up; one across a lava trench stops at its edge. Chickens may still flutter down.
+- A softer look, like the Better than Adventure mod's (only the look; the game stays Beta 1.7.3's): a day haze - the fog begins at 30% of where Fog Distance says and thickens slowly, so far land and the sea fade softly into the sky; water a deep calm blue (Beta's was a bright blue); grass and leaves brighter and juicier in every biome (saturation x1.15, brightness x1.2 on the color maps and the fixed birch and spruce colors).
+- The depths feel heavier: near the bedrock the void's dust is thicker and floats up to y 16 (8), pale specks lit by the light where they are - bright by a torch, all but gone in the dark - and the void fog closes in harder and in every game mode (survival only before): about 25 blocks at y 20, 9 at y 12, 7 at the bottom, black and thick at once.
 
 ### Fixed
 - Online: creatures, vehicles, arrows and dropped items move smoothly on clients. Like Beta's client they go to each new snapshot over 3 ticks (snapshots come every other tick); before they jumped there and stood still the tick after, moving on only half the ticks. Ones that jump far (8+ blocks) are put there at once.
+- Ladders (and trapdoors) can be put on the wall of the cell the player stands in: a block may not be placed into the player by its own shape now, not by its whole cell.
+- Water washes away torches (redstone torches too), redstone dust, repeaters, levers, buttons, rails and snow layers in its way and drops them, like Beta's (they held it back like walls); sugar cane stands in it like Beta's (it was washed away). Leaves stay, as in Beta.
+- The fog never fully hid the world's edge: the depth fog's strength was 0.004 (left from the old exponential fog), now 1.
 
 ## [0.1.1-beta] - 2026-11-22
 

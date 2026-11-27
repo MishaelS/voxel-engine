@@ -6,6 +6,12 @@ extends Entity
 ## in blocks, where they stay for a minute and can be picked up.
 
 const DAMAGE := 4
+## How fast it falls (blocks per tick per tick): ours 0.05 (the player's bow
+## is balanced on it); skeletons' arrows fall like Beta's.
+var fall_speed := 0.05
+const BETA_GRAVITY := 0.03
+## How much bigger than a player its box is for arrows (Beta's 0.3).
+const HIT_GROW := 0.3
 const STUCK_TICKS := 2400 # two minutes
 
 var shooter: Node3D
@@ -20,11 +26,14 @@ var _model: Node3D
 
 ## Shoots an arrow from `from` toward `at` (speed in blocks per tick, spread
 ## in degrees-ish, like the game's).
-static func shoot(world: VoxelWorld, from: Vector3, at: Vector3, speed: float, spread: float, by: Node3D) -> Arrow:
+## `lift`: aimed a little high for the drop (false: `at` already allows for it).
+static func shoot(world: VoxelWorld, from: Vector3, at: Vector3, speed: float, spread: float, by: Node3D,
+		lift: bool = true) -> Arrow:
 	var arrow := Arrow.new()
 	arrow.shooter = by
 	var dir := (at - from).normalized()
-	dir.y += Vector3(at - from).length() * 0.02 # aims a little high, like skeletons
+	if lift:
+		dir.y += Vector3(at - from).length() * 0.02 # aims a little high
 	dir = dir.normalized() + Vector3(randfn(0, 1), randfn(0, 1), randfn(0, 1)) * 0.0075 * spread
 	world.entities.spawn(arrow, from)
 	arrow.velocity = dir.normalized() * speed
@@ -112,8 +121,9 @@ func tick() -> void:
 		hit = world.entities.raycast(start, velocity, minf(length, block_distance), hit[0])
 	var player := world.player as Player
 	if player and (shooter != player or age >= 5) and not player.dead:
+		# (Beta's EntityArrow: the target's box grown by 0.3 each way)
 		var box := AABB(player.global_position - Vector3(Player.HALF_WIDTH, 0, Player.HALF_WIDTH),
-			Vector3(Player.HALF_WIDTH * 2, Player.HEIGHT, Player.HALF_WIDTH * 2))
+			Vector3(Player.HALF_WIDTH * 2, Player.HEIGHT, Player.HALF_WIDTH * 2)).grow(HIT_GROW)
 		var point: Variant = box.intersects_segment(start, end)
 		if point != null and start.distance_to(point) < (hit[1] if not hit.is_empty() else block_distance):
 			player.damage(Mob._scaled_damage(DAMAGE) if shooter is Mob else DAMAGE)
@@ -126,7 +136,7 @@ func tick() -> void:
 		for avatar: RemotePlayer in Net.avatars.values():
 			if not is_instance_valid(avatar) or avatar.dead or (avatar == shooter and age < 5):
 				continue
-			var avatar_box := AABB(avatar.target_position - Vector3(0.3, 0, 0.3), Vector3(0.6, 1.8, 0.6))
+			var avatar_box := AABB(avatar.target_position - Vector3(0.3, 0, 0.3), Vector3(0.6, 1.8, 0.6)).grow(HIT_GROW)
 			var through: Variant = avatar_box.intersects_segment(start, end)
 			if through != null and start.distance_to(through) < (hit[1] if not hit.is_empty() else block_distance):
 				avatar.damage(Mob._scaled_damage(DAMAGE) if shooter is Mob else maxi(ceili(DAMAGE * power), 1))
@@ -156,7 +166,7 @@ func tick() -> void:
 	_z = end.z
 	var drag := 0.8 if EntityPhysics.touches_liquid(world, _x, _y, _z, 0.1, 0.1, "water") else 0.99
 	velocity *= drag
-	velocity.y -= 0.05
+	velocity.y -= fall_speed
 	if _y < Player.VOID_Y:
 		removed = true
 

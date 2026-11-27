@@ -506,7 +506,7 @@ func _use() -> void:
 
 ## Blocks a network client has the host use (Net.send_use): levers,
 ## buttons, repeaters, doors, trapdoors and note blocks.
-const SHARED_USE: Array[String] = ["lever", "stone_button", "repeater", "trapdoor", "trapdoor_open", "note_block",
+const SHARED_USE: Array[String] = ["lever", "stone_button", "repeater", "trapdoor", "trapdoor_open", "trapdoor_top", "trapdoor_top_open", "note_block",
 	"fence_gate", "fence_gate_open"]
 ## Containers a network client opens through the host (Net.open_container).
 const CONTAINER_USE: Array[String] = ["chest", "chest_left", "chest_right", "furnace", "furnace_lit", "dispenser", "dungeon_chest"]
@@ -522,10 +522,8 @@ static func use_shared(world: VoxelWorld, pos: Vector3i) -> void:
 	if RedstoneComponents.use(world, pos, id):
 		return
 	var family := Blocks.family_of(id)
-	if family == "trapdoor" or family == "trapdoor_open":
-		var open := family == "trapdoor"
-		world.set_block(pos, Blocks.variant("trapdoor_open" if open else "trapdoor", Blocks.facing_table[id]))
-		Sounds.play("door/" + ("open" if open else "close"), Vector3(pos) + Vector3(0.5, 0.5, 0.5), 1.0, randf() * 0.1 + 0.9)
+	if TrapdoorBehavior.is_trapdoor(family):
+		TrapdoorBehavior.toggle(world, pos)
 	elif FenceBehavior.is_gate(id):
 		FenceBehavior.toggle_gate(world, pos)
 	elif family == "note_block":
@@ -588,10 +586,8 @@ func _use_block(pos: Vector3i, id: int) -> bool:
 			var look := player.look_direction()
 			var looking := (0 if look.z > 0.0 else 2) if absf(look.z) >= absf(look.x) else (3 if look.x > 0.0 else 1)
 			FenceBehavior.toggle_gate(world, pos, looking)
-		"trapdoor", "trapdoor_open":
-			var open := family == "trapdoor"
-			world.set_block(pos, Blocks.variant("trapdoor_open" if open else "trapdoor", Blocks.facing_table[id]))
-			Sounds.play("door/" + ("open" if open else "close"), Vector3(pos) + Vector3(0.5, 0.5, 0.5), 1.0, randf() * 0.1 + 0.9)
+		"trapdoor", "trapdoor_open", "trapdoor_top", "trapdoor_top_open":
+			TrapdoorBehavior.toggle(world, pos)
 		"cake":
 			return FarmBehavior.eat_cake(world, pos, player)
 		"bed_foot", "bed_head":
@@ -691,8 +687,6 @@ func _place_block(id: int) -> void:
 	if cell == null:
 		return
 	var pos: Vector3i = cell
-	if Blocks.collides_table[id] == 1 and player.intersects_block(pos):
-		return # not inside the player
 	# Oriented blocks (chest, furnace, pumpkins, stairs) look at the player.
 	var family := Blocks.family_of(id)
 	# (Stairs families also hold their corner shapes, StairsBehavior: placed
@@ -737,7 +731,10 @@ func _place_block(id: int) -> void:
 		var side: Vector3i = target.normal
 		if side.y != 0 or side == Vector3i.ZERO or not TorchBehavior.can_hold(world, pos - side):
 			return
-		id = Blocks.variant(family, Blocks.FACING_DIRECTIONS.find(side))
+		# A trapdoor against the upper half of the wall goes in the upper half
+		# of its cell, like the modern game (TrapdoorBehavior).
+		var placed := "trapdoor_top" if family == "trapdoor" and _upper_placement() else family
+		id = Blocks.variant(placed, Blocks.FACING_DIRECTIONS.find(side))
 	# Redstone parts and pistons pick their state from where they go.
 	var clicked: Vector3i = target.normal if target.get("hit", false) and Blocks.replaceable_table[target.block] == 0 else Vector3i.UP
 	var redstone := RedstoneComponents.placement(world, family, pos, clicked, player.look_direction())
@@ -753,6 +750,8 @@ func _place_block(id: int) -> void:
 		id = Blocks.variant(family, 4 if front == Vector3i.UP else (5 if front == Vector3i.DOWN else Blocks.FACING_DIRECTIONS.find(front)))
 	if block.placed_as != "":
 		id = Blocks.id_of(block.placed_as) # placed leaves never decay
+	if Blocks.collides_table[id] == 1 and player.intersects_shape(pos, id):
+		return # not inside the player (only the block's own shape: a ladder on the wall of the player's cell is fine)
 	if world.get_block(pos) != Blocks.AIR:
 		world.destroy_block(pos, true, true, false) # a plant or liquid in the way
 	if RailBehavior.is_rail(id):

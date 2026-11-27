@@ -174,6 +174,55 @@ func _tick(tick_index: int) -> void:
 			_entities.remove_at(i)
 			continue
 		i += 1
+	var t := Time.get_ticks_usec()
+	_push_apart()
+	tick_times["push"] = Time.get_ticks_usec() - t
+
+
+## Creatures push each other apart like Beta's (Entity.applyEntityCollision):
+## two whose boxes overlap get 0.05 a tick away from each other (less the
+## farther apart they already are), so a crowd spreads out instead of
+## standing in one spot and holding itself up. Neighbors are found by
+## 2-block cells.
+func _push_apart() -> void:
+	var cells := {}
+	var mobs: Array[Mob] = []
+	for entity in _entities:
+		if entity is Mob and not entity.removed and not entity.puppet and not entity.is_dead() \
+				and entity.vehicle == null and entity.rider == null:
+			var mob := entity as Mob
+			var cell := Vector2i(floori(mob._x) >> 1, floori(mob._z) >> 1)
+			if not cells.has(cell):
+				cells[cell] = []
+			(cells[cell] as Array).append(mobs.size())
+			mobs.append(mob)
+	for a in mobs.size():
+		var mob := mobs[a]
+		var cell := Vector2i(floori(mob._x) >> 1, floori(mob._z) >> 1)
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				var near: Variant = cells.get(cell + Vector2i(dx, dz))
+				if near == null:
+					continue
+				for b: int in near:
+					if b <= a:
+						continue # (each pair once)
+					var other := mobs[b]
+					var reach := mob.half_width + other.half_width
+					var x := other._x - mob._x
+					var z := other._z - mob._z
+					if absf(x) >= reach or absf(z) >= reach or absf(other._y - mob._y) >= maxf(mob.height, other.height):
+						continue
+					var d := maxf(absf(x), absf(z))
+					if d < 0.01:
+						x = randf_range(-0.01, 0.01) # (right on top of each other: any way)
+						z = randf_range(-0.01, 0.01)
+						d = 0.01
+					var strength := minf(1.0 / sqrt(d), 1.0) * 0.05 / sqrt(d)
+					mob.velocity.x -= x * strength
+					mob.velocity.z -= z * strength
+					other.velocity.x += x * strength
+					other.velocity.z += z * strength
 
 
 func save_state() -> Array:

@@ -11,7 +11,10 @@ extends RefCounted
 ##   two sources over solid ground becomes a source (infinite water);
 ## - it falls into air below; otherwise (or as a source) it spreads to the
 ##   sides, only toward the nearest drop within 4 blocks if there is one;
-##   plants in the way are washed away (water drops them, lava burns them);
+##   plants and the small things the game's liquids wash off (torches,
+##   redstone dust, repeaters, levers, buttons, rails, snow layers: Beta's
+##   non-solid blocks) are washed away in the way (water drops them, lava
+##   burns them); sugar cane stands in it like Beta's (washable());
 ## - lava touching water hardens: a source into obsidian, flowing lava
 ##   into cobblestone; lava flowing down onto water turns it into stone.
 ## flow_vector() is the direction the current pushes entities.
@@ -20,6 +23,13 @@ const SETTINGS := {
 	"water": {"delay": 5, "step": 1, "infinite": true},
 	"lava": {"delay": 30, "step": 2, "infinite": false},
 }
+## Washed away by liquids besides plants (and every torch family).
+const WASHED_FAMILIES: Array[String] = ["redstone_wire", "repeater", "lever", "stone_button", "rail",
+	"powered_rail", "detector_rail", "snow_layer"]
+## Plants liquids flow round, like Beta's (BlockFlowing.blockBlocksFlow).
+const KEPT_FAMILIES: Array[String] = ["sugar_cane_block"]
+static var _washable := PackedByteArray()
+
 ## How far liquid looks for a drop to flow toward.
 const SEARCH_DEPTH := 4
 const HORIZONTAL: Array[Vector3i] = [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
@@ -160,25 +170,37 @@ static func _harden(world: VoxelWorld, pos: Vector3i) -> bool:
 static func _flow_into(world: VoxelWorld, pos: Vector3i, family: String, level: int) -> void:
 	var there := world.get_block(pos)
 	if there != Blocks.AIR:
-		# A plant in the way: water washes it away, lava burns it.
+		# A plant or a torch in the way: water washes it away, lava burns it.
 		world.destroy_block(pos, family == "water", true, false)
 	world.set_block(pos, liquid_id(family, level))
 
 
-## Air or a plant in a loaded chunk: liquid can move in.
+## Whether a liquid flowing in washes this block away (plants, torches...).
+static func washable(id: int) -> bool:
+	if _washable.is_empty():
+		_washable.resize(Blocks.count())
+		for i in Blocks.count():
+			var family := Blocks.family_of(i)
+			var washed := Blocks.replaceable_table[i] == 1 or family in WASHED_FAMILIES or family.ends_with("torch")
+			_washable[i] = 1 if washed and not family in KEPT_FAMILIES else 0
+	return _washable[id] == 1
+
+
+## Air or something washable in a loaded chunk: liquid can move in.
 static func _can_flow_into(world: VoxelWorld, pos: Vector3i) -> bool:
 	if pos.y < 0 or pos.y >= world.height or not world.is_inside(pos):
 		return false
 	var id := world.get_block(pos)
-	return id == Blocks.AIR or Blocks.replaceable_table[id] == 1
+	return id == Blocks.AIR or washable(id)
 
 
-## Anything but air, plants and the same liquid stops it (unloaded chunks too).
+## Anything but air, washable blocks and the same liquid stops it (unloaded
+## chunks too).
 static func _blocks_flow(world: VoxelWorld, pos: Vector3i, family: String) -> bool:
 	if pos.y < 0 or pos.y >= world.height or not world.is_inside(pos):
 		return true
 	var id := world.get_block(pos)
-	if id == Blocks.AIR or Blocks.replaceable_table[id] == 1:
+	if id == Blocks.AIR or washable(id):
 		return false
 	return level_at(world, pos, family) < 0
 

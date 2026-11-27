@@ -2028,16 +2028,17 @@ func _wake_springs() -> void:
 							NatureBehavior.spring_display_tick(self, coord * ChunkData.SIZE + Vector3i(index & 15, index >> 8, (index >> 4) & 15), _display_rng)
 
 
-## The void's dust like the game's: in air near the bedrock (below y 8),
-## dark specks drift, more the deeper (a cell at height y: 7 - y in 8).
-const VOID_DUST_TRIES := 40
+## The void's dust like the game's, thicker: in air near the bedrock (the
+## lowest chunk, below y 16) specks drift, more the deeper (a cell at
+## height y: 15 - y in 16).
+const VOID_DUST_TRIES := 100
 
 
 func _void_dust(data: ChunkData, origin: Vector3i) -> void:
 	for i in VOID_DUST_TRIES:
-		var index := _display_rng.randi() & 2047 # the lowest 8 layers
+		var index := _display_rng.randi() & 4095 # the lowest 16 layers
 		var y := index >> 8
-		if data.blocks[index] == Blocks.AIR and _display_rng.randi_range(0, 7) > y:
+		if data.blocks[index] == Blocks.AIR and _display_rng.randi_range(0, 15) > y:
 			var pos := origin + Vector3i(index & 15, y, (index >> 4) & 15)
 			particles.void_speck(Vector3(pos) + Vector3(_display_rng.randf(), _display_rng.randf(), _display_rng.randf()))
 

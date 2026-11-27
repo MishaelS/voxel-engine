@@ -19,6 +19,12 @@ const WATER_FOG := Color(0.03, 0.08, 0.25)
 const LAVA_FOG := Color(0.6, 0.1, 0.0)
 const LAVA_FOG_END := 2.0
 const LAVA_TINT := Color(0.9, 0.25, 0.0, 0.55)
+## The day's haze, like the Better than Adventure mod's: the fog begins
+## much nearer than Fog Distance says (this part of it) and thickens slowly
+## at first (the curve), so the far land fades softly into the sky's color
+## instead of a clear line near the world's edge.
+const HAZE_START := 0.3
+const HAZE_CURVE := 1.6
 
 @export var world_environment: WorldEnvironment
 @export var sun: DayNightCycle
@@ -53,6 +59,7 @@ func _ready() -> void:
 	var environment := world_environment.environment
 	environment.fog_mode = Environment.FOG_MODE_DEPTH
 	environment.fog_depth_curve = 1.0
+	environment.fog_density = 1.0 # (depth fog: its full strength at the end)
 	environment.fog_aerial_perspective = 0.0 # our own fog color (cheaper)
 	environment.fog_sky_affect = 0.0
 
@@ -175,21 +182,25 @@ func _update_fog(to_sun: Vector3) -> void:
 		environment.fog_light_color = LAVA_FOG
 		environment.fog_depth_begin = 0.0
 		environment.fog_depth_end = LAVA_FOG_END
+		environment.fog_depth_curve = 1.0
 		return
 	if underwater and not from_far:
 		environment.fog_enabled = true
 		environment.fog_light_color = WATER_FOG * (0.2 + 0.8 * daylight)
 		environment.fog_depth_begin = 0.0
 		environment.fog_depth_end = WATER_FOG_END
+		environment.fog_depth_curve = 1.0
 		return
 	# The fog ends at the far terrain's edge when it is on (FarTerrain).
 	var distance := float(maxi(int(Settings.get_value("render_distance")), FarTerrain.radius_setting())) * ChunkData.SIZE
 	environment.fog_enabled = Settings.get_value("fog")
 	var view := -player.camera.global_basis.z if player and player.camera else Vector3.FORWARD
 	environment.fog_light_color = horizon_color(to_sun, view)
-	environment.fog_depth_begin = distance * Settings.get_value("fog_distance") / 100.0
+	environment.fog_depth_begin = distance * Settings.get_value("fog_distance") / 100.0 * HAZE_START
 	environment.fog_depth_end = distance
+	environment.fog_depth_curve = HAZE_CURVE
 	if from_far:
+		environment.fog_depth_curve = 1.0
 		# Measured from the diorama's camera, DISTANCE blocks from the area's
 		# middle: Fog thickens from the far side of the area toward the near.
 		var amount: float = Settings.get_value("iso_fog_amount") / 100.0
@@ -202,9 +213,10 @@ func _update_fog(to_sun: Vector3) -> void:
 	_void_fog(environment)
 
 
-## The void fog like the game's (since Beta 1.8): near the bedrock the fog
-## turns black (below y 32) and, in survival, closes in where no sky light
-## reaches (down to 5 blocks at the bottom).
+## The void fog like the game's (since Beta 1.8), heavier: near the bedrock
+## the fog turns black (below y 32) and, where no sky light reaches, closes
+## in - about 25 blocks at y 20, 9 at y 12, 7 at the bottom - like a weight
+## of rock overhead. In every game mode (Beta 1.8's: survival only).
 func _void_fog(environment: Environment) -> void:
 	if world == null or player == null:
 		return
@@ -213,19 +225,18 @@ func _void_fog(environment: Environment) -> void:
 	if shade < 1.0:
 		shade = maxf(shade, 0.0)
 		environment.fog_light_color *= shade * shade
-	if player.game_mode != Player.GameMode.SURVIVAL:
-		return
 	var sky := float(world.get_light(Vector3i(eye.floor())))
-	var near := sky / 16.0 + (eye.y + 4.0) / 32.0
+	var near := sky / 16.0 + eye.y / 40.0
 	if near >= 1.0:
 		return
 	near = maxf(near, 0.0)
 	near *= near
-	var end := maxf(100.0 * near, 5.0)
+	var end := maxf(100.0 * near, 7.0)
 	if not environment.fog_enabled or end < environment.fog_depth_end:
 		environment.fog_enabled = true
 		environment.fog_depth_end = end
-		environment.fog_depth_begin = end * 0.25
+		environment.fog_depth_begin = end * 0.4
+		environment.fog_depth_curve = 1.0 # (thick at once, not the day's haze)
 
 
 func _update_clouds(to_sun: Vector3) -> void:

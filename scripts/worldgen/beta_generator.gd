@@ -326,8 +326,8 @@ func column_colors(cx: int, cz: int) -> Array[PackedColorArray]:
 	for i in 256:
 		var temp := values[i]
 		var humid := values[256 + i]
-		grass[i] = _map_color(_grass_map, temp, humid).srgb_to_linear()
-		foliage[i] = _map_color(_foliage_map, temp, humid).srgb_to_linear()
+		grass[i] = Blocks.lush(_map_color(_grass_map, temp, humid)).srgb_to_linear()
+		foliage[i] = Blocks.lush(_map_color(_foliage_map, temp, humid)).srgb_to_linear()
 	return [grass, foliage]
 
 

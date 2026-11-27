@@ -16,7 +16,8 @@ extends Node3D
 ## - lava bubbles (embers, pops), rain and snow hiss into steam on lava, fire
 ##   and torches, items burn up in lava and fire, rain and snow splash on
 ##   water and the ground;
-## - near the bedrock, dark specks float in the air (the void's dust).
+## - near the bedrock, specks float in the air (the void's dust), lit
+##   where they are.
 ## Bits fall with gravity (0.04 blocks per tick per tick, drag 0.98), stop
 ## on blocks and live 4..40 ticks; simulated in game ticks (TickLoop) and
 ## interpolated between them for drawing. Lit particles take the light where
@@ -340,13 +341,18 @@ func splash(point: Vector3) -> void:
 		_add_anim(point, velocity, Anim.SPLASH, 0.15, Color.WHITE, _rng.randi_range(8, 16), 0.04, 0.0)
 
 
-## Dust of the void near the bedrock: a dark speck drifting slowly (the
-## game's "depthsuspend").
+## Dust of the void near the bedrock: a pale speck drifting slowly (the
+## game's "depthsuspend"), lit by the light where it is: bright by a torch,
+## all but gone in the dark (VOID_SPECK_DARKEST: a faint shape going by).
+const VOID_SPECK_DARKEST := 0.06
+
+
 func void_speck(point: Vector3) -> void:
-	var gray := _rng.randf() * 0.1 + 0.2
-	var velocity := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * 0.004
-	var life := int(20.0 / (_rng.randf() * 0.8 + 0.2))
-	_add_picture(point, velocity, SPECK, _size(_rng.randf() * 0.6 + 0.5) * 0.5, Color(gray, gray, gray), life, 0.0)
+	var gray := _rng.randf() * 0.25 + 0.65
+	var velocity := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * 0.006
+	var life := int(30.0 / (_rng.randf() * 0.8 + 0.2))
+	_add(point, velocity, Color(-10 - SPECK[2], SPECK[0] / ATLAS_SIZE.x, SPECK[1] / ATLAS_SIZE.y,
+		_size(_rng.randf() * 0.6 + 0.5) * 0.6), Color(gray, gray, gray), life, 0.0, false, -1, VOID_SPECK_DARKEST)
 
 
 ## A note floating up from a note block, colored by its pitch like the game.

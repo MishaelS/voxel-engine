@@ -285,8 +285,8 @@ static func consumer_update(world: VoxelWorld, pos: Vector3i) -> void:
 		if edge(world, pos, gate_powered) != 0 and (family == "fence_gate_open") != gate_powered:
 			FenceBehavior.toggle_gate(world, pos)
 		return
-	if family == "trapdoor" or family == "trapdoor_open":
+	if TrapdoorBehavior.is_trapdoor(family):
 		var powered := indirectly_powered(world, pos)
-		if edge(world, pos, powered) != 0 and (family == "trapdoor_open") != powered:
-			world.set_block(pos, Blocks.variant("trapdoor_open" if powered else "trapdoor", Blocks.facing_table[id]), false)
+		if edge(world, pos, powered) != 0 and TrapdoorBehavior.is_open(family) != powered:
+			world.set_block(pos, TrapdoorBehavior.with_open(id, powered), false)
 			Sounds.play("door/" + ("open" if powered else "close"), Vector3(pos) + Vector3(0.5, 0.5, 0.5), 1.0, randf() * 0.1 + 0.9)

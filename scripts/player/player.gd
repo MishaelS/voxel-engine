@@ -377,6 +377,19 @@ func intersects_block(pos: Vector3i) -> bool:
 		and _z + HALF_WIDTH > pos.z and _z - HALF_WIDTH < pos.z + 1
 
 
+## Whether block `id` at `pos` would overlap the player: by its collision
+## boxes (a ladder or a trapdoor on the cell's side), a full cell without.
+func intersects_shape(pos: Vector3i, id: int) -> bool:
+	var boxes := Blocks.get_type(id).collision_boxes
+	if boxes.is_empty():
+		return intersects_block(pos)
+	var body := AABB(Vector3(_x - HALF_WIDTH, _y, _z - HALF_WIDTH), Vector3(HALF_WIDTH * 2.0, HEIGHT, HALF_WIDTH * 2.0))
+	for box in boxes:
+		if body.intersects(AABB(box.position + Vector3(pos), box.size)):
+			return true
+	return false
+
+
 # --- Input ----------------------------------------------------------------------
 
 ## Turns the view by a mouse's (or a finger's, TouchControls) move.
@@ -756,7 +769,7 @@ func _on_ladder() -> bool:
 	var id := world.get_block(cell)
 	if Blocks.get_type(id).climbable:
 		return true
-	if Blocks.family_of(id) == "trapdoor_open":
+	if Blocks.family_of(id) in ["trapdoor_open", "trapdoor_top_open"]:
 		var below := world.get_block(cell + Vector3i.DOWN)
 		return Blocks.family_of(below) == "ladder" and Blocks.facing_table[below] == Blocks.facing_table[id]
 	return false

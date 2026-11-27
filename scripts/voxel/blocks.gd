@@ -32,6 +32,10 @@ const GRASS_SAVANNA := Color("bfb755")
 const FOLIAGE_OAK := Color("59ae30")
 const FOLIAGE_BIRCH := Color("80a755")
 const FOLIAGE_SPRUCE := Color("619961")
+## Grass and leaves a bit brighter and juicier than Beta's own colors, like
+## the Better than Adventure mod's look (lush()).
+const LUSH_SATURATION := 1.15
+const LUSH_VALUE := 1.2
 
 static var types: Array[BlockType] = []
 static var _ids_by_name := {}
@@ -124,13 +128,13 @@ static func _register_all() -> bool:
 	register(BlockType.column("oak_log", 21, 20).set_hardness(2.0).set_tool("axe"))
 	register(BlockType.column("birch_log", 21, 117).set_hardness(2.0).set_tool("axe"))
 	register(BlockType.column("spruce_log", 21, 116).set_hardness(2.0).set_tool("axe"))
-	register(BlockType.cube("oak_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_OAK).set_light_opacity(1) \
+	register(BlockType.cube("oak_leaves", 52).set_layer(Layer.CUTOUT).set_tint(lush(FOLIAGE_OAK)).set_light_opacity(1) \
 		.set_hardness(0.2).set_drops(_leaf_drops("oak", true)).set_biome_tint(2).set_fast_tile(53) \
 		.set_on_update(Callable(LeafBehavior, "on_update")).set_scheduled_tick(Callable(LeafBehavior, "scheduled_tick")))
-	register(BlockType.cube("birch_leaves", 52).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_BIRCH).set_light_opacity(1) \
+	register(BlockType.cube("birch_leaves", 52).set_layer(Layer.CUTOUT).set_tint(lush(FOLIAGE_BIRCH)).set_light_opacity(1) \
 		.set_hardness(0.2).set_drops(_leaf_drops("birch", false)).set_fast_tile(53) \
 		.set_on_update(Callable(LeafBehavior, "on_update")).set_scheduled_tick(Callable(LeafBehavior, "scheduled_tick")))
-	register(BlockType.cube("spruce_leaves", 132).set_layer(Layer.CUTOUT).set_tint(FOLIAGE_SPRUCE).set_light_opacity(1) \
+	register(BlockType.cube("spruce_leaves", 132).set_layer(Layer.CUTOUT).set_tint(lush(FOLIAGE_SPRUCE)).set_light_opacity(1) \
 		.set_hardness(0.2).set_drops(_leaf_drops("spruce", false)).set_fast_tile(133) \
 		.set_on_update(Callable(LeafBehavior, "on_update")).set_scheduled_tick(Callable(LeafBehavior, "scheduled_tick")))
 	register(BlockType.cube("oak_planks", 4).set_hardness(2.0).set_tool("axe"))
@@ -187,9 +191,9 @@ static func _register_all() -> bool:
 			register(_bed(part, facing))
 
 	# Plants, lava and leaves placed by the player (appended: ids stay stable).
-	register(BlockType.cube("tall_grass", 39).as_plant().set_plant_offset(2).set_tint(GRASS_PLAINS).set_biome_tint(1) \
+	register(BlockType.cube("tall_grass", 39).as_plant().set_plant_offset(2).set_tint(lush(GRASS_PLAINS)).set_biome_tint(1) \
 		.set_drops([{"item": "seeds", "chance": 0.125}, {}]))
-	register(BlockType.cube("fern", 56).as_plant().set_plant_offset(2).set_tint(GRASS_PLAINS).set_biome_tint(1) \
+	register(BlockType.cube("fern", 56).as_plant().set_plant_offset(2).set_tint(lush(GRASS_PLAINS)).set_biome_tint(1) \
 		.set_drops([{"item": "seeds", "chance": 0.125}, {}]))
 	register(BlockType.cube("dead_bush", 55).as_plant().set_plant_offset(1).set_drop("none"))
 	register(BlockType.cube("dandelion", 13).as_plant().set_height(0.6))
@@ -279,6 +283,11 @@ static func _register_all() -> bool:
 	for state in ["closed", "open"]:
 		for facing in 4:
 			register(_fence_gate(state == "open", facing))
+	# Trapdoors in the upper half of the cell, like the modern game
+	# (TrapdoorBehavior; appended: ids stay stable).
+	for state in ["closed", "open"]:
+		for facing in 4:
+			register(_trapdoor(state == "open", facing, true))
 	_set_flammability()
 	return true
 
@@ -1102,19 +1111,26 @@ static func _door(kind: String, tile: int, half: String, open: bool, facing: int
 
 
 ## A trapdoor hinged on the wall behind it (facing away from the wall):
-## lying flat at the bottom, or standing up against the wall when open.
-static func _trapdoor(open: bool, facing: int) -> BlockType:
-	var family := "trapdoor_open" if open else "trapdoor"
+## lying flat at the bottom (`top`: at the top, TrapdoorBehavior), or
+## standing up against the wall when open.
+static func _trapdoor(open: bool, facing: int, top: bool = false) -> BlockType:
+	var family := ("trapdoor_top" if top else "trapdoor") + ("_open" if open else "")
 	var block := BlockType.cube(family if facing == 0 else "%s_%s" % [family, FACING_NAMES[facing]], 84) \
 		.set_layer(Layer.CUTOUT).set_hardness(3.0).set_tool("axe").set_height(0.999).set_light_opacity(0) \
 		.set_on_update(Callable(TorchBehavior, "on_update"))
 	block.family = family
 	block.facing = facing
-	if open or facing != 0:
+	if open or facing != 0 or top:
 		block.item = "trapdoor"
 		block.in_catalog = false
-	var from := Vector3(0, 0, 0)
+	if top:
+		# (registered after the redstone hookup of the others: hooked up here)
+		Redstone.inner_updates[family] = block.on_update
+		block.on_update = Callable(Redstone, "consumer_update")
+	var from := Vector3(0, 13, 0) if top and not open else Vector3(0, 0, 0)
 	var to := Vector3(16, 3, 16) if not open else Vector3(16, 16, 3)
+	if top and not open:
+		to = Vector3(16, 16, 16)
 	var faces := {}
 	for face in 6:
 		faces[face] = {"layer": 84}
@@ -1421,10 +1437,16 @@ static func _bed(part: String, facing: int) -> BlockType:
 	return block
 
 
+## A grass or leaf color made brighter and more saturated (LUSH_*): every
+## biome's grass and leaves, the color maps' too (BetaGenerator).
+static func lush(color: Color) -> Color:
+	return Color.from_hsv(color.h, minf(color.s * LUSH_SATURATION, 1.0), minf(color.v * LUSH_VALUE, 1.0))
+
+
 static func _grass(block_name: String, tint: Color) -> BlockType:
 	# Top: grayscale grass tinted. Sides: dirt-based tile + tinted grass
 	# fringe. Bottom: plain dirt, not tinted (like Beta's).
-	var block := BlockType.column(block_name, 0, 3, 2).set_side_overlay(38).set_tint(tint).set_random_rotation() \
+	var block := BlockType.column(block_name, 0, 3, 2).set_side_overlay(38).set_tint(lush(tint)).set_random_rotation() \
 		.set_hardness(0.6).set_drop("dirt").set_biome_tint(1).set_random_tick(Callable(GrassBehavior, "random_tick"))
 	block.overlays[BlockModel.DOWN] = UNTINTED
 	return block

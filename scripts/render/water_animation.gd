@@ -6,13 +6,17 @@ extends Node
 ## - still water (tops): ripples spread sideways, random drops add energy;
 ## - flowing water (sides): ripples spread along the flow and the whole
 ##   pattern slides down one pixel per step.
-## Each texture pixel keeps an energy value; brighter, greener and more
-## opaque where the energy is high (the classic water colors).
+## Each texture pixel keeps an energy value; lighter and more opaque where
+## the energy is high. The colors are deeper and calmer than Beta's bright
+## blue, like the Better than Adventure mod's water (water_pixel()).
 
 const STILL_TILE := 205
 const FLOW_TILE := 206
 const SIZE := 16
 const STEP := 1.0 / 20.0
+## Water's color at no energy and at full energy (sRGB, alpha: opacity).
+const CALM := Color8(28, 70, 106, 180)
+const RIPPLE := Color8(58, 116, 150, 220)
 
 var _still := _Ripples.new(false)
 var _flow := _Ripples.new(true)
@@ -65,11 +69,7 @@ class _Ripples:
 		data.resize(SIZE * SIZE * 4)
 		for i in SIZE * SIZE:
 			var energy := clampf(current[(i - shift * SIZE) & 255], 0.0, 1.0)
-			energy *= energy
-			data[i * 4] = int(32 + energy * 32)
-			data[i * 4 + 1] = int(50 + energy * 64)
-			data[i * 4 + 2] = 255
-			data[i * 4 + 3] = int(146 + energy * 50)
+			WaterAnimation.water_pixel(data, i, energy * energy)
 		return data
 
 
@@ -87,23 +87,46 @@ func _ready() -> void:
 			_native.append(fx)
 
 
+## The water was drawn at least once (in our colors even with Animated
+## Water off: then it stays still).
+var _drawn := false
+
+
 func _process(delta: float) -> void:
-	if not Settings.get_value("animated_water"):
+	if not Settings.get_value("animated_water") and _drawn:
 		return
+	_drawn = true
 	_accumulator += delta
-	if _accumulator < STEP:
+	if _accumulator < STEP and _ticks > 0:
 		return
-	_accumulator = minf(_accumulator - STEP, STEP)
+	_accumulator = clampf(_accumulator - STEP, 0.0, STEP)
 	_ticks += 1
 	var tiles := BlockMaterials.tiles()
 	if not _native.is_empty():
-		tiles.update_layer(_image(_native[0].call("step", 0)), STILL_TILE)
-		tiles.update_layer(_image(_native[1].call("step", _ticks)), FLOW_TILE)
+		tiles.update_layer(_image(_recolored(_native[0].call("step", 0))), STILL_TILE)
+		tiles.update_layer(_image(_recolored(_native[1].call("step", _ticks))), FLOW_TILE)
 		return
 	_still.step()
 	_flow.step()
 	tiles.update_layer(_image(_still.pixels(0)), STILL_TILE)
 	tiles.update_layer(_image(_flow.pixels(_ticks)), FLOW_TILE)
+
+
+## Writes pixel i of RGBA bytes: water at this energy (0..1, squared).
+static func water_pixel(data: PackedByteArray, i: int, energy: float) -> void:
+	var color := CALM.lerp(RIPPLE, energy)
+	data[i * 4] = color.r8
+	data[i * 4 + 1] = color.g8
+	data[i * 4 + 2] = color.b8
+	data[i * 4 + 3] = color.a8
+
+
+## The native simulation's pixels (Beta's colors: red 32 + energy * 32) in
+## our water colors.
+static func _recolored(data: PackedByteArray) -> PackedByteArray:
+	for i in SIZE * SIZE:
+		water_pixel(data, i, clampf((data[i * 4] - 32) / 32.0, 0.0, 1.0))
+	return data
 
 
 static func _image(data: PackedByteArray) -> Image:
