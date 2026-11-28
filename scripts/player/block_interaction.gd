@@ -144,7 +144,7 @@ func _process(delta: float) -> void:
 	_break_delay = maxf(_break_delay - ticks, 0.0)
 	_place_delay = maxf(_place_delay - ticks, 0.0)
 	var active := _captured() and not GameInput.is_blocked() and not player.dead and not player.sleeping
-	if active and _attack_held() and hit:
+	if active and _attack_held() and hit and not player.carrying():
 		_continue_breaking(target.pos, ticks)
 	else:
 		_stop_breaking()
@@ -210,7 +210,93 @@ func _captured() -> bool:
 
 
 ## The attack button goes down: hits what is aimed at.
+# --- Carrying a chest or a furnace ------------------------------------------------------
+
+## Whether the block can be carried in the hands: a single chest (not a
+## half of a large one, not a dungeon's) or a furnace (lit or not).
+static func carriable(id: int) -> bool:
+	var family := Blocks.family_of(id)
+	if family == "furnace" or family == "furnace_lit":
+		return true
+	return family == "chest" and Blocks.chest_part_table[id] == ChestModel.Part.SINGLE
+
+
+## Takes the chest or furnace at `pos` out of the world with what is in it
+## (a furnace with its fire and progress too): {"family", "entity"}, or
+## empty if it is not one.
+static func take_block(world: VoxelWorld, pos: Vector3i) -> Dictionary:
+	var id := world.get_block(pos)
+	if not carriable(id) or (Net.is_host() and Net._viewers.has(pos)):
+		return {} # (not one, or a network player has it open)
+	var entity := world.block_entity(pos)
+	world._block_entities.erase(pos) # (kept: nothing spills)
+	world.set_block(pos, Blocks.AIR)
+	Sounds.play("random/pop", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 0.3, 0.6)
+	return {"family": Blocks.family_of(id), "entity": entity}
+
+
+## Puts a carried block down at `pos` facing `facing` with its entity (what
+## is inside); false if something is in the way.
+static func put_block(world: VoxelWorld, pos: Vector3i, facing: int, family: String, entity: Dictionary) -> bool:
+	var there := world.get_block(pos)
+	if not world.is_inside(pos) or pos.y >= world.height or pos.y < 0 \
+			or (there != Blocks.AIR and Blocks.replaceable_table[there] == 0 and Blocks.liquid_table[there] == 0):
+		return false
+	if there != Blocks.AIR:
+		world.destroy_block(pos, true, true, false) # a plant or liquid in the way
+	facing = clampi(facing, 0, 3)
+	if family == "chest":
+		ChestBehavior.place(world, pos, facing)
+	else:
+		world.set_block(pos, Blocks.variant(family, facing))
+	if not entity.is_empty():
+		world._block_entities[pos] = entity
+	Sounds.play_block("place", world.get_block(pos), Vector3(pos) + Vector3(0.5, 0.5, 0.5))
+	return true
+
+
+## A carried block falling apart (its carrier died, or left the game): the
+## chest or furnace and what was in it lie about.
+static func scatter_carried(world: VoxelWorld, at: Vector3, family: String, entity: Dictionary) -> void:
+	world.items.scatter(at, Blocks.variant("chest" if family == "chest" else "furnace"), 1)
+	var contents: Inventory = entity.get("inventory")
+	if contents == null:
+		return
+	for slot in contents.size():
+		if contents.count_at(slot) > 0:
+			world.items.scatter(at, contents.id_at(slot), contents.count_at(slot), contents.damage_at(slot))
+
+
+func _pick_up_block(pos: Vector3i) -> void:
+	player.swing()
+	if world.remote:
+		Net.send_carry(pos) # (the host's block: it answers, Net._carry_answer)
+		return
+	var taken := take_block(world, pos)
+	if not taken.is_empty():
+		player.carry(taken.family, taken.entity)
+
+
+func _put_down_block() -> void:
+	var cell: Variant = _place_cell()
+	if cell == null:
+		return
+	var pos: Vector3i = cell
+	var facing := Blocks.facing_toward(player.look_direction())
+	var family: String = player.carried.family
+	if player.intersects_shape(pos, Blocks.variant(family, facing)):
+		return
+	player.swing()
+	if world.remote:
+		Net.send_put_carried(pos, facing)
+		return
+	if put_block(world, pos, facing, family, player.carried.entity):
+		player.put_carried()
+
+
 func _press_attack() -> void:
+	if player.carrying():
+		return # (both hands hold a chest or a furnace)
 	_break_delay = 0.0 # a fresh click breaks right away in creative
 	if target_player and not player.dead and not player.sleeping:
 		_attack_player(target_player)
@@ -414,6 +500,13 @@ func _attack_player(avatar: RemotePlayer) -> void:
 
 ## RMB: the targeted block's own use first (unless sneaking), then the item.
 func _use() -> void:
+	if player.carrying():
+		_put_down_block() # (the hands are busy: nothing else is used)
+		return
+	if target.get("hit", false) and player.sneaking and carriable(target.block) \
+			and player.inventory.count_at(player.selected_slot) == 0 and player.vehicle == null:
+		_pick_up_block(target.pos)
+		return
 	if target_entity and target_entity.puppet:
 		# The host's entity (network game): get into its boat or minecart.
 		if target_entity is Boat or (target_entity is Minecart and target_entity.type_name() == "minecart"):

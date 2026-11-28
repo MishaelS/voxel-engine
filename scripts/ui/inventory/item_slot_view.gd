@@ -26,6 +26,69 @@ var empty_icon: Texture2D:
 		refresh()
 
 
+## A locked slot (the hands carry a chest, Inventory.locked): pale, with a
+## padlock.
+var locked := false:
+	set(value):
+		if value == locked:
+			return
+		locked = value
+		if locked and _lock == null:
+			_lock_back = ColorRect.new()
+			_lock_back.color = Color(1, 1, 1, 0.55)
+			_lock_back.size = Vector2(SIZE, SIZE)
+			_lock_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			add_child(_lock_back)
+			_lock = TextureRect.new()
+			_lock.texture = _lock_texture()
+			_lock.size = Vector2(SIZE, SIZE)
+			_lock.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			_lock.stretch_mode = TextureRect.STRETCH_SCALE
+			_lock.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			_lock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			add_child(_lock)
+		if _lock:
+			_lock.visible = locked
+			_lock_back.visible = locked
+var _lock: TextureRect
+var _lock_back: ColorRect
+static var _lock_image: ImageTexture
+
+## The padlock, 16 x 16 pixels (drawn here: '#' its outline, '+' its body).
+const LOCK_ROWS: Array[String] = [
+	"................",
+	"................",
+	".....######.....",
+	"....#......#....",
+	"....#......#....",
+	"....#......#....",
+	"...##########...",
+	"...#++++++++#...",
+	"...#+++##+++#...",
+	"...#+++##+++#...",
+	"...#++####++#...",
+	"...#++++++++#...",
+	"...##########...",
+	"................",
+	"................",
+	"................",
+]
+
+
+static func _lock_texture() -> ImageTexture:
+	if _lock_image == null:
+		var image := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+		for y in 16:
+			for x in 16:
+				var mark := LOCK_ROWS[y][x]
+				if mark == "#":
+					image.set_pixel(x, y, Color(0.62, 0.62, 0.62, 1.0))
+				elif mark == "+":
+					image.set_pixel(x, y, Color(0.78, 0.78, 0.78, 1.0))
+		_lock_image = ImageTexture.create_from_image(image)
+	return _lock_image
+
+
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	custom_minimum_size = Vector2(SIZE, SIZE)

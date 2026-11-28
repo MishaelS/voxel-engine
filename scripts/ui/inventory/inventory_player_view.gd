@@ -90,8 +90,12 @@ func _update() -> void:
 	_model.rotation.y = PI - turn
 	# (PlayerModel's own pieces: the held item, the parts, the armor.)
 	_model._update_held()
+	_model._update_carry()
 	var parts: Dictionary = _model._model.parts
 	MobAnimation.pose_biped(parts, Time.get_ticks_msec() / 50.0, 0.0, 0.0, _model._held != null, 0.0, 0.0, 0.0)
+	if _model._carry:
+		PlayerModel.carry_arms(parts)
+		FallingBlocks.light(_model._carry, 1.0)
 	var head := parts.head as Node3D
 	head.rotation = Vector3(tilt, -turn, 0)
 	if _model._held:

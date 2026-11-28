@@ -608,6 +608,9 @@ static func _now() -> float:
 
 ## Leaves the game or stops hosting.
 func leave() -> void:
+	if is_host():
+		for peer: int in _carried.keys():
+			_drop_carried(peer) # (what the clients carry stays in the world)
 	if is_client():
 		send_player_state() # (the host keeps this player)
 	elif is_host() and _has_clients():
@@ -817,6 +820,8 @@ func _strike(id: int, why: String, weight: int = 1) -> void:
 
 
 func _on_peer_disconnected(id: int) -> void:
+	if is_host():
+		_drop_carried(id) # (the chest in its hands stays in the world)
 	_waiting_hello.erase(id)
 	_nonces.erase(id)
 	_dropping.erase(id)
@@ -1502,7 +1507,8 @@ func _send_own_state() -> void:
 		| (8 if player.sleeping else 0) | (16 if player.is_creative() else 0) \
 		| (RemotePlayer.EATING if player.eating >= 0.0 else 0) | (RemotePlayer.DRAWING if player.bow_pull >= 0.0 else 0) \
 		| (RemotePlayer.BURNING if player.fire_ticks > 0 else 0) | (RemotePlayer.HURT if player.hurt_ticks > 0 else 0) \
-		| (RemotePlayer.GROUNDED if player.on_ground or player.flying else 0) | (RemotePlayer.SWIMMING if player.in_water else 0)
+		| (RemotePlayer.GROUNDED if player.on_ground or player.flying else 0) | (RemotePlayer.SWIMMING if player.in_water else 0) \
+		| (RemotePlayer.CARRYING if player.carrying() else 0)
 	# What it wears and the block it is breaking (RemotePlayer.GEAR_SIZE).
 	var gear := PackedInt32Array()
 	for slot in 4:
@@ -1516,6 +1522,8 @@ func _send_own_state() -> void:
 	var bobber := player.fishing_bobber
 	var hook := bobber.feet() if bobber and is_instance_valid(bobber) and not bobber.removed else Vector3.INF
 	var held := player.held_block() if player.inventory.count_at(player.selected_slot) > 0 else Blocks.AIR
+	if player.carrying():
+		held = Blocks.variant(player.carried.family) # (the chest or furnace in its hands)
 	if is_host():
 		for peer in _clients():
 			_peer_state.rpc_id(peer, 1, player.global_position, player.rotation.y, player.pitch(), flags, held, _swings, gear, hook)
@@ -2297,6 +2305,110 @@ func _client_dismount(id: int) -> void:
 	var entity := world.entities.by_net_id(id)
 	if entity and entity.remote_rider == peer:
 		entity.remote_rider = 0
+
+
+## Host -> clients: a blast went off (Explosion): each shows it (the
+## fireball, the bits of the blown blocks, the bang, the view shaking).
+func send_explosion(center: Vector3, power: float, debris: PackedInt32Array) -> void:
+	for peer in _clients():
+		var avatar := _avatar_of(peer)
+		if avatar and avatar.target_position.distance_to(center) < 128.0:
+			_explosion.rpc_id(peer, center, power, debris)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _explosion(center: Vector3, power: float, debris: PackedInt32Array) -> void:
+	var world := _world()
+	if world == null or not center.is_finite() or debris.size() > Explosion.DEBRIS * 4 + 4:
+		return
+	Explosion.effects(world, center, clampf(power, 0.5, 16.0), debris)
+
+
+# --- Carrying a chest or a furnace (Player.carried) -------------------------------------------
+
+## Host: what each client's player carries: peer -> {"family", "entity"}.
+var _carried := {}
+
+
+## Client -> host: pick up the host's single chest or furnace at `pos`.
+func send_carry(pos: Vector3i) -> void:
+	_client_carry.rpc_id(1, pos.x, pos.y, pos.z)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_carry(x: int, y: int, z: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	var pos := Vector3i(x, y, z)
+	if world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0) or _carried.has(peer):
+		return
+	if not _edit_allowed(peer, pos, true) or not BlockInteraction.carriable(world.get_block(pos)):
+		return
+	var taken := BlockInteraction.take_block(world, pos)
+	if taken.is_empty():
+		return
+	_carried[peer] = taken
+	_active[peer] = _now()
+	_carry_answer.rpc_id(peer, str(taken.family))
+
+
+## Client -> host: put what it carries down at `pos`.
+func send_put_carried(pos: Vector3i, facing: int) -> void:
+	_client_put_carried.rpc_id(1, pos.x, pos.y, pos.z, facing)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_put_carried(x: int, y: int, z: int, facing: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	var pos := Vector3i(x, y, z)
+	if world == null or not _within(peer, "edit", EDIT_LIMIT, 1.0) or not _carried.has(peer):
+		return
+	if not _edit_allowed(peer, pos, true):
+		return
+	var taken: Dictionary = _carried[peer]
+	if BlockInteraction.put_block(world, pos, facing, taken.family, taken.entity):
+		_carried.erase(peer)
+		_active[peer] = _now()
+		_carry_answer.rpc_id(peer, "")
+
+
+## Host -> client: what its hands carry now ("": nothing).
+@rpc("authority", "call_remote", "reliable")
+func _carry_answer(family: String) -> void:
+	var player := _game_player()
+	if player == null:
+		return
+	if family in ["chest", "furnace", "furnace_lit"]:
+		if not player.carrying() and player.inventory.count_at(player.selected_slot) == 0:
+			player.carry(family, {})
+		else:
+			send_drop_carried() # (its hand is not free any more)
+	elif player.carrying():
+		player.put_carried()
+
+
+## Client -> host: what it carried falls apart (it died).
+func send_drop_carried() -> void:
+	_client_drop_carried.rpc_id(1)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_drop_carried() -> void:
+	_drop_carried(multiplayer.get_remote_sender_id())
+
+
+## Host: a client's carried block lies about where its player is (it died,
+## left, or the game ends), with what was in it.
+func _drop_carried(peer: int) -> void:
+	var world := _world()
+	if not _carried.has(peer) or world == null:
+		return
+	var taken: Dictionary = _carried[peer]
+	_carried.erase(peer)
+	var avatar := _avatar_of(peer)
+	var at := (avatar.target_position if avatar else world.find_spawn()) + Vector3(0, 1.0, 0)
+	BlockInteraction.scatter_carried(world, at, taken.family, taken.entity)
 
 
 ## Client -> host: its fishing rod reels in the creature, boat or cart `id`

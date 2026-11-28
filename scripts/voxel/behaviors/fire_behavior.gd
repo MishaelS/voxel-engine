@@ -116,4 +116,4 @@ static func _spread_chance(world: VoxelWorld, pos: Vector3i) -> int:
 static func display_tick(world: VoxelWorld, pos: Vector3i, rng: RandomNumberGenerator) -> void:
 	if rng.randi_range(0, 23) == 0:
 		Sounds.play("fire/fire", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 1.0 + rng.randf(), rng.randf() * 0.7 + 0.3)
-	world.particles.smoke(Vector3(pos) + Vector3(0.5, 0.7, 0.5), 2)
+	world.particles.fire(pos)

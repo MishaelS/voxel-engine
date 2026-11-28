@@ -97,6 +97,8 @@ func _process(delta: float) -> void:
 		return
 	var ticks := delta * 20.0
 	var wanted := player.held_block()
+	if player.carrying():
+		wanted = Blocks.variant(player.carried.family) # the chest or furnace in both hands
 	if not Settings.get_value("hand_animation"):
 		# No swing or equip motion: the block just changes in place.
 		_swing = -1.0
@@ -125,10 +127,20 @@ func _process(delta: float) -> void:
 		_arm_pose()
 	elif visible:
 		_pose()
+		if player.carrying():
+			_carry_pose()
 		var brightness := _brightness()
 		_material.set_shader_parameter("brightness", brightness)
 		_item_material.set_shader_parameter("brightness", brightness)
 		_plant_material.set_shader_parameter("brightness", brightness)
+
+
+## A chest or furnace carried in both hands: big, low in the middle of the
+## view, its front away from the player; it sways a little with the steps
+## (the view bobbing does it) and comes up from below when picked up.
+func _carry_pose() -> void:
+	transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3.ONE * 0.85), Vector3(0.0, -0.98 - (1.0 - _equip) * 0.6, -0.95))
+	_mesh_instance.transform = Transform3D(Basis.IDENTITY, Vector3(-0.5, -0.5, -0.5))
 
 
 func _show(id: int) -> void:

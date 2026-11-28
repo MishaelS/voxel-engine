@@ -98,6 +98,8 @@ func tick() -> void:
 			push = Vector2.ZERO # (burnt out: it rolls to a stop, like Beta's)
 		if randi_range(0, 3) == 0:
 			world.particles.smoke(feet() + Vector3(0, 0.9, 0), 1)
+		if randi_range(0, 11) == 0:
+			world.particles.embers(feet() + Vector3(0, 0.95, 0), 1) # a spark off its fire
 	if _y < Player.VOID_Y:
 		removed = true
 

@@ -27,7 +27,9 @@ const BURNING := 128
 const HURT := 256
 const GROUNDED := 512
 const SWIMMING := 1024
-const FLAGS := 2047
+## Both hands carry a chest or a furnace (the held id is that block).
+const CARRYING := 2048
+const FLAGS := 4095
 ## `gear` (Net._send_own_state): the four armor ids, the block being broken
 ## (x, y, z) and its crack stage (-1: none).
 const GEAR_SIZE := 8
@@ -81,6 +83,9 @@ var _mine_hits := 0
 var _walked := 0.0
 var _next_step := 1.0
 var _shown := Vector2(-1, -1)
+var _burn_tick := -1
+var _carry: MeshInstance3D
+var _carry_family := ""
 var _shown_meshes := -1
 var _light_turn := -1
 var _light := 1.0
@@ -185,6 +190,21 @@ func set_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int, swi
 		if _swings >= 0:
 			_swing = 0.0
 		_swings = swings
+	# A chest or furnace in both hands (PlayerModel's look), not in one.
+	var family := Blocks.family_of(held) if flags & CARRYING and held > Blocks.AIR and held < Blocks.count() else ""
+	if not family in ["chest", "furnace", "furnace_lit"]:
+		family = ""
+	if family != _carry_family:
+		_carry_family = family
+		if _carry:
+			_carry.queue_free()
+			_carry = null
+		if family != "":
+			_carry = PlayerModel.carry_node(family)
+			(_model.root as Node3D).add_child(_carry)
+		_shown = Vector2(-1, -1)
+	if family != "":
+		held = Blocks.AIR
 	if flags & ASLEEP:
 		held = Blocks.AIR # (nothing in the hand in bed)
 	if held != _held_id:
@@ -288,6 +308,8 @@ func _process(delta: float) -> void:
 			mesh.set_instance_shader_parameter("hurt", look.y)
 		if _held:
 			FallingBlocks.light(_held, look.x)
+		if _carry:
+			FallingBlocks.light(_carry, look.x)
 		if _pumpkin:
 			_pumpkin.set_instance_shader_parameter("entity_light", look.x)
 	_label.visible = not (_flags & SNEAKING) # hidden while sneaking, like the game's
@@ -322,6 +344,8 @@ func _pose() -> void:
 		# Eating: the hand at the mouth, bobbing as it chews.
 		var chew := absf(cos(_eat_time * 20.0 / 4.0 * PI)) * 0.15
 		right_arm.rotation = Vector3(-1.35 + chew, -0.45, 0)
+	if _carry:
+		PlayerModel.carry_arms(parts)
 	(parts.body as Node3D).rotation.x = 0.0
 	if _flags & SNEAKING:
 		(parts.body as Node3D).rotation.x = 0.5
@@ -465,6 +489,10 @@ func _show_flames() -> void:
 		_flames.mesh = Entity.flames_mesh(Player.HEIGHT / size)
 		add_child(_flames)
 	_flames.visible = true
+	if world and TickLoop.tick_count != _burn_tick and TickLoop.tick_count % 3 == 0:
+		_burn_tick = TickLoop.tick_count
+		world.particles.burning(AABB(global_position - Vector3(Player.HALF_WIDTH, 0, Player.HALF_WIDTH),
+			Vector3(Player.HALF_WIDTH * 2.0, Player.HEIGHT, Player.HALF_WIDTH * 2.0)))
 	var camera := get_viewport().get_camera_3d()
 	var yaw := 0.0
 	if camera:

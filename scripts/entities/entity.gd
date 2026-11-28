@@ -147,6 +147,8 @@ func puppet_tick() -> void:
 	if _net_steps > 1 and _prev.distance_to(_net_target) < NET_SNAP:
 		share = 1.0 / _net_steps
 	_net_steps = maxi(_net_steps - 1, 0)
+	if fire_ticks > 0:
+		_fire_particles() # (a client's copy of a burning creature)
 	var at := _prev.lerp(_net_target, share)
 	velocity = at - _prev
 	_x = at.x
@@ -397,8 +399,15 @@ func _burn() -> void:
 		fire_ticks = 0
 	if fire_ticks > 0:
 		fire_ticks -= 1
+		_fire_particles()
 		if fire_ticks % 20 == 0:
 			damage(1)
+
+
+## On fire: smoke and sparks off the body every few ticks.
+func _fire_particles() -> void:
+	if world and age % 3 == 0 and not is_dead():
+		world.particles.burning(hit_box())
 
 
 # --- Health ---------------------------------------------------------------------------

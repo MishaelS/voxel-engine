@@ -562,6 +562,7 @@ func _refresh() -> void:
 		if planned.has(i):
 			content = [_held_id, planned[i], _held_damage]
 		(slot.view as ItemSlotView).set_item(content[0], content[1], slot.kind != Kind.CATALOG, content[2])
+		(slot.view as ItemSlotView).locked = _locked(slot)
 	var held_count: int = plan.left
 	_held.set_item(_held_id, held_count, true, _held_damage)
 	_held.visible = held_count > 0
@@ -742,7 +743,7 @@ func _start_drag(button: MouseButton, index: int) -> void:
 ## Whether the drag may put the held item into a slot: empty or the same
 ## item with room (MMB fills any of them), armor only of its kind.
 func _drag_accepts(slot: Dictionary) -> bool:
-	if not _draggable(slot) or _held_count == 0:
+	if not _draggable(slot) or _held_count == 0 or _locked(slot):
 		return false
 	if slot.kind == Kind.ARMOR and not _fits_armor(_held_id, slot.index):
 		return false
@@ -951,7 +952,15 @@ func _fill_tooltip(lines: Array) -> void:
 			label.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 
 
+## The hotbar slot of the hands that carry a chest or a furnace: nothing
+## goes in or out (Inventory.locked).
+func _locked(slot: Dictionary) -> bool:
+	return slot.kind == Kind.INVENTORY and player != null and player.inventory.locked == int(slot.index)
+
+
 func _click(slot: Dictionary, right: bool, shift: bool) -> void:
+	if _locked(slot):
+		return
 	match slot.kind:
 		Kind.ARMOR:
 			# Only the right piece goes into each armor slot.
@@ -1179,6 +1188,8 @@ func _insert(inventory: Inventory, id: int, count: int, damage: int, from: int, 
 		for i in range(from, to):
 			if count == 0:
 				return 0
+			if i == inventory.locked:
+				continue
 			var empty := inventory.is_empty_slot(i)
 			if empty != pass_empty or (not empty and (inventory.id_at(i) != id or inventory.damage_at(i) != damage)):
 				continue
@@ -1192,6 +1203,8 @@ func _insert(inventory: Inventory, id: int, count: int, damage: int, from: int, 
 ## Number key over a slot: exchange it with hotbar slot `hotbar`.
 func _swap_with_hotbar(slot: Dictionary, hotbar: int) -> void:
 	var inventory := player.inventory
+	if hotbar == inventory.locked or _locked(slot):
+		return
 	match slot.kind:
 		Kind.INVENTORY:
 			if slot.index != hotbar:

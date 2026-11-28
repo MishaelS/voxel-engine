@@ -237,14 +237,47 @@ func _ready() -> void:
 			inventory.add(Blocks.id_of(block_name), 1)
 
 
+## A chest or a furnace carried in both hands (Shift + RMB on a single
+## chest or a furnace with an empty hand, BlockInteraction): {"family":
+## "chest" / "furnace" / "furnace_lit", "entity": its block entity - what is
+## in it, a furnace's fire and progress (empty on a network client: the
+## host keeps it)}, or empty. While it is carried the hotbar slot it was
+## taken with is locked (Inventory.locked: nothing goes in, no other slot
+## can be chosen), nothing can be broken, hit or used, a furnace does not
+## burn on; RMB puts it down with everything inside.
+var carried := {}
+
+
+func carrying() -> bool:
+	return not carried.is_empty()
+
+
+func carry(family: String, entity: Dictionary) -> void:
+	carried = {"family": family, "entity": entity}
+	inventory.locked = selected_slot
+	inventory.changed.emit()
+
+
+## Lets the carried block go (BlockInteraction puts it down).
+func put_carried() -> void:
+	carried = {}
+	inventory.locked = -1
+	inventory.changed.emit()
+
+
 ## Player state for the world save (the position is restored by VoxelWorld).
 func save_state() -> Dictionary:
-	return {
+	var state := {
 		"position": Vector3(_x, _y, _z), "yaw": _yaw, "pitch": _pitch,
 		"flying": flying, "selected_slot": selected_slot,
 		"inventory": inventory.save_state(), "armor": armor.save_state(), "spawn": spawn_point,
 		"health": health if not dead else MAX_HEALTH,
 	}
+	if carrying() and not (carried.entity as Dictionary).is_empty():
+		var entity: Dictionary = carried.entity
+		state["carried"] = {"family": carried.family, "inventory": (entity.inventory as Inventory).save_state(),
+			"burn": entity.get("burn", 0), "burn_total": entity.get("burn_total", 0), "cook": entity.get("cook", 0)}
+	return state
 
 
 func load_state(saved: Dictionary) -> void:
@@ -261,6 +294,17 @@ func load_state(saved: Dictionary) -> void:
 	else: # older saves
 		inventory.load_state({"ids": saved.get("inventory_ids", PackedInt32Array()),
 			"counts": saved.get("inventory_counts", PackedInt32Array())})
+	var kept: Variant = saved.get("carried")
+	if kept is Dictionary and kept.get("inventory") is Dictionary and inventory.count_at(selected_slot) == 0 and not (world and world.remote):
+		var family := str(kept.get("family", "chest"))
+		if not family in ["chest", "furnace", "furnace_lit"]:
+			family = "chest"
+		var contents := Inventory.new(VoxelWorld.CHEST_SIZE if family == "chest" else VoxelWorld.FURNACE_SIZE)
+		contents.load_state(kept.inventory)
+		var entity := {"type": "chest" if family == "chest" else "furnace", "inventory": contents}
+		if family != "chest":
+			entity.merge({"burn": int(kept.get("burn", 0)), "burn_total": int(kept.get("burn_total", 0)), "cook": int(kept.get("cook", 0))})
+		carry(family, entity)
 
 
 func is_creative() -> bool:
@@ -471,6 +515,15 @@ func _teleported() -> void:
 	_fall_distance = 0.0
 
 
+## The view shaking (0..1.5), from a blast near by (Explosion.effects);
+## dies away in under a second.
+var _shake := 0.0
+
+
+func shake(amount: float) -> void:
+	_shake = maxf(_shake, amount)
+
+
 func _update_camera(alpha: float, delta: float) -> void:
 	var target_eye := EYE_HEIGHT - (SNEAK_EYE_DROP if sneaking else 0.0)
 	if sleeping:
@@ -498,6 +551,12 @@ func _update_camera(alpha: float, delta: float) -> void:
 		sway = sway * Transform3D(Basis(Vector3.BACK, deg_to_rad(sin(phase) * bob * 3.0)), Vector3.ZERO)
 		sway = sway * Transform3D(Basis(Vector3.RIGHT, deg_to_rad(absf(cos(phase - 0.2) * bob) * 5.0)), Vector3.ZERO)
 		transform_3d = Transform3D(Basis(), transform_3d.origin) * sway * Transform3D(transform_3d.basis, Vector3.ZERO)
+	if _shake > 0.0:
+		# A blast near by: the view jolts about and settles.
+		var jolt := _shake * _shake
+		transform_3d = Transform3D(Basis(Vector3.BACK, deg_to_rad(randf_range(-4.0, 4.0) * jolt)) * Basis(Vector3.RIGHT, deg_to_rad(randf_range(-2.5, 2.5) * jolt)),
+			Vector3(randf_range(-0.06, 0.06), randf_range(-0.06, 0.06), 0) * jolt) * transform_3d
+		_shake = move_toward(_shake, 0.0, delta * 1.8)
 	if hurt_ticks > 0:
 		# The classic hurt tilt: a quick roll that settles back.
 		var f := clampf((hurt_ticks - alpha) / HURT_TICKS, 0.0, 1.0)
@@ -811,6 +870,8 @@ func _burn() -> void:
 		fire_ticks = 0 # water and rain put the flames out
 	if fire_ticks > 0:
 		fire_ticks -= 1
+		if world and fire_ticks % 3 == 0 and third_person:
+			world.particles.burning(AABB(Vector3(_x - HALF_WIDTH, _y, _z - HALF_WIDTH), Vector3(HALF_WIDTH * 2.0, HEIGHT, HALF_WIDTH * 2.0)))
 		if fire_ticks % 20 == 0 and not in_lava:
 			damage(1)
 	if is_creative():
@@ -1136,6 +1197,13 @@ func _die() -> void:
 	# The classic game drops everything around the player (unless the
 	# keepInventory game rule is on).
 	if world == null or not world.keep_inventory:
+		if world and carrying():
+			# The chest or furnace in its hands falls apart: itself and what was in it.
+			if world.remote:
+				Net.send_drop_carried()
+			else:
+				BlockInteraction.scatter_carried(world, global_position + Vector3(0, 1.0, 0), carried.family, carried.entity)
+			put_carried()
 		if world:
 			var center := global_position + Vector3(0, 1.0, 0)
 			for container: Inventory in [inventory, armor]:

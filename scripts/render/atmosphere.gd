@@ -24,7 +24,11 @@ const LAVA_TINT := Color(0.9, 0.25, 0.0, 0.55)
 ## at first (the curve), so the far land fades softly into the sky's color
 ## instead of a clear line near the world's edge.
 const HAZE_START := 0.3
-const HAZE_CURVE := 1.6
+## How much of the fog lies over things half way to the edge of the view,
+## at the nearest and the farthest Fog Distance setting (the curve is
+## worked out for it): a light veil over the middle distance that gives the
+## land its depth, like that mod's, thick only toward the edge.
+const HAZE_AT_HALF := Vector2(0.5, 0.25)
 
 @export var world_environment: WorldEnvironment
 @export var sun: DayNightCycle
@@ -196,9 +200,13 @@ func _update_fog(to_sun: Vector3) -> void:
 	environment.fog_enabled = Settings.get_value("fog")
 	var view := -player.camera.global_basis.z if player and player.camera else Vector3.FORWARD
 	environment.fog_light_color = horizon_color(to_sun, view)
-	environment.fog_depth_begin = distance * Settings.get_value("fog_distance") / 100.0 * HAZE_START
+	var fog_setting: float = Settings.get_value("fog_distance")
+	environment.fog_depth_begin = distance * fog_setting / 100.0 * HAZE_START
 	environment.fog_depth_end = distance
-	environment.fog_depth_curve = HAZE_CURVE
+	# The curve that puts HAZE_AT_HALF of the fog at half the distance.
+	var half_way := (distance * 0.5 - environment.fog_depth_begin) / maxf(distance - environment.fog_depth_begin, 1.0)
+	var at_half := lerpf(HAZE_AT_HALF.x, HAZE_AT_HALF.y, clampf((fog_setting - 20.0) / 80.0, 0.0, 1.0))
+	environment.fog_depth_curve = clampf(log(at_half) / log(clampf(half_way, 0.05, 0.95)), 0.5, 3.0)
 	if from_far:
 		environment.fog_depth_curve = 1.0
 		# Measured from the diorama's camera, DISTANCE blocks from the area's

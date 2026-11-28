@@ -25,6 +25,10 @@ var _fall := 0.0
 var _rest := {} # part name -> its pivot's place in the model
 var _scale := 1.0 / 16.0
 var _body_yaw := INF # (world yaw of the body; the head turns from it)
+## The chest or furnace carried in both hands (Player.carried), in front
+## of the body.
+var _carry: MeshInstance3D
+var _carry_family := ""
 
 
 func _ready() -> void:
@@ -60,6 +64,42 @@ func _update_armor() -> void:
 		(_model.parts.head as Node3D).add_child(pumpkin)
 		_pumpkin = pumpkin
 	_armor_meshes = MobModels.armor_pieces(_model, player.armor)
+
+
+## A carried block's mesh for a player model: `family` ("chest", "furnace",
+## "furnace_lit") in front of the body, in the model's own pixels (the
+## model faces +Z), its front forward.
+static func carry_node(family: String) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	node.mesh = FallingBlocks.block_mesh(Blocks.variant(family, CARRY_FACING))
+	node.set_meta("block", true)
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * 10.0), Vector3(-5, 9.5, 2.5))
+	return node
+
+
+## The facing of a carried block whose front looks the way the model does.
+const CARRY_FACING := 0
+
+
+## Both arms out in front, under the block they hold.
+static func carry_arms(parts: Dictionary) -> void:
+	(parts.right_arm as Node3D).rotation = Vector3(-1.05, -0.12, 0)
+	(parts.left_arm as Node3D).rotation = Vector3(-1.05, 0.12, 0)
+
+
+## Shows (or takes away) the block the player carries.
+func _update_carry() -> void:
+	var family := str(player.carried.get("family", "")) if player.carrying() else ""
+	if family == _carry_family:
+		return
+	_carry_family = family
+	if _carry:
+		_carry.queue_free()
+		_carry = null
+	if family != "":
+		_carry = carry_node(family)
+		(_model.root as Node3D).add_child(_carry)
 
 
 ## The held item in the right hand, like the game's third-person view.
@@ -119,6 +159,7 @@ func _process(delta: float) -> void:
 	_limb_swing += speed * 4.0 * delta * 20.0
 	var parts: Dictionary = _model.parts
 	_update_held()
+	_update_carry()
 	var alpha := TickLoop.alpha
 	var t := Time.get_ticks_msec() / 50.0
 	var smooth := minf(delta * 12.0, 1.0)
@@ -155,6 +196,8 @@ func _process(delta: float) -> void:
 			# Eating: the hand at the mouth, bobbing as it chews.
 			var chew := absf(cos(player.eating * BlockInteraction.EAT_TICKS / 4.0 * PI)) * 0.15
 			right_arm.rotation = Vector3(-1.35 + chew, -0.45, 0)
+		if _carry:
+			carry_arms(parts)
 		(parts.body as Node3D).rotation.x = 0.0
 		if player.sneaking:
 			# Beta's sneaking: the body bends forward, the arms come along, the
@@ -176,6 +219,8 @@ func _process(delta: float) -> void:
 	var hurt := 1.0 if player.hurt_ticks > 0 or player.dead else 0.0
 	if _held:
 		FallingBlocks.light(_held, brightness)
+	if _carry:
+		FallingBlocks.light(_carry, brightness)
 	if _pumpkin:
 		_pumpkin.set_instance_shader_parameter("entity_light", brightness)
 	for mesh: MeshInstance3D in _model.meshes + _armor_meshes:

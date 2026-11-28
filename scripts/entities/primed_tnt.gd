@@ -14,6 +14,8 @@ var fuse := FUSE
 var _mesh: Node3D
 var _flash: MeshInstance3D
 var _block: MeshInstance3D
+static var _flash_mesh: BoxMesh
+var _shown_light := -1.0
 
 
 ## Lights the TNT block at `pos` (it becomes a primed TNT entity).
@@ -25,7 +27,9 @@ static func light(world: VoxelWorld, pos: Vector3i, short_fuse: bool = false) ->
 	world.entities.spawn(tnt, Vector3(pos) + Vector3(0.5, 0, 0.5))
 	var angle := randf() * TAU
 	tnt.velocity = Vector3(-sin(angle) * 0.02, 0.2, -cos(angle) * 0.02)
-	Sounds.play("random/fuse", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 1.0, 1.0)
+	if not short_fuse or randi_range(0, 5) == 0:
+		# (a pile set off by a blast: a hiss from a few of them, not from each)
+		Sounds.play("random/fuse", Vector3(pos) + Vector3(0.5, 0.5, 0.5), 1.0, 1.0)
 	return tnt
 
 
@@ -50,14 +54,16 @@ func _ready() -> void:
 	_mesh.add_child(block)
 	# The white flash: a see-through white box over it.
 	_flash = MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3.ONE * 1.01
-	var white := StandardMaterial3D.new()
-	white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	white.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	white.albedo_color = Color(1, 1, 1, 0.55)
-	box.material = white
-	_flash.mesh = box
+	if _flash_mesh == null:
+		# (one box and material for every lit TNT: a pile going off made dozens at once)
+		_flash_mesh = BoxMesh.new()
+		_flash_mesh.size = Vector3.ONE * 1.01
+		var white := StandardMaterial3D.new()
+		white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		white.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		white.albedo_color = Color(1, 1, 1, 0.55)
+		_flash_mesh.material = white
+	_flash.mesh = _flash_mesh
 	_flash.position = Vector3(0.5, 0.5, 0.5)
 	_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_mesh.add_child(_flash)
@@ -72,6 +78,8 @@ func tick() -> void:
 	if on_ground:
 		velocity *= Vector3(0.7, -0.5, 0.7)
 	fuse -= 1
+	if fuse <= 0 and not Explosion.take_turn():
+		fuse = 1 # (enough blasts this tick: goes off the next)
 	if fuse <= 0:
 		removed = true
 		Explosion.explode(world, feet() + Vector3(0, 0.5, 0), POWER, self)
@@ -79,7 +87,22 @@ func tick() -> void:
 		if player and player.global_position.distance_to(feet()) < 32.0:
 			Stats.grant("boom")
 		return
+	_fuse_particles()
+
+
+## The burning fuse: smoke every tick, sparks spitting off it (more as it
+## burns down).
+func _fuse_particles() -> void:
 	world.particles.smoke(feet() + Vector3(0, 1.1, 0), 1)
+	if age % (2 if fuse < 20 else 4) == 0:
+		world.particles.embers(feet() + Vector3(randf_range(-0.15, 0.15), 1.05, randf_range(-0.15, 0.15)), 1)
+
+
+## A client's copy smokes and sparks too.
+func puppet_tick() -> void:
+	super()
+	if world:
+		_fuse_particles()
 
 
 func _process(delta: float) -> void:
@@ -92,8 +115,10 @@ func _process(delta: float) -> void:
 	_mesh.scale = Vector3.ONE * scale_factor
 	_mesh.position = Vector3(-0.5, 0, -0.5) * scale_factor
 	_flash.visible = (fuse / 5) % 2 == 0
-	if world:
-		_block.set_instance_shader_parameter("entity_light", world.brightness_at(center()))
+	var light := light_here()
+	if light != _shown_light:
+		_shown_light = light
+		_block.set_instance_shader_parameter("entity_light", light)
 
 
 func net_state() -> Dictionary:

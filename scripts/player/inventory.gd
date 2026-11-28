@@ -15,6 +15,9 @@ const MAX_STACK := 64
 var ids := PackedInt32Array()
 var counts := PackedInt32Array()
 var damages := PackedInt32Array()
+## A slot nothing goes into or out of (-1: none): the hotbar slot of the
+## hands that carry a chest (Player.carry).
+var locked := -1
 
 
 func _init(size: int = SIZE) -> void:
@@ -44,6 +47,8 @@ func damage_at(slot: int) -> int:
 
 
 func set_slot(slot: int, id: int, count: int, damage: int = 0) -> void:
+	if slot == locked:
+		return
 	if count <= 0 or id == Blocks.AIR:
 		id = Blocks.AIR
 		count = 0
@@ -84,7 +89,7 @@ func add(id: int, count: int, damage: int = 0) -> int:
 	for slot in ids.size():
 		if count == 0:
 			break
-		if counts[slot] <= 0:
+		if counts[slot] <= 0 and slot != locked:
 			var moved := mini(count, stack)
 			ids[slot] = id
 			counts[slot] = moved
@@ -99,6 +104,8 @@ func room_for(id: int, damage: int = 0) -> int:
 	var stack := Items.max_stack(id)
 	var room := 0
 	for slot in ids.size():
+		if slot == locked:
+			continue
 		if counts[slot] <= 0:
 			room += stack
 		elif ids[slot] == id and damages[slot] == damage:
@@ -142,6 +149,8 @@ func find(id: int, from: int = 0, to: int = -1) -> int:
 
 
 func swap(a: int, b: int) -> void:
+	if a == locked or b == locked:
+		return
 	var id := ids[a]
 	var count := counts[a]
 	var damage := damages[a]

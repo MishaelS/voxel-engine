@@ -1974,9 +1974,8 @@ var _display_rng := RandomNumberGenerator.new()
 
 
 ## A burning furnace's smoke and flames in front.
-static func furnace_display_tick(world: VoxelWorld, pos: Vector3i, rng: RandomNumberGenerator) -> void:
-	if rng.randf() < 0.5:
-		world.particles.furnace(pos, maxi(Blocks.facing_table[world.get_block(pos)], 0))
+static func furnace_display_tick(world: VoxelWorld, pos: Vector3i, _rng: RandomNumberGenerator) -> void:
+	world.particles.furnace(pos, maxi(Blocks.facing_table[world.get_block(pos)], 0))
 
 
 func _run_display_ticks() -> void:
@@ -2004,6 +2003,64 @@ func _run_display_ticks() -> void:
 						Blocks.get_type(id).display_tick.call(self, pos, _display_rng)
 				if coord.y == 0:
 					_void_dust(data, origin)
+	_run_near_emitters(handlers)
+
+
+## Things that burn close to the player - torches, fire, lit furnaces (the
+## blocks with a display tick that are not liquids) - are kept in a list
+## and get a turn about every 8 ticks each, so a torch flickers and a
+## furnace smokes all the time. (Among the 1000 random blocks a torch
+## beside the player had a turn about once in 5 seconds: a puff now and
+## then.) The list is of the 2 x 2 x 2 chunks nearest the player, one of
+## them looked through again every EMITTER_SCAN_TICKS.
+const EMITTER_CHANCE := 0.12
+const EMITTER_MAX := 96
+const EMITTER_SCAN_TICKS := 6
+var _emitter_chunks := {} # chunk coord -> PackedInt32Array of cell indices
+var _emitter_turn := 0
+static var _lively := PackedByteArray()
+
+
+func _run_near_emitters(handlers: PackedByteArray) -> void:
+	if _lively.size() != Blocks.count():
+		_lively.resize(Blocks.count())
+		for id in Blocks.count():
+			_lively[id] = 1 if handlers[id] == 1 and Blocks.liquid_table[id] == 0 else 0
+	var here := Vector3i(player.global_position.floor())
+	var low := Vector3i((here.x - 8) >> 4, (here.y - 8) >> 4, (here.z - 8) >> 4)
+	_emitter_turn += 1
+	if _emitter_turn % EMITTER_SCAN_TICKS == 0:
+		var slot := (_emitter_turn / EMITTER_SCAN_TICKS) & 7
+		var coord := low + Vector3i(slot & 1, (slot >> 1) & 1, (slot >> 2) & 1)
+		var data: ChunkData = _chunks.get(coord)
+		var found := PackedInt32Array()
+		if data != null and data.air_count < ChunkData.VOLUME:
+			var blocks := data.blocks
+			var lively := _lively
+			for index in ChunkData.VOLUME:
+				if lively[blocks[index]] == 1:
+					found.append(index)
+					if found.size() >= EMITTER_MAX:
+						break
+		if found.is_empty():
+			_emitter_chunks.erase(coord)
+		else:
+			_emitter_chunks[coord] = found
+		for other: Vector3i in _emitter_chunks.keys():
+			if other.x < low.x or other.x > low.x + 1 or other.y < low.y or other.y > low.y + 1 or other.z < low.z or other.z > low.z + 1:
+				_emitter_chunks.erase(other) # (left behind)
+	for coord: Vector3i in _emitter_chunks:
+		var data: ChunkData = _chunks.get(coord)
+		if data == null:
+			continue
+		var blocks := data.blocks
+		var origin := coord * ChunkData.SIZE
+		for index: int in _emitter_chunks[coord]:
+			if _display_rng.randf() >= EMITTER_CHANCE:
+				continue
+			var id: int = blocks[index]
+			if handlers[id] == 1:
+				Blocks.get_type(id).display_tick.call(self, origin + Vector3i(index & 15, index >> 8, (index >> 4) & 15), _display_rng)
 
 
 ## Springs start to flow when a player comes near (their display tick, see

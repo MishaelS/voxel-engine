@@ -89,6 +89,8 @@ func selected_block() -> int:
 
 
 func select(slot: int) -> void:
+	if player and player.carrying():
+		return # (the hands hold a chest: its slot stays)
 	selected = posmod(slot, SLOT_COUNT)
 	_refresh()
 	_show_name()
@@ -112,6 +114,8 @@ func pick(block_id: int) -> void:
 	if existing >= 0:
 		select(existing)
 		return
+	if player.carrying():
+		return
 	if player.is_creative():
 		var target := selected
 		if not inventory.is_empty_slot(target):
@@ -133,6 +137,7 @@ func _refresh() -> void:
 		return
 	for i in SLOT_COUNT:
 		_icons[i].set_item(player.inventory.id_at(i), player.inventory.count_at(i), true, player.inventory.damage_at(i))
+		_icons[i].locked = player.inventory.locked == i
 	_selector.position = Vector2(-1 + selected * 20, -1) * P
 
 

@@ -118,6 +118,8 @@ var _material: ShaderMaterial
 var _rng := RandomNumberGenerator.new()
 ## Explosion clouds still going off: [center, power, ticks left].
 var _bursts: Array[Array] = []
+## Holes still smoking after a blast: [where, power, ticks left].
+var _smolders: Array[Array] = []
 
 
 func _ready() -> void:
@@ -257,13 +259,42 @@ func burn(point: Vector3, in_lava: bool) -> void:
 		embers(point + Vector3(0, 0.1, 0), 4)
 
 
-## An explosion: big bright clouds going off around the middle for 8
-## ticks (the game's "hugeexplosion"), white puffs and dark smoke thrown
-## out of the blast (Beta's "explode" and "smoke").
-func explosion(center: Vector3, power: float) -> void:
+## An explosion: a fireball flashing at the middle, big bright clouds going
+## off around it for 8 ticks (the game's "hugeexplosion"), white puffs and
+## dark smoke thrown out of the blast (Beta's "explode" and "smoke"), sparks
+## and bits of the blown blocks (`debris`: x, y, z, id each) flying out and
+## falling, and smoke rising from the hole for a few seconds after.
+func explosion(center: Vector3, power: float, debris: PackedInt32Array = PackedInt32Array()) -> void:
 	_bursts.append([center, power, 8])
 	_burst_clouds(_bursts[-1])
-	for i in int(power * 40):
+	_smolders.append([center, power, 70])
+	# The fireball: bright yellow-white at the middle, orange around it.
+	for i in int(power * 8):
+		var offset := _in_ball() * power * 0.6
+		var heat := 1.0 - offset.length() / maxf(power * 0.6, 0.01)
+		var color := Color(1.0, 0.2 + 0.6 * heat, 0.02 + 0.3 * heat * heat)
+		_add_anim(center + offset, offset * 0.05, Anim.EXPLOSION, (1.5 + 2.5 * heat) * clampf(power / 4.0, 0.5, 1.5), color,
+			5 + _rng.randi_range(0, 5), 0.0)
+	# Sparks thrown high and far, falling back.
+	for i in int(power * 12):
+		var way := _in_ball()
+		way.y = absf(way.y) * 1.2 + 0.2
+		var velocity := way.normalized() * _rng.randf_range(0.15, 0.55) * clampf(power / 4.0, 0.6, 1.4)
+		_add_picture(center + way * 0.5, velocity, LAVA, _rng.randf_range(0.05, 0.14), Color.WHITE, _rng.randi_range(14, 40), 0.6)
+	# Bits of what was blown up.
+	for i in range(0, debris.size() - 3, 4):
+		var cell := Vector3(debris[i], debris[i + 1], debris[i + 2]) + Vector3(0.5, 0.5, 0.5)
+		var id := debris[i + 3]
+		if id <= Blocks.AIR or id >= Blocks.count():
+			continue
+		var tile := _tile_of(id)
+		var tint := _tint_of(id, Vector3i(debris[i], debris[i + 1], debris[i + 2]))
+		var away := cell - center
+		away = away.normalized() if away.length_squared() > 0.01 else Vector3.UP
+		for bit in 3:
+			var velocity := away * _rng.randf_range(0.1, 0.4) + Vector3(_rng.randf_range(-0.1, 0.1), _rng.randf_range(0.15, 0.5), _rng.randf_range(-0.1, 0.1))
+			_add_tile(cell + _in_ball() * 0.4, velocity, tile, tint, _rng.randf_range(1.0, 1.8))
+	for i in int(power * 24):
 		var point := center + _in_ball() * power
 		var away := point - center
 		var distance := maxf(away.length(), 0.01)
@@ -285,7 +316,9 @@ func _burst_clouds(burst: Array) -> bool:
 		var offset := Vector3(_rng.randf() - _rng.randf(), _rng.randf() - _rng.randf(), _rng.randf() - _rng.randf()) * power
 		var gray := _rng.randf() * 0.6 + 0.4
 		var size := 4.0 * (1.0 - (8 - left) / 8.0 * 0.5) * clampf(power / 4.0, 0.5, 1.0)
-		_add_anim(center + offset, Vector3.ZERO, Anim.EXPLOSION, size, Color(gray, gray, gray),
+		# (the first clouds glow with the fire inside, then gray)
+		var glow := clampf((left - 5) / 3.0, 0.0, 1.0)
+		_add_anim(center + offset, Vector3.ZERO, Anim.EXPLOSION, size, Color(gray, gray, gray).lerp(Color(1.0, 0.55, 0.15), glow * 0.8),
 			6 + _rng.randi_range(0, 3), 0.0)
 	burst[2] = left - 1
 	return left > 1
@@ -380,6 +413,10 @@ func torch(tip: Vector3) -> void:
 	var gray := _rng.randf_range(0.15, 0.3)
 	_add_anim(tip, Vector3(0, 0.01, 0), Anim.GENERIC, 0.12, Color(gray, gray, gray), _rng.randi_range(8, 16), -0.02, 0.0)
 	_add_picture(tip, Vector3.ZERO, FLAME, 0.1, Color.WHITE, _rng.randi_range(5, 10), 0.0)
+	if _rng.randf() < 0.12:
+		# Now and then a spark off the flame.
+		_add_picture(tip, Vector3(_rng.randf_range(-0.015, 0.015), _rng.randf_range(0.03, 0.07), _rng.randf_range(-0.015, 0.015)), LAVA,
+			_rng.randf_range(0.02, 0.04), Color.WHITE, _rng.randi_range(8, 16), 0.3)
 
 
 ## A lava pop: an orange spark jumps up and falls back.
@@ -388,16 +425,57 @@ func lava_pop(point: Vector3) -> void:
 	_add_picture(point, velocity, LAVA, _rng.randf_range(0.1, 0.2), Color.WHITE, _rng.randi_range(16, 30), 0.75)
 
 
-## Smoke and sometimes a flame in front of a lit furnace.
+## A lit furnace: flames licking out of its mouth, smoke curling up its
+## front, now and then a spark spat out onto the floor and a wisp of smoke
+## off its top.
 func furnace(pos: Vector3i, facing: int) -> void:
 	var front := Vector3(Blocks.FACING_DIRECTIONS[facing])
 	var side := Vector3(-front.z, 0, front.x)
-	var start := Vector3(pos) + Vector3(0.5, 0.0, 0.5) + front * 0.52 \
-		+ side * _rng.randf_range(-0.3, 0.3) + Vector3(0, _rng.randf_range(0.1, 0.45), 0)
-	var gray := _rng.randf_range(0.15, 0.3)
-	_add_anim(start, Vector3(0, 0.01, 0), Anim.GENERIC, 0.15, Color(gray, gray, gray), _rng.randi_range(10, 20), -0.02, 0.0)
+	var mouth := Vector3(pos) + Vector3(0.5, 0.0, 0.5) + front * 0.52
+	for i in 2:
+		var start := mouth + side * _rng.randf_range(-0.3, 0.3) + Vector3(0, _rng.randf_range(0.1, 0.45), 0)
+		var gray := _rng.randf_range(0.15, 0.3)
+		_add_anim(start, Vector3(front.x * 0.004, _rng.randf_range(0.01, 0.03), front.z * 0.004), Anim.GENERIC, _rng.randf_range(0.12, 0.2),
+			Color(gray, gray, gray), _rng.randi_range(12, 26), -0.02, 0.0)
+		if i == 0 or _rng.randf() < 0.5:
+			var lick := mouth + side * _rng.randf_range(-0.25, 0.25) + Vector3(0, _rng.randf_range(0.08, 0.3), 0)
+			_add_picture(lick, Vector3(0, _rng.randf_range(0.0, 0.012), 0), FLAME, _rng.randf_range(0.1, 0.16), Color.WHITE, _rng.randi_range(8, 14), 0.0)
+	if _rng.randf() < 0.3:
+		var spark := mouth + side * _rng.randf_range(-0.2, 0.2) + Vector3(0, 0.2, 0)
+		_add_picture(spark, front * _rng.randf_range(0.03, 0.08) + Vector3(0, _rng.randf_range(0.03, 0.1), 0), LAVA,
+			_rng.randf_range(0.03, 0.06), Color.WHITE, _rng.randi_range(10, 22), 0.5)
+	if _rng.randf() < 0.35:
+		var top := Vector3(pos) + Vector3(_rng.randf_range(0.2, 0.8), 1.02, _rng.randf_range(0.2, 0.8))
+		var gray := _rng.randf_range(0.3, 0.5)
+		_add_anim(top, Vector3(0, _rng.randf_range(0.02, 0.04), 0), Anim.GENERIC, _rng.randf_range(0.15, 0.28), Color(gray, gray, gray),
+			_rng.randi_range(20, 36), -0.01, 0.0)
+
+
+## A fire block: flames licking up out of it, sparks drifting off, smoke
+## above (FireBehavior.display_tick).
+func fire(pos: Vector3i) -> void:
+	var base := Vector3(pos)
+	for i in 2:
+		var lick := base + Vector3(_rng.randf_range(0.15, 0.85), _rng.randf_range(0.2, 0.9), _rng.randf_range(0.15, 0.85))
+		_add_picture(lick, Vector3(0, _rng.randf_range(0.01, 0.03), 0), FLAME, _rng.randf_range(0.1, 0.18), Color.WHITE, _rng.randi_range(6, 12), 0.0)
 	if _rng.randf() < 0.5:
-		_add_picture(start, Vector3.ZERO, FLAME, 0.12, Color.WHITE, _rng.randi_range(8, 14), 0.0)
+		var spark := base + Vector3(_rng.randf_range(0.2, 0.8), _rng.randf_range(0.5, 1.0), _rng.randf_range(0.2, 0.8))
+		_add_picture(spark, Vector3(_rng.randf_range(-0.02, 0.02), _rng.randf_range(0.04, 0.1), _rng.randf_range(-0.02, 0.02)), LAVA,
+			_rng.randf_range(0.03, 0.06), Color.WHITE, _rng.randi_range(14, 30), 0.12)
+	smoke(base + Vector3(0.5, 0.9, 0.5), 2)
+
+
+## Something on fire (a creature, a player): dark smoke off its top and
+## sparks now and then; `box`: its body.
+func burning(box: AABB) -> void:
+	var top := box.position + Vector3(_rng.randf() * box.size.x, box.size.y * _rng.randf_range(0.6, 1.05), _rng.randf() * box.size.z)
+	var gray := _rng.randf_range(0.1, 0.3)
+	_add_anim(top, Vector3(0, _rng.randf_range(0.03, 0.06), 0), Anim.GENERIC, _rng.randf_range(0.15, 0.3), Color(gray, gray, gray),
+		_rng.randi_range(14, 28), -0.01, 0.0)
+	if _rng.randf() < 0.4:
+		var from := box.position + Vector3(_rng.randf() * box.size.x, box.size.y * _rng.randf(), _rng.randf() * box.size.z)
+		_add_picture(from, Vector3(_rng.randf_range(-0.03, 0.03), _rng.randf_range(0.05, 0.12), _rng.randf_range(-0.03, 0.03)), LAVA,
+			_rng.randf_range(0.03, 0.07), Color.WHITE, _rng.randi_range(12, 24), 0.3)
 
 
 ## Hurt hearts: dark hearts spilling out of a creature that was hit (one
@@ -430,6 +508,22 @@ func _tick(_tick_index: int) -> void:
 			b += 1
 		else:
 			_bursts.remove_at(b)
+	var s := 0
+	while s < _smolders.size():
+		var smolder: Array = _smolders[s]
+		smolder[2] -= 1
+		if int(smolder[2]) % 2 == 0:
+			# Dark smoke rising out of the hole, thinner as it dies down.
+			var spread: float = smolder[1] * 0.6
+			var start: Vector3 = smolder[0] + Vector3(_rng.randf_range(-spread, spread), _rng.randf_range(-0.5, 0.5), _rng.randf_range(-spread, spread))
+			var gray := _rng.randf_range(0.1, 0.35)
+			_add_anim(start, Vector3(_rng.randf_range(-0.01, 0.01), _rng.randf_range(0.04, 0.09), _rng.randf_range(-0.01, 0.01)),
+				Anim.BIG_SMOKE, _rng.randf_range(0.5, 1.1) * minf(float(smolder[2]) / 30.0, 1.0) + 0.2, Color(gray, gray, gray),
+				_rng.randi_range(20, 40), -0.01, 0.0)
+		if int(smolder[2]) <= 0:
+			_smolders.remove_at(s)
+		else:
+			s += 1
 	if _native:
 		var cells: PackedInt32Array = _native.call("cells_needed")
 		var looked_up := world.cells_for_particles(cells) if world else [PackedInt32Array(), PackedFloat32Array()]
