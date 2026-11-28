@@ -13,6 +13,8 @@ Sections:
 
 ## [Unreleased]
 
+## [0.1.2-beta] - 2026-11-28
+
 ### Added
 - New worlds (the ones made before keep their land, so nothing breaks where they were not explored yet) have new and reworked biomes:
   - Glacier: the coldest land (about 3% of the world), a flat shelf of snow blocks down to the frozen sea, nothing growing on it;
@@ -21,35 +23,22 @@ Sections:
   The land's shape changes smoothly at their edges. The native generator makes them too (macOS library rebuilt; with an older library the script generator takes over for these worlds).
 - Sponges: wet sponges grow on the floor of warm seas in new worlds (in about 1 sea column in 25, one to four together, under at least 3 blocks of water). A dry sponge touching water drinks all the water two blocks around it (a 5 x 5 x 5 cube) and turns into a wet sponge - darker, dripping while it has air under or beside it; a wet one is dried in a furnace and used again.
 - Sunken dungeons in new worlds: now and then, in shallow water (3 to 9 blocks under the sea's top), a flooded room of cobblestone and moss half in the sea floor with a doorway, a spawner and a chest or two - a dark box seen under the water from above.
-
-### Added
 - Chests and furnaces can be carried: Shift + right click on a single chest (not a half of a large one) or a furnace with an empty hand takes it in both hands with everything inside (a furnace with its fire and progress, which wait while it is carried); right click puts it down, facing the player. While carrying, the hotbar slot it was taken with is locked (pale, with a padlock, in the hotbar and the inventory: nothing goes into it, no other slot can be chosen) and nothing can be broken, hit or used. The block shows low in the middle of the first-person view, and in front of the body with both arms under it in third person, in the inventory and on other players in a network game. It is kept through saving; dying drops it and what was in it; in a network game the host does the taking and putting (a client that leaves with one leaves it lying where it stood).
 - Explosions look and feel bigger: a fireball flashes at the middle (yellow-white inside, orange around, the first clouds glowing with it), sparks fly high and fall back, bits of the blown blocks are thrown out of the hole, dark smoke rises from it for a few seconds after, a deep rumble lies under the bang, and the view of a player near by shakes (stronger the closer and the bigger the blast). A lit TNT's fuse spits sparks, faster as it burns down. In a network game the clients see and hear the blast too (they saw only the hole appear).
 - Things that burn are alive: a lit furnace has flames licking out of its mouth, smoke up its front, sparks spat onto the floor and a wisp of smoke off its top; a fire block throws flames and sparks; a torch gives off a spark now and then; a burning creature or player smokes and sparks; a burning furnace minecart spits sparks. Torches, fire and lit furnaces near the player get a turn about every 8 ticks each (kept in a list of the chunks nearest the player) instead of about once in 5 seconds among the 1000 random blocks.
+- Online, a player shows the others everything its own third-person view shows: the armor it wears (and a pumpkin on the head), the bow being drawn, eating (the hand at the mouth, crumbs and bites heard), the red flinch and the sound when hurt, falling over dead, flames when burning, the jump and fall poses, its steps and swimming heard, the cracks on the block it is breaking (with the chips and hit sounds) and its fishing rod's bobber with the line. Before: walking, sneaking, sitting, sleeping, the arm's swing and the item in hand.
+- Minecarts push each other like Beta's: a furnace minecart drives the carts ahead of it along (a train), two others share their speed. A furnace minecart's furnace lights up and smokes while it burns (on clients too); a click without coal turns a burning one the other way; fed with coal it starts away from the player; when the coal burns out it rolls to a stop.
+- The fishing rod pulls what its bobber caught on - creatures, and now boats and minecarts too - and in a network game as well (the host does the pulling: on a client reeling in did nothing).
+- Trapdoors in the upper half of a cell, like the modern game: put against the upper half of a wall they hang at the top of the cell, against the lower half they lie at the bottom as before; open, both stand up against the wall, and close back to their own half (by hand and by redstone).
 
 ### Changed
 - Explosions are 2.4 times cheaper: a blast of TNT took 15.9 ms, now 6.6. The rays look each block up once (they crossed the same cells near the middle hundreds of times) and blast resistances come from a table; the blocks around the hole are told of it once each, when it is all gone (every blown block told its six neighbors, most of them blown too); what drops is gathered by kind and thrown out in a few stacks instead of an item a block. At most 2 TNT blasts go off a tick, the rest the next (a pile rolls like thunder instead of freezing the game); lit TNT shares one flash box and material, and a pile hisses from a few of its blocks, not from each. 64 TNT in a cube: the worst tick 93 ms -> 27, 1300 items left on the ground -> about 150.
 - The haze has more depth, like the Better than Adventure mod's: a light veil lies over the middle distance - at half the view distance about 37% of the fog at the default Fog Distance (about 22% before; 50% at the nearest setting, 25% at the farthest) - and it is thick only toward the edge.
-
-### Added
-- Online, a player shows the others everything its own third-person view shows: the armor it wears (and a pumpkin on the head), the bow being drawn, eating (the hand at the mouth, crumbs and bites heard), the red flinch and the sound when hurt, falling over dead, flames when burning, the jump and fall poses, its steps and swimming heard, the cracks on the block it is breaking (with the chips and hit sounds) and its fishing rod's bobber with the line. Before: walking, sneaking, sitting, sleeping, the arm's swing and the item in hand.
-- Minecarts push each other like Beta's: a furnace minecart drives the carts ahead of it along (a train), two others share their speed. A furnace minecart's furnace lights up and smokes while it burns (on clients too); a click without coal turns a burning one the other way; fed with coal it starts away from the player; when the coal burns out it rolls to a stop.
-- The fishing rod pulls what its bobber caught on - creatures, and now boats and minecarts too - and in a network game as well (the host does the pulling: on a client reeling in did nothing).
-
-### Changed
 - Dropped items cost a fraction of what they did: one lying still (or floating on still water) is asleep - no physics and no lava or fire checks until the block it is in or the one under it changes; only items that moved look for a stack to merge with, among the items of their kind (every pair was compared: 4.7 ms a look with 200 items, now 0.02); an item's light is taken a few times a second and set on its meshes only when it changes. With 400 items on the ground a game tick took 12.7 ms, now 4.7 (the items' part 9.8 ms -> 1.4), and the frame rate there went from 95 to 141.
 - Creatures are cheaper to draw and to tick: the light on a creature, a boat or a minecart is taken every other tick instead of every frame and set on its meshes only when it looks different (drawing 100 creatures: 0.74 ms a frame -> 0.39); cactus and fire are looked for in one pass over the cells a creature touches (a quarter of its tick before), rain only while it burns; a minecart looks for a creature to take in every 4th tick.
 - Online, creatures and carts move more evenly on clients: the host sends its snapshots right after every other game tick instead of by a timer of its own (which drifted against the ticks); other players glide evenly from one position to the next. A client's furnace cart smokes and shows its fire.
 - The host does less for each client: an entity's place and state are worked out once a round for all clients, and not at all for one that has not ticked since (resting far away); a dedicated server builds no player models and poses nothing. A snapshot round with 125 creatures: 0.67 ms -> 0.25.
 - Ice ticks are cheaper (the climate is looked up only for the 1 random tick in 6 that could melt it: frozen lakes have thousands of ice blocks).
-
-### Fixed
-- Without a window (`--headless`: tests, tools) the game builds no chunk meshes: building them there from the worker threads crashed Godot now and then (in ArrayMesh.add_surface).
-
-### Added
-- Trapdoors in the upper half of a cell, like the modern game: put against the upper half of a wall they hang at the top of the cell, against the lower half they lie at the bottom as before; open, both stand up against the wall, and close back to their own half (by hand and by redstone).
-
-### Changed
 - Online: the host sends each client only the creatures, vehicles, arrows and dropped items that moved, turned or changed since the last snapshot (and their state only when it changed); a creature standing still costs nothing. With about 50 creatures near a client the host sends it about 5 KB/s instead of 50 KB/s, so a host with several players no longer chokes a home connection.
 - Fairer fights, like Beta 1.7.3's: a monster hits only a player it can see (zombies and spiders hit round wall corners and through doors); a creeper keeps hissing only while it sees the player (it blew up behind walls); Easy takes a monster's hit down to a third + 1 (it was half + 1); skeletons' arrows fly at Beta's 0.6 (0.96: hard to dodge) and fall like Beta's, aimed at the chest and up by the drop, and an arrow hits within 0.3 of a player like Beta's (it had to touch).
 - Skeletons keep their distance while they shoot, like the modern game's archers: farther than 6 blocks they come on, closer they stand, within 3 they step back (they walked right into the player and shot past it from there).
@@ -59,6 +48,7 @@ Sections:
 - The depths feel heavier: near the bedrock the void's dust is thicker and floats up to y 16 (8), pale specks lit by the light where they are - bright by a torch, all but gone in the dark - and the void fog closes in harder and in every game mode (survival only before): about 25 blocks at y 20, 9 at y 12, 7 at the bottom, black and thick at once.
 
 ### Fixed
+- Without a window (`--headless`: tests, tools) the game builds no chunk meshes: building them there from the worker threads crashed Godot now and then (in ArrayMesh.add_surface).
 - Online: creatures, vehicles, arrows and dropped items move smoothly on clients. Like Beta's client they go to each new snapshot over 3 ticks (snapshots come every other tick); before they jumped there and stood still the tick after, moving on only half the ticks. Ones that jump far (8+ blocks) are put there at once.
 - Ladders (and trapdoors) can be put on the wall of the cell the player stands in: a block may not be placed into the player by its own shape now, not by its whole cell.
 - Water washes away torches (redstone torches too), redstone dust, repeaters, levers, buttons, rails and snow layers in its way and drops them, like Beta's (they held it back like walls); sugar cane stands in it like Beta's (it was washed away). Leaves stay, as in Beta.
@@ -892,7 +882,8 @@ Sections:
 - Input actions in project settings: `move_*`, `sprint`.
 - README describing running, controls, and structure.
 
-[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.1.1-beta...HEAD
+[Unreleased]: https://github.com/MishaelS/voxel-engine/compare/v0.1.2-beta...HEAD
+[0.1.2-beta]: https://github.com/MishaelS/voxel-engine/compare/v0.1.1-beta...v0.1.2-beta
 [0.1.1-beta]: https://github.com/MishaelS/voxel-engine/compare/v0.1.0-beta...v0.1.1-beta
 [0.1.0-beta]: https://github.com/MishaelS/voxel-engine/compare/v0.0.33...v0.1.0-beta
 [0.0.33]: https://github.com/MishaelS/voxel-engine/compare/v0.0.32...v0.0.33
