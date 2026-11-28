@@ -9,8 +9,12 @@ extends Entity
 ## - off rails it rolls and stops like any box;
 ## - the player walking into it pushes it; right-click gets in (or opens the
 ##   chest of a chest minecart, or feeds coal to a furnace minecart, which
-##   then drives itself for 3600 ticks a piece the way the player faced);
+##   then drives itself for 3600 ticks a piece away from the player; a click
+##   without coal turns a burning one the other way); its furnace is lit
+##   and smokes while it burns;
 ##   while riding, walking forward gets a standing cart going;
+## - carts push each other like Beta's (push_carts): a furnace cart drives
+##   the carts ahead of it along (a train), two others share their speed;
 ## - hits break it after a few; it drops itself (and the chest's items).
 ## Kinds: "minecart", "chest_minecart", "furnace_minecart".
 
@@ -30,6 +34,8 @@ var _wear := 0.0
 var _yaw := 0.0
 var _rider_forward := 0.0
 var _rider_look := Vector3.ZERO
+var _cargo_lit := false
+var _shown := Vector2(-1, -1)
 
 
 static func create(type: String) -> Minecart:
@@ -55,6 +61,7 @@ func _ready() -> void:
 		# The chest or furnace riding in it.
 		_cargo = MeshInstance3D.new()
 		_cargo.mesh = FallingBlocks.block_mesh(Blocks.variant("chest" if kind == "chest_minecart" else "furnace"))
+		_cargo_lit = false
 		_cargo.scale = Vector3.ONE * 0.75
 		_cargo.position = Vector3(-0.375, 0.2, -0.375)
 		_cargo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -87,10 +94,65 @@ func tick() -> void:
 		take_creature(Vector2(velocity.x, velocity.z).length_squared() > 0.0004)
 	if fuel > 0:
 		fuel -= 1
+		if fuel == 0:
+			push = Vector2.ZERO # (burnt out: it rolls to a stop, like Beta's)
 		if randi_range(0, 3) == 0:
 			world.particles.smoke(feet() + Vector3(0, 0.9, 0), 1)
 	if _y < Player.VOID_Y:
 		removed = true
+
+
+## Carts touching each other push apart and pass their speed on, like
+## Beta's EntityMinecart.applyEntityCollision: a furnace cart gives a plain
+## one its own speed (and loses a little), two of a kind share theirs.
+## Called once a tick with all the world's carts (EntityManager).
+static func push_carts(carts: Array[Minecart]) -> void:
+	for i in carts.size():
+		var a := carts[i]
+		for j in range(i + 1, carts.size()):
+			var b := carts[j]
+			var dx := b._x - a._x
+			var dz := b._z - a._z
+			var d2 := dx * dx + dz * dz
+			if d2 >= 0.98 * 0.98 or d2 < 1e-4 or absf(b._y - a._y) >= 1.0:
+				continue
+			var d := sqrt(d2)
+			var inverse := minf(1.0 / d, 1.0)
+			dx = dx / d * inverse * 0.05
+			dz = dz / d * inverse * 0.05
+			var a_furnace := a.kind == "furnace_minecart"
+			var b_furnace := b.kind == "furnace_minecart"
+			if b_furnace and not a_furnace:
+				a.velocity = Vector3(a.velocity.x * 0.2 + b.velocity.x - dx, a.velocity.y, a.velocity.z * 0.2 + b.velocity.z - dz)
+				b.velocity *= Vector3(0.95, 1.0, 0.95)
+			elif a_furnace and not b_furnace:
+				b.velocity = Vector3(b.velocity.x * 0.2 + a.velocity.x + dx, b.velocity.y, b.velocity.z * 0.2 + a.velocity.z + dz)
+				a.velocity *= Vector3(0.95, 1.0, 0.95)
+			else:
+				var x := (a.velocity.x + b.velocity.x) * 0.5
+				var z := (a.velocity.z + b.velocity.z) * 0.5
+				a.velocity = Vector3(a.velocity.x * 0.2 + x - dx, a.velocity.y, a.velocity.z * 0.2 + z - dz)
+				b.velocity = Vector3(b.velocity.x * 0.2 + x + dx, b.velocity.y, b.velocity.z * 0.2 + z + dz)
+
+
+## A client's copy: a burning furnace cart smokes there too.
+func puppet_tick() -> void:
+	super()
+	if fuel > 0 and world and randi_range(0, 3) == 0:
+		world.particles.smoke(feet() + Vector3(0, 0.9, 0), 1)
+
+
+func net_state() -> Dictionary:
+	var state := super()
+	if kind == "furnace_minecart":
+		state["lit"] = fuel > 0
+	return state
+
+
+func apply_net_state(at: Vector3, yaw: float, state: Dictionary) -> void:
+	super(at, yaw, state)
+	if kind == "furnace_minecart":
+		fuel = 1 if bool(state.get("lit", false)) else 0
 
 
 ## The rail the cart is on (at its feet, or just below them).
@@ -251,10 +313,15 @@ func interact(player, item_id: int) -> bool:
 			return true
 		"furnace_minecart":
 			var name := Items.name_of(item_id) if item_id != Blocks.AIR else ""
-			if name == "coal" or name == "charcoal":
+			var fed := name == "coal" or name == "charcoal"
+			if fed:
 				if not player.is_creative():
 					player.inventory.take(player.selected_slot)
 				fuel += FUEL_PER_COAL
+				Sounds.play("fire/ignite", center(), 0.5, randf() * 0.4 + 0.8)
+			if fed or fuel > 0:
+				# Away from the player, like Beta's (a click on a burning one
+				# sends it the other way).
 				var at: Vector3 = player.global_position
 				push = Vector2(_x - at.x, _z - at.z)
 				return true
@@ -311,12 +378,20 @@ func _process(delta: float) -> void:
 	var run := Vector2(_x - _prev.x, _z - _prev.z).length()
 	var pitch := atan2(rise, run) if run > 1e-4 else 0.0
 	_model.root.rotation.x = lerp_angle(_model.root.rotation.x, -pitch, minf(delta * 10.0, 1.0))
-	var light := world.brightness_at(center()) if world else 1.0
-	if _cargo:
-		_cargo.set_instance_shader_parameter("entity_light", light) # the chest / furnace inside
-	for mesh: MeshInstance3D in _model.meshes:
-		mesh.set_instance_shader_parameter("brightness", light)
-		mesh.set_instance_shader_parameter("hurt", 1.0 if hurt_ticks > 0 else 0.0)
+	if kind == "furnace_minecart" and (fuel > 0) != _cargo_lit:
+		# The furnace's front lights up while it burns.
+		_cargo_lit = fuel > 0
+		_cargo.mesh = FallingBlocks.block_mesh(Blocks.variant("furnace_lit" if _cargo_lit else "furnace"))
+		_shown = Vector2(-1, -1)
+	var look := Vector2(light_here(), 1.0 if hurt_ticks > 0 else 0.0)
+	if look != _shown:
+		# (set on the meshes only when it looks different)
+		_shown = look
+		if _cargo:
+			_cargo.set_instance_shader_parameter("entity_light", look.x) # the chest / furnace inside
+		for mesh: MeshInstance3D in _model.meshes:
+			mesh.set_instance_shader_parameter("brightness", look.x)
+			mesh.set_instance_shader_parameter("hurt", look.y)
 	hurt_ticks = maxi(hurt_ticks - 1, 0) if Engine.get_process_frames() % 3 == 0 else hurt_ticks
 
 

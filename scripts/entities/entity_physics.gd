@@ -94,6 +94,37 @@ static func is_free(world: VoxelWorld, x: float, y: float, z: float, half_width:
 		x + half_width - E, y + height - E, z + half_width - E).is_empty()
 
 
+## Cactus (bit 1: the box slightly grown) and fire (bit 2: slightly shrunk)
+## touching the box, in one pass over its cells (Entity._burn: two passes
+## with a block type looked up for every cell were a quarter of a
+## creature's tick).
+static var _hazard := PackedByteArray()
+
+
+static func hazards(world: VoxelWorld, x: float, y: float, z: float, half_width: float, height: float) -> int:
+	if world == null:
+		return 0
+	if _hazard.size() != Blocks.count():
+		_hazard.resize(Blocks.count())
+		for id in Blocks.count():
+			_hazard[id] = (1 if Blocks.get_type(id).name == "cactus" else 0) | (2 if FireBehavior.is_fire(id) else 0)
+	const E := 0.01
+	var found := 0
+	for by in range(floori(y - E), floori(y + height + E) + 1):
+		for bz in range(floori(z - half_width - E), floori(z + half_width + E) + 1):
+			for bx in range(floori(x - half_width - E), floori(x + half_width + E) + 1):
+				var kind := _hazard[world.get_block(Vector3i(bx, by, bz))]
+				if kind == 0:
+					continue
+				if kind & 1:
+					found |= 1
+				if kind & 2 and by >= floori(y + 0.001) and by <= floori(y + height - 0.001) \
+						and bz >= floori(z - half_width + 0.001) and bz <= floori(z + half_width - 0.001) \
+						and bx >= floori(x - half_width + 0.001) and bx <= floori(x + half_width - 0.001):
+					found |= 2
+	return found
+
+
 ## True if the box (slightly grown) touches a cactus.
 static func touches_cactus(world: VoxelWorld, x: float, y: float, z: float, half_width: float, height: float) -> bool:
 	if world == null:

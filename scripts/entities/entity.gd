@@ -100,6 +100,10 @@ var net_id := 0
 ## A client's copy of a host entity: no thinking or physics of its own, it
 ## follows the host's snapshots (Net).
 var puppet := false
+## Host: its place, facing and state as last worked out for the snapshots,
+## and its age then (Net._send_snapshots).
+var net_cache: Array = []
+var net_cache_age := -1
 ## A client's player riding this vehicle (its peer id; host).
 var remote_rider := 0
 var _net_target := Vector3.ZERO
@@ -183,8 +187,8 @@ func seat_free() -> bool:
 ## A vehicle's tick: a zombie or skeleton touching it (within 0.2 of its
 ## sides) gets in when either of them is moving, like the game's minecart.
 func take_creature(moving: bool) -> void:
-	if not seat_free():
-		return
+	if not seat_free() or (age + int(get_instance_id())) & 3 != 0:
+		return # (looked for every 4th tick: every cart going through every creature each tick added up)
 	for entity in world.entities.all():
 		if not (entity is Mob) or not ((entity as Mob).mob_type in RIDING_MOBS) or entity.vehicle != null \
 				or entity.removed or entity.is_dead():
@@ -198,6 +202,20 @@ func take_creature(moving: bool) -> void:
 			entity.vehicle = self
 			rider = entity
 			return
+
+
+## The light where the entity is, for its meshes: taken once every other
+## tick (each entity its own turn), not every frame.
+var _lit := -1.0
+var _lit_turn := -1
+
+
+func light_here() -> float:
+	var turn := (TickLoop.tick_count + int(get_instance_id())) >> 1
+	if turn != _lit_turn or _lit < 0.0:
+		_lit_turn = turn
+		_lit = world.brightness_at(center()) if world else 1.0
+	return _lit
 
 
 ## Where a creature riding `vehicle` has its feet (sitting on the seat).
@@ -369,12 +387,13 @@ func _burn() -> void:
 	if in_lava:
 		damage(4)
 		fire_ticks = FIRE_TICKS
-	if EntityPhysics.touches_cactus(world, _x, _y, _z, half_width, height):
+	var hazards := EntityPhysics.hazards(world, _x, _y, _z, half_width, height)
+	if hazards & 1:
 		damage(1)
-	if not in_lava and EntityPhysics.touches_fire(world, _x, _y, _z, half_width, height):
+	if not in_lava and hazards & 2:
 		damage(1)
 		fire_ticks = maxi(fire_ticks, 160)
-	if is_wet():
+	if fire_ticks > 0 and is_wet():
 		fire_ticks = 0
 	if fire_ticks > 0:
 		fire_ticks -= 1

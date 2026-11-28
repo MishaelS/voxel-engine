@@ -314,6 +314,7 @@ var saved_players := {}
 ## Client: the host's entities by number.
 var _puppets := {}
 const SNAPSHOT_SECONDS := 0.1
+const SNAPSHOT_TICKS := 2
 const ENTITY_RANGE := 96.0
 const ITEM_RANGE := 48.0
 const PLAYER_SAVE_SECONDS := 10.0
@@ -337,6 +338,16 @@ func _ready() -> void:
 		var node := DedicatedServer.new()
 		node.name = "DedicatedServer"
 		add_child(node)
+	TickLoop.add_listener(_on_tick, TickLoop.Phase.LATE)
+
+
+## Host: the snapshots go out right after every other game tick (not by a
+## timer of their own: that drifted against the ticks, so a client got a
+## creature's place sometimes one tick apart, sometimes three, and it moved
+## unevenly).
+func _on_tick(tick_index: int) -> void:
+	if tick_index % SNAPSHOT_TICKS == 0 and is_host() and _peer != null and _has_clients() and _world() != null:
+		_send_snapshots()
 
 
 func _notification(what: int) -> void:
@@ -1106,7 +1117,8 @@ func _process(delta: float) -> void:
 	if _state_timer <= 0.0:
 		_state_timer = 1.0 / STATE_RATE
 		_send_own_state()
-	if is_host() and _has_clients():
+	if is_host() and _has_clients() and TickLoop.frozen:
+		# (ticks stopped: still sent now and then, _on_tick sends them otherwise)
 		_snapshot_timer -= delta
 		if _snapshot_timer <= 0.0:
 			_snapshot_timer = SNAPSHOT_SECONDS
@@ -1487,18 +1499,35 @@ func _send_own_state() -> void:
 	if player == null:
 		return
 	var flags := (1 if player.sneaking else 0) | (2 if player.vehicle else 0) | (4 if player.dead else 0) \
-		| (8 if player.sleeping else 0) | (16 if player.is_creative() else 0)
+		| (8 if player.sleeping else 0) | (16 if player.is_creative() else 0) \
+		| (RemotePlayer.EATING if player.eating >= 0.0 else 0) | (RemotePlayer.DRAWING if player.bow_pull >= 0.0 else 0) \
+		| (RemotePlayer.BURNING if player.fire_ticks > 0 else 0) | (RemotePlayer.HURT if player.hurt_ticks > 0 else 0) \
+		| (RemotePlayer.GROUNDED if player.on_ground or player.flying else 0) | (RemotePlayer.SWIMMING if player.in_water else 0)
+	# What it wears and the block it is breaking (RemotePlayer.GEAR_SIZE).
+	var gear := PackedInt32Array()
+	for slot in 4:
+		gear.append(player.armor.id_at(slot) if player.armor.count_at(slot) > 0 else Blocks.AIR)
+	var interaction := player.get_node_or_null("../BlockInteraction") as BlockInteraction
+	if interaction and interaction.break_progress > 0.0 and interaction._breaking_pos.y > -1000:
+		var at := interaction._breaking_pos
+		gear.append_array(PackedInt32Array([at.x, at.y, at.z, mini(int(interaction.break_progress * 10.0), 9)]))
+	else:
+		gear.append_array(PackedInt32Array([0, 0, 0, -1]))
+	var bobber := player.fishing_bobber
+	var hook := bobber.feet() if bobber and is_instance_valid(bobber) and not bobber.removed else Vector3.INF
+	var held := player.held_block() if player.inventory.count_at(player.selected_slot) > 0 else Blocks.AIR
 	if is_host():
 		for peer in _clients():
-			_peer_state.rpc_id(peer, 1, player.global_position, player.rotation.y, player.pitch(), flags, player.held_block(), _swings)
+			_peer_state.rpc_id(peer, 1, player.global_position, player.rotation.y, player.pitch(), flags, held, _swings, gear, hook)
 	else:
-		_player_state.rpc_id(1, player.global_position, player.rotation.y, player.pitch(), flags, player.held_block(), _swings)
+		_player_state.rpc_id(1, player.global_position, player.rotation.y, player.pitch(), flags, held, _swings, gear, hook)
 
 
 ## Client -> host: where its player is now (20 times a second). The host
 ## checks the move (NetGuard.Mover) and passes it on to the others.
 @rpc("any_peer", "call_remote", "unreliable_ordered")
-func _player_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int) -> void:
+func _player_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int,
+		gear: PackedInt32Array, hook: Vector3) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	var world := _world()
 	if _joined(id):
@@ -1508,10 +1537,22 @@ func _player_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int,
 	if not NetGuard.in_world(at) or not is_finite(yaw) or not is_finite(pitch):
 		_strike(id, "impossible position", 3)
 		return
-	flags &= 31
+	flags &= RemotePlayer.FLAGS
 	if held != Blocks.AIR and not Items.exists(held):
 		held = Blocks.AIR
 	pitch = clampf(pitch, -PI, PI)
+	# What it shows of itself: armor that is armor, a block in reach being
+	# broken, a bobber no farther than a rod casts.
+	if gear.size() != RemotePlayer.GEAR_SIZE:
+		gear = PackedInt32Array([0, 0, 0, 0, 0, 0, 0, -1])
+	for slot in 4:
+		if gear[slot] != Blocks.AIR and (not Items.exists(gear[slot]) or Items.armor_slot_of(gear[slot]) != slot):
+			gear[slot] = Blocks.AIR
+	gear[7] = clampi(gear[7], -1, 9)
+	if gear[7] >= 0 and NetGuard.distance_to_block(at + Vector3(0, 1.62, 0), Vector3i(gear[4], gear[5], gear[6])) > REACH_CREATIVE:
+		gear[7] = -1
+	if hook != Vector3.INF and (not NetGuard.in_world(hook) or hook.distance_to(at) > FishingBobber.MAX_DISTANCE + 4.0):
+		hook = Vector3.INF
 	var now := Time.get_ticks_msec() / 1000.0
 	var mover: NetGuard.Mover = _moves.get(id)
 	if mover == null:
@@ -1546,10 +1587,10 @@ func _player_state(at: Vector3, yaw: float, pitch: float, flags: int, held: int,
 	var avatar: RemotePlayer = avatars.get(id)
 	if avatar and is_instance_valid(avatar) and (before.distance_to(at) > 0.05 or absf(angle_difference(avatar.rotation.y, yaw)) > 0.05):
 		_active[id] = now
-	_show_state(id, at, yaw, pitch, flags, held, swings)
+	_show_state(id, at, yaw, pitch, flags, held, swings, gear, hook)
 	for peer in _clients():
 		if peer != id:
-			_peer_state.rpc_id(peer, id, at, yaw, pitch, flags, held, swings)
+			_peer_state.rpc_id(peer, id, at, yaw, pitch, flags, held, swings, gear, hook)
 
 
 ## Host: whether a player coming back to life at `at` is where it may
@@ -1575,14 +1616,16 @@ func _respawn_ok(peer: int, at: Vector3) -> bool:
 
 ## Host -> client: the other player `id` (or the host's own, 1) moved.
 @rpc("authority", "call_remote", "unreliable_ordered")
-func _peer_state(id: int, at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int) -> void:
+func _peer_state(id: int, at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int,
+		gear: PackedInt32Array, hook: Vector3) -> void:
 	_last_heard = _now()
 	if id == multiplayer.get_unique_id() or not players.has(id):
 		return
-	_show_state(id, at, yaw, pitch, flags, held, swings)
+	_show_state(id, at, yaw, pitch, flags, held, swings, gear, hook)
 
 
-func _show_state(id: int, at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int) -> void:
+func _show_state(id: int, at: Vector3, yaw: float, pitch: float, flags: int, held: int, swings: int,
+		gear: PackedInt32Array, hook: Vector3) -> void:
 	var world := _world()
 	if world == null or not players.has(id):
 		return
@@ -1597,7 +1640,7 @@ func _show_state(id: int, at: Vector3, yaw: float, pitch: float, flags: int, hel
 		avatars[id] = avatar
 		var look: Dictionary = looks.get(id, {})
 		avatar.set_look(int(look.get("color", 0)), look.get("skin"))
-	avatar.set_state(at, yaw, pitch, flags, held, swings)
+	avatar.set_state(at, yaw, pitch, flags, held, swings, gear, hook)
 
 
 ## Host -> client: back to where the host saw it (it moved too fast), or
@@ -1989,6 +2032,10 @@ func _send_snapshots() -> void:
 	var world := _world()
 	if world == null:
 		return
+	# Each entity's place, facing and state are worked out once a round, for
+	# the first client near it (not again for every client: a creature's
+	# state is a dictionary of a dozen things).
+	var round_states := {}
 	for peer: int in players:
 		if peer == 1:
 			continue
@@ -2018,10 +2065,19 @@ func _send_snapshots() -> void:
 				if new_ones >= SNAPSHOT_NEW:
 					continue # (next time)
 				new_ones += 1
-			var feet := entity.feet()
-			var yaw := entity.net_yaw()
-			var state := entity.net_state()
-			seen[entity.net_id] = [feet, yaw, state]
+			var now_is: Array = round_states.get(entity.net_id, [])
+			if now_is.is_empty():
+				# (one that has not ticked since - resting far from everyone,
+				# out of the simulated area - is as it was: nothing made anew)
+				if entity.net_cache_age != entity.age or entity.net_cache.is_empty():
+					entity.net_cache_age = entity.age
+					entity.net_cache = [entity.feet(), entity.net_yaw(), entity.net_state()]
+				now_is = entity.net_cache
+				round_states[entity.net_id] = now_is
+			var feet: Vector3 = now_is[0]
+			var yaw: float = now_is[1]
+			var state: Dictionary = now_is[2]
+			seen[entity.net_id] = now_is
 			if last.is_empty():
 				entries.append([entity.net_id, feet, yaw, state, entity.save_state()])
 				continue
@@ -2241,6 +2297,27 @@ func _client_dismount(id: int) -> void:
 	var entity := world.entities.by_net_id(id)
 	if entity and entity.remote_rider == peer:
 		entity.remote_rider = 0
+
+
+## Client -> host: its fishing rod reels in the creature, boat or cart `id`
+## its bobber caught on (FishingBobber.reel_in): pulled toward it.
+func send_pull(id: int) -> void:
+	_client_pull.rpc_id(1, id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _client_pull(id: int) -> void:
+	var peer := multiplayer.get_remote_sender_id()
+	var world := _world()
+	var avatar := _avatar_of(peer)
+	if world == null or avatar == null or avatar.dead or not _within(peer, "edit", EDIT_LIMIT, 1.0):
+		return
+	if Items.name_of(avatar.held_block()) != "fishing_rod":
+		return
+	var entity := world.entities.by_net_id(id)
+	if entity == null or not FishingBobber.can_hook(entity) or entity.feet().distance_to(avatar.target_position) > FishingBobber.MAX_DISTANCE + 4.0:
+		return
+	FishingBobber.pull(entity, avatar.target_position)
 
 
 # --- Clients using the host's creatures (shears, dye, saddle, bucket, bone, coal) -----------------

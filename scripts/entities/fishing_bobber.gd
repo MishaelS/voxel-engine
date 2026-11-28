@@ -6,7 +6,9 @@ extends Entity
 ## - in water a fish bites now and then (1 in 500 ticks): the bobber dips
 ##   with a splash, and for 10..40 ticks reeling in catches a raw fish,
 ##   which flies to the player;
-## - reeling in a caught creature pulls it toward the player;
+## - reeling in a caught creature (or a boat or a minecart) pulls it toward
+##   the player: a yank toward them and up, Beta's (pull()); in a network
+##   game the host does the pulling (Net.send_pull);
 ## - it is gone when reeled in, when the player stops holding the rod or
 ##   goes more than 32 blocks away.
 ## A thin line goes from the rod to the bobber; the bobber is the game's
@@ -92,7 +94,7 @@ func tick() -> void:
 	if not in_water and not on_ground:
 		# Catches on a creature it flies into.
 		var found := world.entities.raycast(feet(), velocity, velocity.length() + 0.1, self)
-		if not found.is_empty() and found[0] is Mob:
+		if not found.is_empty() and can_hook(found[0]):
 			hooked = found[0]
 			return
 	if in_water:
@@ -128,8 +130,10 @@ func reel_in() -> int:
 	var wear := 0
 	var player := owner_player
 	if hooked:
-		var pull := player.global_position - hooked.feet()
-		hooked.velocity += pull * 0.1 + Vector3(0, sqrt(pull.length()) * 0.08, 0)
+		if world.remote:
+			Net.send_pull(hooked.net_id) # (the host's creature: the host pulls it)
+		else:
+			pull(hooked, player.global_position)
 		wear = 3
 	elif catchable > 0:
 		var to := player.eye_position() - feet()
@@ -143,6 +147,19 @@ func reel_in() -> int:
 		wear = 2
 	_gone()
 	return wear
+
+
+## What a bobber catches on: creatures, boats and minecarts.
+static func can_hook(entity: Entity) -> bool:
+	return (entity is Mob or entity is Boat or entity is Minecart) and not entity.removed and not entity.is_dead()
+
+
+## The yank of reeling in, like Beta's EntityFish.catchFish: a tenth of the
+## way to the player a tick, and up by the distance's root.
+static func pull(entity: Entity, toward: Vector3) -> void:
+	var way := toward - entity.feet()
+	entity.velocity += way * 0.1 + Vector3(0, sqrt(way.length()) * 0.08, 0)
+	entity.on_ground = false
 
 
 func _gone() -> void:

@@ -304,7 +304,9 @@ func _ready() -> void:
 	ChunkMesher.prepare_native()
 	save = WorldSave.current
 	remote = Net.is_client()
-	no_meshes = Net.dedicated
+	# (nothing is drawn without a window: building meshes there from the worker
+	# threads crashed Godot now and then, in ArrayMesh.add_surface)
+	no_meshes = Net.dedicated or DisplayServer.get_name() == "headless"
 	if Net.dedicated:
 		remote_radius = Net.simulation_distance
 		render_distance = Net.spawn_radius
@@ -1177,12 +1179,19 @@ func get_block_light(pos: Vector3i) -> int:
 	return data.block_light[ChunkData.index(local.x, local.y, local.z)]
 
 
+var _atmosphere: Atmosphere
+
+
 ## Brightness (linear, the classic light curve) of the light at a point,
 ## for things drawn there like blocks (the held item, dropped items,
 ## particles): sky light minus the night (Classic) or dimmed by the daylight
 ## (Dynamic Lighting), or block light if brighter.
 func brightness_at(point: Vector3) -> float:
-	var atmosphere := Atmosphere.find(get_tree())
+	# (looked up once: finding it in its group for every creature, item and
+	# particle each frame was most of this call)
+	if _atmosphere == null or not is_instance_valid(_atmosphere):
+		_atmosphere = Atmosphere.find(get_tree()) if is_inside_tree() else null
+	var atmosphere := _atmosphere
 	var darkness := atmosphere.sky_darkness if atmosphere else 0.0
 	var day := 0.25 + 0.75 * atmosphere.daylight if atmosphere and atmosphere.sky_darkness <= 0.0 else 1.0
 	return _cell_brightness(Vector3i(point.floor()), darkness, day)

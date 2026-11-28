@@ -513,6 +513,7 @@ func _update_armor() -> void:
 		(_model.parts.head as Node3D).add_child(pumpkin)
 		_armor_meshes.append(pumpkin)
 	_model.meshes.append_array(_armor_meshes) # (lit with the body)
+	_shown_look = Vector3(-1, -1, -1) # (new meshes: lit again)
 
 
 ## The armor's points like the player's (Beta: the same for every
@@ -1359,6 +1360,14 @@ static var _view_planes: Array[Plane] = []
 static var _view_frame := -1
 
 
+## What the meshes were last told (Mob._process): the light, hurt and flash.
+var _light := -1.0
+var _light_turn := -1
+var _shown_look := Vector3(-1, -1, -1)
+var _shown_held: Node
+var _shown_meshes := -1
+
+
 ## Whether the creature (a ball round its middle, a little bigger than it)
 ## can be in the camera's sight.
 func _in_view() -> bool:
@@ -1686,6 +1695,7 @@ func _update_wolf_skin() -> void:
 	for part: Dictionary in _model.spec.parts:
 		if part.get("texture", "pale_wolf") == "pale_wolf":
 			(_model.instances[part.name] as MeshInstance3D).material_override = material
+			_shown_look = Vector3(-1, -1, -1)
 
 
 # --- Health ---------------------------------------------------------------------------
@@ -1897,7 +1907,12 @@ func _process(delta: float) -> void:
 		var size := float(MobModels.model("squid").get("scale", 1.0)) / 16.0
 		_model.root.transform = Transform3D(Basis(Vector3.RIGHT, lean), middle) \
 			* Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * size), -middle)
-	var brightness := world.brightness_at(center()) if world else 1.0
+	# The light where it stands: taken once every other tick, not each frame.
+	var light_turn := (TickLoop.tick_count + int(get_instance_id())) >> 1
+	if light_turn != _light_turn or _light < 0.0:
+		_light_turn = light_turn
+		_light = world.brightness_at(center()) if world else 1.0
+	var brightness := _light
 	var flash := 0.0
 	if mob_type == "creeper":
 		# Beta's RenderCreeper: the fuse (0..1, between ticks) swells it -
@@ -1911,18 +1926,26 @@ func _process(delta: float) -> void:
 		_model.root.scale = Vector3((1.0 + swell * 0.4) * tremble, (1.0 + swell * 0.1) / tremble, (1.0 + swell * 0.4) * tremble) * base
 		if fuse > 0.0 and int(fuse * 10.0) % 2 == 1:
 			flash = fuse * 0.2
-	if _held:
-		FallingBlocks.light(_held, brightness)
 	if powered:
 		# (the glow's picture slides with the game's ticks, one material for all)
 		MobModels.power_material().set_shader_parameter("ticks", float(TickLoop.tick_count) + TickLoop.alpha)
-	for mesh: MeshInstance3D in _model.meshes:
-		if mesh.has_meta("block"):
-			FallingBlocks.light(mesh, brightness)
-			continue
-		mesh.set_instance_shader_parameter("brightness", 1.0 if mesh.has_meta("glow") else brightness)
-		mesh.set_instance_shader_parameter("hurt", 1.0 if hurt_ticks > 0 or is_dead() else 0.0)
-		mesh.set_instance_shader_parameter("flash", flash)
+	# Set on the meshes only when it looks different (three calls a mesh a
+	# frame were most of a creature's drawing time).
+	var hurt := 1.0 if hurt_ticks > 0 or is_dead() else 0.0
+	var look := Vector3(brightness, hurt, flash)
+	if look != _shown_look or _held != _shown_held or _model.meshes.size() != _shown_meshes:
+		_shown_look = look
+		_shown_held = _held
+		_shown_meshes = _model.meshes.size()
+		if _held:
+			FallingBlocks.light(_held, brightness)
+		for mesh: MeshInstance3D in _model.meshes:
+			if mesh.has_meta("block"):
+				FallingBlocks.light(mesh, brightness)
+				continue
+			mesh.set_instance_shader_parameter("brightness", 1.0 if mesh.has_meta("glow") else brightness)
+			mesh.set_instance_shader_parameter("hurt", hurt)
+			mesh.set_instance_shader_parameter("flash", flash)
 	if is_dead():
 		# Falls over sideways, like the classic game.
 		var fall_t := minf((death_ticks + alpha) / DEATH_TICKS * 1.6, 1.0)

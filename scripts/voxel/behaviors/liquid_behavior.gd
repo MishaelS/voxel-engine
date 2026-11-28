@@ -114,8 +114,9 @@ static func scheduled_tick(world: VoxelWorld, pos: Vector3i) -> void:
 ## brighter than 8 (a torch within about 5 blocks, lava or fire next to it),
 ## and now and then (1 in 6 random ticks) outside the cold biomes.
 static func ice_random_tick(world: VoxelWorld, pos: Vector3i) -> void:
-	var warm := not Weather.snows_at(world, pos.x, pos.z)
-	if world.get_block_light(pos) > 8 or (warm and world.rng.randi_range(0, 5) == 0):
+	# (the climate is looked up only for the 1 tick in 6 that could melt it:
+	# it was most of an ice block's tick, and frozen lakes have thousands)
+	if world.get_block_light(pos) > 8 or (world.rng.randi_range(0, 5) == 0 and not Weather.snows_at(world, pos.x, pos.z)):
 		world.set_block(pos, Blocks.id_of("water"))
 
 

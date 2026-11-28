@@ -14,6 +14,21 @@ Sections:
 ## [Unreleased]
 
 ### Added
+- Online, a player shows the others everything its own third-person view shows: the armor it wears (and a pumpkin on the head), the bow being drawn, eating (the hand at the mouth, crumbs and bites heard), the red flinch and the sound when hurt, falling over dead, flames when burning, the jump and fall poses, its steps and swimming heard, the cracks on the block it is breaking (with the chips and hit sounds) and its fishing rod's bobber with the line. Before: walking, sneaking, sitting, sleeping, the arm's swing and the item in hand.
+- Minecarts push each other like Beta's: a furnace minecart drives the carts ahead of it along (a train), two others share their speed. A furnace minecart's furnace lights up and smokes while it burns (on clients too); a click without coal turns a burning one the other way; fed with coal it starts away from the player; when the coal burns out it rolls to a stop.
+- The fishing rod pulls what its bobber caught on - creatures, and now boats and minecarts too - and in a network game as well (the host does the pulling: on a client reeling in did nothing).
+
+### Changed
+- Dropped items cost a fraction of what they did: one lying still (or floating on still water) is asleep - no physics and no lava or fire checks until the block it is in or the one under it changes; only items that moved look for a stack to merge with, among the items of their kind (every pair was compared: 4.7 ms a look with 200 items, now 0.02); an item's light is taken a few times a second and set on its meshes only when it changes. With 400 items on the ground a game tick took 12.7 ms, now 4.7 (the items' part 9.8 ms -> 1.4), and the frame rate there went from 95 to 141.
+- Creatures are cheaper to draw and to tick: the light on a creature, a boat or a minecart is taken every other tick instead of every frame and set on its meshes only when it looks different (drawing 100 creatures: 0.74 ms a frame -> 0.39); cactus and fire are looked for in one pass over the cells a creature touches (a quarter of its tick before), rain only while it burns; a minecart looks for a creature to take in every 4th tick.
+- Online, creatures and carts move more evenly on clients: the host sends its snapshots right after every other game tick instead of by a timer of its own (which drifted against the ticks); other players glide evenly from one position to the next. A client's furnace cart smokes and shows its fire.
+- The host does less for each client: an entity's place and state are worked out once a round for all clients, and not at all for one that has not ticked since (resting far away); a dedicated server builds no player models and poses nothing. A snapshot round with 125 creatures: 0.67 ms -> 0.25.
+- Ice ticks are cheaper (the climate is looked up only for the 1 random tick in 6 that could melt it: frozen lakes have thousands of ice blocks).
+
+### Fixed
+- Without a window (`--headless`: tests, tools) the game builds no chunk meshes: building them there from the worker threads crashed Godot now and then (in ArrayMesh.add_surface).
+
+### Added
 - Trapdoors in the upper half of a cell, like the modern game: put against the upper half of a wall they hang at the top of the cell, against the lower half they lie at the bottom as before; open, both stand up against the wall, and close back to their own half (by hand and by redstone).
 
 ### Changed

@@ -10,6 +10,12 @@ extends Node3D
 ## - The player picks them up when close (after a short delay: 10 ticks
 ##   for drops, 40 for thrown items); they fly to the player. Equal items
 ##   lying together merge into one stack. After 5 minutes they disappear.
+## - An item lying still is asleep (item.rest): no physics, no lava or fire
+##   checks, until the block it is in or the one under it changes (and a
+##   full look every REST_CHECK ticks); only items that moved look for a
+##   stack to merge with; the light on an item is taken a few times a
+##   second and set on its meshes only when it changed. A few hundred items
+##   on the ground cost almost nothing (20 us an item a tick before).
 
 const GRAVITY := 0.04
 const DRAG := 0.98
@@ -21,6 +27,10 @@ const PICKUP_TICKS := 3       # flying to the player
 const MERGE_DISTANCE := 0.5
 const BLOCK_SCALE := 0.25
 const ITEM_SIZE := 0.5
+## A sleeping item is looked at in full once in this many ticks.
+const REST_CHECK := 20
+## An item's light is taken once in this many ticks (each its own turn).
+const LIGHT_EVERY := 5
 
 var world: VoxelWorld
 var player: Player
@@ -61,7 +71,7 @@ func spawn(id: int, item_count: int, position: Vector3, velocity: Vector3 = Vect
 	var item := {
 		"id": id, "count": item_count, "damage": damage, "pos": position, "prev": position,
 		"vel": velocity, "age": 0, "delay": pickup_delay, "ground": false, "picked": -1,
-		"spin": _rng.randf() * TAU,
+		"spin": _rng.randf() * TAU, "rest": false, "fresh": true, "light": -1.0, "shown": -2.0,
 	}
 	item.node = _make_node(item)
 	_items.append(item)
@@ -132,6 +142,8 @@ func _tick(tick_index: int) -> void:
 		var item := _items[i]
 		item.prev = item.pos
 		item.age += 1
+		if (tick_index + i) % LIGHT_EVERY == 0 or item.light < 0.0:
+			item.light = _brightness(item.pos, null)
 		if item.picked >= 0:
 			item.picked += 1
 			if item.picked >= PICKUP_TICKS:
@@ -142,6 +154,12 @@ func _tick(tick_index: int) -> void:
 			(item.node as Node).queue_free()
 			_items.remove_at(i)
 			continue
+		elif item.rest and world and (tick_index + i) % REST_CHECK != 0 and _still_resting(item):
+			# Asleep: only waits to be picked up.
+			item.delay = maxi(item.delay - 1, 0)
+			_try_pickup(item)
+			if item.rest_here != Blocks.AIR:
+				RedstoneComponents.step_on(world, Vector3i((item.pos as Vector3).floor()), true) # wooden plates
 		elif world and _in_lava(item.pos):
 			# Items burn up in lava: smoke, a flame, embers and a fizz.
 			world.particles.burn(item.pos, true)
@@ -168,9 +186,34 @@ func _tick(tick_index: int) -> void:
 			_try_pickup(item)
 			if world and item.ground:
 				RedstoneComponents.step_on(world, Vector3i((item.pos as Vector3).floor()), true) # wooden plates
+			_fall_asleep(item)
 		i += 1
 	if tick_index % 10 == 0:
 		_merge()
+
+
+## An item lying still on the ground goes to sleep, remembering the block
+## it is in and the one under it (a change of either wakes it).
+func _fall_asleep(item: Dictionary) -> void:
+	var velocity: Vector3 = item.vel
+	item.rest = false
+	# (floating at the top of still water counts as lying: it only bobs there)
+	var floating: bool = item.get("wet", false) and velocity.length_squared() < 1e-4
+	if world == null or not (item.ground or floating) or velocity.x * velocity.x + velocity.z * velocity.z > 1e-6 \
+			or (not floating and (item.pos as Vector3).distance_squared_to(item.prev) > 1e-8):
+		item.fresh = true # (moving: may come to lie by a stack to merge with)
+		return
+	var position: Vector3 = item.pos
+	item.vel = Vector3.ZERO
+	item.rest = true
+	item.rest_here = world.get_block(Vector3i(position.floor()))
+	item.rest_under = world.get_block(Vector3i(floori(position.x), floori(position.y - HALF - 0.01), floori(position.z)))
+
+
+func _still_resting(item: Dictionary) -> bool:
+	var position: Vector3 = item.pos
+	return world.get_block(Vector3i(position.floor())) == item.rest_here \
+		and world.get_block(Vector3i(floori(position.x), floori(position.y - HALF - 0.01), floori(position.z))) == item.rest_under
 
 
 func _physics(item: Dictionary) -> void:
@@ -178,11 +221,13 @@ func _physics(item: Dictionary) -> void:
 		return # the ground is not loaded: wait
 	var velocity: Vector3 = item.vel
 	var position: Vector3 = item.pos
+	item.wet = false
 	if _box_blocked(position):
 		# Inside a block: pushed out upward.
 		position.y += 0.1
 		velocity = Vector3.ZERO
 	elif _in_water(position):
+		item.wet = true
 		velocity.y = velocity.y * 0.8 + 0.01 # floats up slowly
 		velocity.x *= 0.9
 		velocity.z *= 0.9
@@ -325,26 +370,50 @@ func positions() -> PackedVector3Array:
 	return result
 
 
-## Equal stacks lying close together become one.
+## Equal stacks lying close together become one. Only an item that moved
+## since the last look ("fresh") looks for partners, among the items of
+## its kind (stacks lying still have nothing new to find).
 func _merge() -> void:
+	var fresh: Array[int] = []
 	for a in _items.size():
-		var first := _items[a]
-		if first.picked >= 0 or first.count <= 0:
+		var item := _items[a]
+		if item.get("fresh", true) and item.picked < 0 and item.count > 0:
+			fresh.append(a)
+	if fresh.is_empty():
+		return
+	var kinds := {} # id and damage -> indices
+	for a in _items.size():
+		var item := _items[a]
+		if item.picked >= 0 or item.count <= 0:
 			continue
-		for b in range(a + 1, _items.size()):
+		var key: int = int(item.id) * 65536 + int(item.damage)
+		if not kinds.has(key):
+			kinds[key] = PackedInt32Array()
+		(kinds[key] as PackedInt32Array).append(a)
+	for a in fresh:
+		var first := _items[a]
+		if first.rest:
+			first.fresh = false # (lying still now: looked once more, then no more)
+		if first.count <= 0:
+			continue
+		var stack := Items.max_stack(first.id)
+		if first.count >= stack:
+			continue
+		var position: Vector3 = first.pos
+		for b: int in kinds[int(first.id) * 65536 + int(first.damage)]:
+			if b == a:
+				continue
 			var second := _items[b]
-			if second.picked >= 0 or second.count <= 0 or second.id != first.id or second.damage != first.damage:
+			if second.count <= 0 or first.count + second.count > stack:
 				continue
-			if (first.pos as Vector3).distance_squared_to(second.pos) > MERGE_DISTANCE * MERGE_DISTANCE:
-				continue
-			var stack := Items.max_stack(first.id)
-			if first.count + second.count > stack:
+			if position.distance_squared_to(second.pos) > MERGE_DISTANCE * MERGE_DISTANCE:
 				continue
 			first.count += second.count
 			first.delay = maxi(first.delay, second.delay)
 			first.age = mini(first.age, second.age)
 			second.count = 0
 			second.age = LIFETIME # removed on the next tick
+			second.rest = false
 			_update_copies(first)
 
 
@@ -372,6 +441,8 @@ func _update_copies(item: Dictionary) -> void:
 		return
 	for child in node.get_children():
 		child.queue_free()
+	item.shown = -2.0 # (new meshes: lit again)
+	item.fresh = true # (its count changed: may merge now)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(item.spin)
 	var flat := ItemMeshes.is_flat(item.id)
@@ -412,10 +483,9 @@ static func _flat_material(id: int) -> ShaderMaterial:
 ## picked up.
 func _process(_delta: float) -> void:
 	var alpha := TickLoop.alpha
-	var atmosphere := Atmosphere.find(get_tree())
 	for item in _items:
 		var node: Node3D = item.node
-		var position: Vector3 = (item.prev as Vector3).lerp(item.pos, alpha)
+		var position: Vector3 = item.pos if item.get("rest", false) else (item.prev as Vector3).lerp(item.pos, alpha)
 		if item.picked >= 0 and player:
 			var t := clampf((item.picked + alpha) / PICKUP_TICKS, 0.0, 1.0)
 			position = position.lerp(player.global_position + Vector3(0, 0.8, 0), t)
@@ -423,12 +493,17 @@ func _process(_delta: float) -> void:
 		var bob := sin(age / 10.0 + item.spin) * 0.1 + 0.1
 		node.position = position + Vector3(0, bob, 0)
 		node.rotation.y = age / 20.0 + item.spin
-		# The light where it lies: flat items (brightness) and small blocks
-		# (entity_light) alike; a block item was drawn at full light before.
-		var brightness := _brightness(position, atmosphere)
-		var parameter := "brightness" if ItemMeshes.is_flat(item.id) else "entity_light"
-		for child in node.get_children():
-			(child as GeometryInstance3D).set_instance_shader_parameter(parameter, brightness)
+		# The light where it lies (taken in the ticks, set when it changed):
+		# flat items (brightness) and small blocks (entity_light) alike.
+		var brightness: float = item.get("light", -1.0)
+		if brightness < 0.0:
+			brightness = _brightness(position, null)
+			item.light = brightness
+		if brightness != item.get("shown", -2.0):
+			item.shown = brightness
+			var parameter := "brightness" if ItemMeshes.is_flat(item.id) else "entity_light"
+			for child in node.get_children():
+				(child as GeometryInstance3D).set_instance_shader_parameter(parameter, brightness)
 
 
 func _brightness(point: Vector3, _atmosphere: Atmosphere) -> float:
@@ -492,6 +567,8 @@ func _puppet_tick() -> void:
 		var item := _items[i]
 		item.prev = item.pos
 		item.age += 1
+		if (item.age + i) % LIGHT_EVERY == 0:
+			item.light = _brightness(item.pos, null)
 		if item.picked >= 0:
 			item.picked += 1
 			if item.picked >= PICKUP_TICKS:

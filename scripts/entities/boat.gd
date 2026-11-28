@@ -202,14 +202,19 @@ func _gone() -> void:
 		player.vehicle = null
 
 
+var _shown_light := -1.0
+
+
 func _process(delta: float) -> void:
 	super(delta)
 	if _model.is_empty():
 		return
 	rotation.y = lerp_angle(rotation.y, _yaw, minf(delta * 8.0, 1.0))
-	var light := world.brightness_at(center()) if world else 1.0
-	for mesh: MeshInstance3D in _model.meshes:
-		mesh.set_instance_shader_parameter("brightness", light)
+	var light := light_here()
+	if light != _shown_light:
+		_shown_light = light
+		for mesh: MeshInstance3D in _model.meshes:
+			mesh.set_instance_shader_parameter("brightness", light)
 
 
 ## Puts a boat where the player is looking: on water (the surface) or on a

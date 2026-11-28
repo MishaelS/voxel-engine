@@ -148,9 +148,12 @@ func _tick(tick_index: int) -> void:
 		spawner.tick()
 	tick_times["spawner"] = Time.get_ticks_usec() - started
 	var players := world.player_positions(false)
+	var carts: Array[Minecart] = []
 	var i := 0
 	while i < _entities.size():
 		var entity := _entities[i]
+		if entity is Minecart and not entity.puppet and not entity.removed:
+			carts.append(entity)
 		# (spread over the ticks: each its own turn of every REST_EVERY)
 		var turn := (tick_index + entity.get_instance_id()) % REST_EVERY == 0
 		if entity.puppet and not entity.removed:
@@ -174,6 +177,8 @@ func _tick(tick_index: int) -> void:
 			_entities.remove_at(i)
 			continue
 		i += 1
+	if carts.size() > 1:
+		Minecart.push_carts(carts)
 	var t := Time.get_ticks_usec()
 	_push_apart()
 	tick_times["push"] = Time.get_ticks_usec() - t
