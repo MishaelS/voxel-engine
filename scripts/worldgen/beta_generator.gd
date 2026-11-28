@@ -54,6 +54,9 @@ const GRASS_WET := Color("47cd33")
 const FOLIAGE_COLD := Color("60a17b")
 const FOLIAGE_DRY := Color("aea42a")
 const FOLIAGE_WET := Color("1abf00")
+## A swamp's grass and leaves (new worlds).
+const SWAMP_GRASS := Color("3f7a2c")
+const SWAMP_FOLIAGE := Color("2f6a1e")
 const CAVE_RANGE := 8 # columns around this one where caves can start
 
 ## Biome table: surface blocks, grass, tree count and kinds.
@@ -68,7 +71,38 @@ const BIOMES := {
 	"shrubland": {"top": "grass_savanna", "filler": "dirt", "trees": 0, "cold": false},
 	"plains": {"top": "grass_plains", "filler": "dirt", "trees": -20, "cold": false},
 	"desert": {"top": "sand", "filler": "sand", "trees": -20, "cold": false},
+	"glacier": {"top": "snow", "filler": "snow", "trees": -20, "cold": true},
 }
+
+## New worlds' biomes (WorldSave.biomes 2, set_layout "biomes"; worlds from
+## before keep theirs, so the land nobody saw yet joins what was built on):
+## - glacier: the coldest land (temperature below GLACIER_TEMP), a flat
+##   shelf of snow blocks down to the frozen sea, nothing growing;
+## - swamp: where it is wet and not hot (SWAMP_HUMID, SWAMP_TEMP; much more
+##   of it than before), flat land right at the water's level - grass and
+##   shallow pools by turns (POOL_OVER), no beaches - under thick oaks, with ferns and
+##   tall grass, dark green (swamp_color);
+## - taiga: more spruces and pines.
+## The land's shape changes smoothly into them (their weights grow over
+## BLEND of the climate), so there are no walls at their edges.
+const GLACIER := 10
+const GLACIER_TEMP := 0.3
+const SWAMP_HUMID := 0.42
+const SWAMP_TEMP := 0.78
+const BLEND := 0.05
+## Where the flat land of the two lies (in grid cells of 8 blocks: 8 is
+## the sea's level), and how many times flatter it is.
+const SWAMP_LEVEL := 7.9
+const SWAMP_FLAT := 9.0
+## A swamp's ground at the water's level is a pool where this noise (the
+## detail noise, stretched) is over the threshold: about 4 cells in 10.
+const POOL_STRETCH := 0.3
+const POOL_OVER := 0.04
+const GLACIER_LEVEL := 8.45
+const GLACIER_FLAT := 3.0
+const NEW_TREES := {"taiga": 8, "swampland": 5}
+const NEW_GRASS_PATCHES := {"taiga": 3, "swampland": 6}
+var new_biomes := false
 
 ## [block, veins per column, vein size, max height] like the classic game.
 const ORES := [
@@ -101,7 +135,7 @@ var _dungeon_ids := {}
 ## the per-block loops don't read dictionaries.
 const BIOME_NAMES: Array[String] = [
 	"tundra", "taiga", "swampland", "forest", "seasonal_forest",
-	"rainforest", "savanna", "shrubland", "plains", "desert",
+	"rainforest", "savanna", "shrubland", "plains", "desert", "glacier",
 ]
 var _biome_top := PackedInt32Array()
 var _biome_filler := PackedInt32Array()
@@ -223,8 +257,16 @@ func set_layout(layout: Dictionary) -> void:
 	legacy_shift = _shift
 	_h = clampi(int(layout.get("upper", UPPER_HEIGHT)) / GRID_Y * GRID_Y, UPPER_HEIGHT, HEIGHT - _shift)
 	_cells = _h / GRID_Y
+	new_biomes = int(layout.get("biomes", 1)) >= 2
+	for b in BIOME_NAMES.size():
+		var biome_name_key := BIOME_NAMES[b]
+		_biome_trees[b] = NEW_TREES[biome_name_key] if new_biomes and NEW_TREES.has(biome_name_key) else BIOMES[biome_name_key].trees
 	if _native:
 		_native.call("set_layout", _shift, _deep, _h, tall)
+		if _native.has_method("set_new_biomes"):
+			_native.call("set_new_biomes", new_biomes)
+		elif new_biomes:
+			_native = null # (an older native library: the script makes the new biomes)
 
 
 func _setup(noise: FastNoiseLite, salt: int, frequency: float, octaves: int) -> void:
@@ -326,8 +368,16 @@ func column_colors(cx: int, cz: int) -> Array[PackedColorArray]:
 	for i in 256:
 		var temp := values[i]
 		var humid := values[256 + i]
-		grass[i] = Blocks.lush(_map_color(_grass_map, temp, humid)).srgb_to_linear()
-		foliage[i] = Blocks.lush(_map_color(_foliage_map, temp, humid)).srgb_to_linear()
+		var grass_color := Blocks.lush(_map_color(_grass_map, temp, humid))
+		var foliage_color := Blocks.lush(_map_color(_foliage_map, temp, humid))
+		if new_biomes:
+			# A swamp's grass and leaves are dark and dull, more the deeper in it.
+			var swamp := swamp_weight(temp, humid * temp)
+			if swamp > 0.0:
+				grass_color = grass_color.lerp(SWAMP_GRASS, swamp * 0.8)
+				foliage_color = foliage_color.lerp(SWAMP_FOLIAGE, swamp * 0.8)
+		grass[i] = grass_color.srgb_to_linear()
+		foliage[i] = foliage_color.srgb_to_linear()
 	return [grass, foliage]
 
 
@@ -356,16 +406,138 @@ static func biome_index(temp: float, humid: float) -> int:
 	return 4 if humid < 0.9 else 5 # seasonal forest / rainforest
 
 
+## Biome number with the new worlds' glacier and wider swamp (new_biomes).
+static func biome_index_new(temp: float, humid: float) -> int:
+	if temp < GLACIER_TEMP:
+		return GLACIER
+	humid *= temp
+	if humid < 0.2:
+		if temp < 0.5:
+			return 0 # tundra
+		return 6 if temp < 0.95 else 9 # savanna / desert
+	if humid > SWAMP_HUMID and temp < SWAMP_TEMP:
+		return 2 # swampland
+	if temp < 0.5:
+		return 1 # taiga
+	if temp < 0.97:
+		return 7 if humid < 0.35 else 3 # shrubland / forest
+	if humid < 0.45:
+		return 8 # plains
+	return 4 if humid < 0.9 else 5 # seasonal forest / rainforest
+
+
+## The biome number of this world's kind (its own table).
+func biome_at_climate(temp: float, humid: float) -> int:
+	return biome_index_new(temp, humid) if new_biomes else biome_index(temp, humid)
+
+
+## How much of a glacier and of a swamp the land is at a climate, 0..1
+## each: 0 outside, growing to 1 over BLEND inside (new_biomes; `wet`: the
+## humidity times the temperature).
+static func glacier_weight(temp: float) -> float:
+	return clampf((GLACIER_TEMP - temp) / BLEND, 0.0, 1.0)
+
+
+static func swamp_weight(temp: float, wet: float) -> float:
+	return clampf(minf((wet - SWAMP_HUMID) / BLEND, (SWAMP_TEMP - temp) / BLEND), 0.0, 1.0)
+
+
 func biome_name(x: int, z: int) -> String:
-	return biome_for(temperature(x, z), humidity(x, z))
+	return BIOME_NAMES[biome_at_climate(temperature(x, z), humidity(x, z))]
 
 
 # --- Generation --------------------------------------------------------------------
 
 func generate_blocks(cx: int, cz: int) -> PackedInt32Array:
-	if _native:
-		return _native.call("generate_blocks", cx, cz)
-	return generate_blocks_script(cx, cz)
+	var blocks: PackedInt32Array = _native.call("generate_blocks", cx, cz) if _native else generate_blocks_script(cx, cz)
+	if new_biomes:
+		_place_sea_things(blocks, cx, cz)
+	return blocks
+
+
+## New worlds, on a finished column (the native generator's too): wet
+## sponges on the floor of warm seas, and now and then a sunken dungeon in
+## shallow water.
+const SPONGE_COLUMNS := 10 # one column in this many (of those under a warm sea)
+const SPONGE_WARM := 0.55
+const SUNKEN_COLUMNS := 40
+
+
+func _place_sea_things(blocks: PackedInt32Array, cx: int, cz: int) -> void:
+	var surface := (_shift + SEA - 1) * 256 # the layer of the sea's top
+	if blocks[surface + 8 + 16 * 8] != _water:
+		return # (not sea in the middle: most columns stop here)
+	var rng := column_rng(cx, cz, 800)
+	var sponge_turn := rng.randi_range(0, SPONGE_COLUMNS - 1) == 0
+	var sunken_turn := rng.randi_range(0, SUNKEN_COLUMNS - 1) == 0
+	if sponge_turn and temperature(cx * 16 + 8, cz * 16 + 8) >= SPONGE_WARM:
+		var wet: int = _id["wet_sponge"]
+		var x0 := rng.randi_range(2, 13)
+		var z0 := rng.randi_range(2, 13)
+		for n in rng.randi_range(1, 4):
+			var x := clampi(x0 + rng.randi_range(-2, 2), 0, 15)
+			var z := clampi(z0 + rng.randi_range(-2, 2), 0, 15)
+			var floor_y := _sea_floor(blocks, x, z)
+			# (under at least 3 blocks of water, on something solid)
+			if floor_y >= 0 and floor_y <= SEA - 4:
+				blocks[x + 16 * (z + 16 * (_shift + floor_y + 1))] = wet
+	if sunken_turn:
+		_place_sunken_dungeon(blocks, rng)
+
+
+## The sea floor's top block (classic part's y) under the water at a block
+## column, or -1 where the top of the sea is not water.
+func _sea_floor(blocks: PackedInt32Array, x: int, z: int) -> int:
+	var y := SEA - 1
+	if blocks[x + 16 * (z + 16 * (_shift + y))] != _water:
+		return -1
+	while y > 1 and blocks[x + 16 * (z + 16 * (_shift + y))] == _water:
+		y -= 1
+	var id := blocks[x + 16 * (z + 16 * (_shift + y))]
+	return y if id != Blocks.AIR and Blocks.collides_table[id] == 1 else -1
+
+
+## A dungeon sunk in shallow water (3..9 blocks under the sea's top): a room
+## of cobblestone and moss half in the sea floor, flooded, a doorway in one
+## wall, the spawner in the middle and a chest or two, like the ones in the
+## caves (DungeonBehavior). Seen from a boat as a dark box under the water.
+func _place_sunken_dungeon(blocks: PackedInt32Array, rng: RandomNumberGenerator) -> void:
+	var cx := rng.randi_range(5, 10)
+	var cz := rng.randi_range(5, 10)
+	var rx := rng.randi_range(2, 3)
+	var rz := rng.randi_range(2, 3)
+	var floor_y := _sea_floor(blocks, cx, cz)
+	if floor_y < SEA - 10 or floor_y > SEA - 5:
+		return
+	# All of it under water, on a floor not much higher or lower.
+	for x: int in [cx - rx - 1, cx + rx + 1]:
+		for z: int in [cz - rz - 1, cz + rz + 1]:
+			var corner := _sea_floor(blocks, x, z)
+			if corner < 0 or absi(corner - floor_y) > 2:
+				return
+	var base := floor_y - 1 # the room's floor layer; its inside is 3 high above it
+	var doorway := rng.randi_range(0, 3)
+	for x in range(cx - rx - 1, cx + rx + 2):
+		for z in range(cz - rz - 1, cz + rz + 2):
+			var edge := x == cx - rx - 1 or x == cx + rx + 1 or z == cz - rz - 1 or z == cz + rz + 1
+			for y in range(base, base + 5):
+				var i := x + 16 * (z + 16 * (_shift + y))
+				if y == base:
+					blocks[i] = _dungeon_ids.mossy if rng.randi_range(0, 3) != 0 else _dungeon_ids.cobble
+				elif edge or y == base + 4:
+					blocks[i] = _dungeon_ids.mossy if rng.randi_range(0, 2) == 0 else _dungeon_ids.cobble
+				else:
+					blocks[i] = _water
+	# The doorway: two blocks of one wall's middle.
+	var door := [Vector2i(cx, cz - rz - 1), Vector2i(cx + rx + 1, cz), Vector2i(cx, cz + rz + 1), Vector2i(cx - rx - 1, cz)][doorway] as Vector2i
+	for y in [base + 1, base + 2]:
+		blocks[door.x + 16 * (door.y + 16 * (_shift + y))] = _water
+	blocks[cx + 16 * (cz + 16 * (_shift + base + 1))] = _dungeon_ids["spawner_" + DungeonBehavior.SPAWNER_TYPES[[0, 0, 1, 2][rng.randi_range(0, 3)]]]
+	for chest in 2:
+		var x := cx + (rx if rng.randi_range(0, 1) == 0 else -rx)
+		var z := cz + rng.randi_range(-rz, rz)
+		if Vector2i(x, z) != Vector2i(cx, cz):
+			blocks[x + 16 * (z + 16 * (_shift + base + 1))] = _dungeon_ids.chest
 
 
 ## The GDScript generator (without the native library; tests compare the two).
@@ -414,7 +586,7 @@ func _generate_upper(blocks: PackedInt32Array, cx: int, cz: int) -> void:
 	var biomes := PackedByteArray()
 	biomes.resize(256)
 	for i in 256:
-		biomes[i] = biome_index(climate_values[i], climate_values[256 + i])
+		biomes[i] = biome_at_climate(climate_values[i], climate_values[256 + i])
 	var top := _shape_terrain(blocks, cx, cz)
 	_replace_surface(blocks, cx, cz, biomes, top)
 	_carve_caves(blocks, cx, cz, 2, 119, _h - 8, -1)
@@ -479,13 +651,21 @@ func _shape_terrain(blocks: PackedInt32Array, cx: int, cz: int) -> int:
 			scale += 0.5
 			depth = depth * LEGACY_CELLS / 16.0
 			var center := LEGACY_CELLS / 2.0 + 0.5 + depth * 4.0
+			# New worlds: glaciers and swamps are flat, at their own level.
+			var flatten := 1.0
+			if new_biomes:
+				var glacier := glacier_weight(temp)
+				var swamp := swamp_weight(temp, humid)
+				flatten = 1.0 + glacier * GLACIER_FLAT + swamp * SWAMP_FLAT
+				center += (GLACIER_LEVEL - center) * glacier * 0.5
+				center += (SWAMP_LEVEL - center) * swamp
 
 			for gy in stride_y:
 				var wy := float(gy * GRID_Y)
 				var rise := gy - center
 				if tall and rise > 1.0:
 					rise = 1.0 + (rise - 1.0) * 0.3 # new worlds: hills about twice as high, mountains higher still
-				var offset := rise * 12.0 / scale
+				var offset := rise * 12.0 / scale * flatten
 				if offset < 0.0:
 					offset *= 4.0
 				var low := _min_noise.get_noise_3d(wx, wy * 0.5, wz) * LIMIT_AMPLITUDE
@@ -580,16 +760,24 @@ func _replace_surface(blocks: PackedInt32Array, cx: int, cz: int, biomes: Packed
 					elif y >= SEA - 4 and y <= SEA + 1:
 						top = biome_top
 						filler = biome_filler
-						if gravel_beach:
+						# (new worlds: no beaches round a glacier or in a swamp)
+						var plain_shore := new_biomes and (biome == GLACIER or biome == 2)
+						if gravel_beach and not plain_shore:
 							top = Blocks.AIR
 							filler = gravel
-						if sand_beach:
+						if sand_beach and not plain_shore:
 							top = sand
 							filler = sand
+					if new_biomes and biome == GLACIER and y < SEA - 1:
+						top = gravel # (the sea's floor under the ice: no snow down there)
+						filler = gravel
 					if y < SEA and top == Blocks.AIR:
 						top = water
 					depth_left = soil_depth
 					blocks[i] = top if y >= SEA - 1 else filler
+					if new_biomes and biome == 2 and y == SEA - 1 and blocks[i + 256] == Blocks.AIR \
+							and _detail_noise.get_noise_2d(wx * POOL_STRETCH, wz * POOL_STRETCH) > POOL_OVER:
+						blocks[i] = water # (a swamp's pool: a block of water in the grass)
 				elif depth_left > 0:
 					depth_left -= 1
 					blocks[i] = filler
@@ -893,8 +1081,10 @@ func _place_lake(blocks: PackedInt32Array, rng: RandomNumberGenerator, y: int, l
 ## deserts. Only on ground they can grow on, inside this column.
 func _place_plants(blocks: PackedInt32Array, biomes: PackedByteArray, rng: RandomNumberGenerator) -> void:
 	var biome := BIOME_NAMES[biomes[8 * 16 + 8]]
-	for patch in GRASS_PATCHES.get(biome, 0):
-		var plant: int = _id["fern"] if biome == "rainforest" and rng.randi_range(0, 2) != 0 else _id["tall_grass"]
+	var patches: int = NEW_GRASS_PATCHES[biome] if new_biomes and NEW_GRASS_PATCHES.has(biome) else GRASS_PATCHES.get(biome, 0)
+	var ferny := biome == "rainforest" or (new_biomes and biome == "swampland")
+	for patch in patches:
+		var plant: int = _id["fern"] if ferny and rng.randi_range(0, 2) != 0 else _id["tall_grass"]
 		_plant_patch(blocks, rng, plant, 128)
 	for patch in 2:
 		_plant_patch(blocks, rng, _id["dandelion"], 64)

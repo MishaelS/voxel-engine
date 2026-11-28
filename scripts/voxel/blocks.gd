@@ -288,6 +288,10 @@ static func _register_all() -> bool:
 	for state in ["closed", "open"]:
 		for facing in 4:
 			register(_trapdoor(state == "open", facing, true))
+	# A sponge full of water (SpongeBehavior; appended: ids stay stable):
+	# darker, dripping.
+	register(BlockType.cube("wet_sponge", 48).set_hardness(0.6).set_tint(Color(0.62, 0.68, 0.5)) \
+		.set_display_tick(Callable(SpongeBehavior, "display_tick")))
 	_set_flammability()
 	return true
 
@@ -858,7 +862,7 @@ static func _register_building_blocks() -> void:
 	register(BlockType.column("bookshelf", 4, 35).set_hardness(1.5).set_tool("axe") \
 		.set_drops([{"item": "book", "min": 3, "max": 3}]))
 	register(BlockType.cube("mossy_cobblestone", 36).set_hardness(2.0).set_tool("pickaxe", 0))
-	register(BlockType.cube("sponge", 48).set_hardness(0.6))
+	register(BlockType.cube("sponge", 48).set_hardness(0.6).set_on_update(Callable(SpongeBehavior, "on_update")))
 	var web := BlockType.cube("cobweb", 11).as_plant().set_hardness(4.0).set_tool("sword", 0) \
 		.set_drops([{"item": "string"}])
 	web.replaceable = false

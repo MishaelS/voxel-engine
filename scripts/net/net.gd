@@ -955,6 +955,7 @@ func _hello(joining_name: String, version: String, tag: String, proof: String) -
 	_welcome.rpc_id(id, {
 		"name": save.name if save else "World", "seed": world.world_seed, "generator": world.generator,
 		"tall": save.tall_terrain if save else false, "terrain": save.terrain if save else WorldSave.CLASSIC,
+		"biomes": save.biomes if save else 1,
 		"game_mode": _modes[id], "cheats": can_cheat(id), "op": is_op(id), "view_distance": view_distance,
 		"spawn": world.find_spawn(), # the world spawn (not the host's bed)
 		"game_time": world.clock.game_time, "day_time": world.clock.day_time,
@@ -1005,6 +1006,7 @@ func _welcome(info: Dictionary) -> void:
 	save.generator = info.get("generator", 0)
 	save.tall_terrain = info.get("tall", false)
 	save.terrain = info.get("terrain", WorldSave.CLASSIC)
+	save.biomes = clampi(int(info.get("biomes", 1)), 1, WorldSave.BIOMES_NOW)
 	save.height = int(save.layout().height)
 	save.game_mode = info.get("game_mode", 0)
 	var saved_player: Dictionary = info.get("player", {})

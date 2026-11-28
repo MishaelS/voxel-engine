@@ -47,8 +47,9 @@ private:
 	int32_t spawners[3] = {}; // zombie, skeleton, spider
 	std::vector<int32_t> pumpkins;
 	int32_t ores[8] = {}; // dirt, gravel, coal, iron, gold, redstone, diamond, lapis
-	int32_t biome_top[10] = {}, biome_filler[10] = {}, biome_trees[10] = {};
-	uint8_t biome_cold[10] = {};
+	int32_t biome_top[11] = {}, biome_filler[11] = {}, biome_trees[11] = {};
+	uint8_t biome_cold[11] = {};
+	bool new_biomes = false;
 	// Per block id.
 	std::vector<uint8_t> collides, liquid, opaque, grass_named, leaves;
 
@@ -114,6 +115,7 @@ public:
 	// from y `shift` up, mountains softened above the middle (`tall`), the deep
 	// layer under it (`deep`).
 	void set_layout(int shift, bool deep, int height, bool tall);
+	void set_new_biomes(bool value);
 	godot::PackedInt32Array generate_blocks(int cx, int cz) const;
 
 	// For checking: Godot's own generator against ours (seed, then a mix of

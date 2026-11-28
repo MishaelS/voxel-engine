@@ -367,6 +367,12 @@ func snow_melt(point: Vector3) -> void:
 			_rng.randi_range(6, 12), 0.05, true, -1, 0.0)
 
 
+## A drop of water falling off something wet (a sponge).
+func drip(point: Vector3) -> void:
+	_add(point, Vector3(0, -0.02, 0), Color(-2, 0, 0, _rng.randf_range(0.04, 0.07)), Color(0.35, 0.55, 0.95, 1.0),
+		_rng.randi_range(14, 26), 0.6, false, -1, 0.3)
+
+
 ## A splash on water (a fish biting): droplets thrown up.
 func splash(point: Vector3) -> void:
 	for i in 12:

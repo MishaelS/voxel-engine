@@ -442,6 +442,8 @@ func generate() -> void:
 	var layout := save.layout() if save else WorldSave.layout_of(WorldSave.CLASSIC)
 	height = layout.height
 	sea_level = layout.sea
+	if generator != Generator.BETA:
+		layout["biomes"] = 1 # (the islands keep their own land: the new biomes are the main world's)
 	match generator:
 		Generator.BETA:
 			var beta := BetaGenerator.new(world_seed)

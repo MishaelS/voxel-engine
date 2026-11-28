@@ -181,6 +181,7 @@ func _world_save(world_name: String) -> WorldSave:
 	save.generator = type[0]
 	save.terrain = type[1]
 	save.height = WorldGenerator.LEGACY_HEIGHT if save.terrain == WorldSave.CLASSIC else WorldGenerator.HEIGHT
+	save.biomes = WorldSave.BIOMES_NOW
 	save.game_mode = Net.lan_game_mode
 	save.allow_cheats = false
 	save.bonus_chest = config.get_bool("bonus-chest")

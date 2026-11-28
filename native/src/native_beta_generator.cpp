@@ -53,8 +53,22 @@ const int ORES[8][3] = { { 20, 32, 128 }, { 10, 32, 128 }, { 20, 16, 128 }, { 20
 const int DEEP_ORES[8][3] = { { 10, 32, 64 }, { 5, 32, 64 }, { 10, 16, 64 }, { 20, 8, 64 }, { 2, 8, 32 }, { 8, 7, 16 },
 	{ 1, 7, 16 }, { 1, 6, 32 } };
 // Tall grass patches by biome number (BIOME_NAMES order).
-const int GRASS_PATCHES[10] = { 0, 1, 1, 2, 2, 10, 1, 1, 10, 0 };
-enum Biome { TUNDRA, TAIGA, SWAMPLAND, FOREST, SEASONAL_FOREST, RAINFOREST, SAVANNA, SHRUBLAND, PLAINS, DESERT };
+const int GRASS_PATCHES[11] = { 0, 1, 1, 2, 2, 10, 1, 1, 10, 0, 0 };
+// New worlds' (BetaGenerator.NEW_GRASS_PATCHES, NEW_TREES).
+const int NEW_GRASS_PATCHES[11] = { 0, 3, 6, 2, 2, 10, 1, 1, 10, 0, 0 };
+enum Biome { TUNDRA, TAIGA, SWAMPLAND, FOREST, SEASONAL_FOREST, RAINFOREST, SAVANNA, SHRUBLAND, PLAINS, DESERT, GLACIER };
+constexpr int BIOME_COUNT = 11;
+// New worlds' glacier and swamp (BetaGenerator: the same numbers).
+constexpr double GLACIER_TEMP = 0.3;
+constexpr double SWAMP_HUMID = 0.42;
+constexpr double SWAMP_TEMP = 0.78;
+constexpr double BLEND = 0.05;
+constexpr double SWAMP_LEVEL = 7.9;
+constexpr double SWAMP_FLAT = 9.0;
+constexpr double POOL_STRETCH = 0.3;
+constexpr double POOL_OVER = 0.04;
+constexpr double GLACIER_LEVEL = 8.45;
+constexpr double GLACIER_FLAT = 3.0;
 const int SIDES[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
 
 inline int idx(int x, int y, int z) {
@@ -71,6 +85,27 @@ int biome_index(double temp, double humid) {
 		return temp < 0.95 ? SAVANNA : DESERT;
 	}
 	if (humid > 0.5 && temp < 0.7)
+		return SWAMPLAND;
+	if (temp < 0.5)
+		return TAIGA;
+	if (temp < 0.97)
+		return humid < 0.35 ? SHRUBLAND : FOREST;
+	if (humid < 0.45)
+		return PLAINS;
+	return humid < 0.9 ? SEASONAL_FOREST : RAINFOREST;
+}
+
+// BetaGenerator.biome_index_new.
+int biome_index_new(double temp, double humid) {
+	if (temp < GLACIER_TEMP)
+		return GLACIER;
+	humid *= temp;
+	if (humid < 0.2) {
+		if (temp < 0.5)
+			return TUNDRA;
+		return temp < 0.95 ? SAVANNA : DESERT;
+	}
+	if (humid > SWAMP_HUMID && temp < SWAMP_TEMP)
 		return SWAMPLAND;
 	if (temp < 0.5)
 		return TAIGA;
@@ -151,15 +186,15 @@ void NativeBetaGenerator::setup(const Dictionary &config) {
 		"diamond_ore", "lapis_ore" };
 	for (int k = 0; k < 8; k++)
 		ores[k] = id(ore_names[k]);
-	const char *tops[10] = { "snowy_grass", "snowy_grass", "grass_swamp", "grass_forest", "grass_forest",
-		"grass_forest", "grass_savanna", "grass_savanna", "grass_plains", "sand" };
-	const int trees[10] = { -20, 5, 0, 5, 2, 5, 0, 0, -20, -20 };
-	for (int b = 0; b < 10; b++) {
+	const char *tops[BIOME_COUNT] = { "snowy_grass", "snowy_grass", "grass_swamp", "grass_forest", "grass_forest",
+		"grass_forest", "grass_savanna", "grass_savanna", "grass_plains", "sand", "snow" };
+	const int32_t snow = id("snow");
+	for (int b = 0; b < BIOME_COUNT; b++) {
 		biome_top[b] = id(tops[b]);
-		biome_filler[b] = b == DESERT ? sand : dirt;
-		biome_trees[b] = trees[b];
-		biome_cold[b] = b <= TAIGA ? 1 : 0;
+		biome_filler[b] = b == DESERT ? sand : (b == GLACIER ? snow : dirt);
+		biome_cold[b] = (b <= TAIGA || b == GLACIER) ? 1 : 0;
 	}
+	set_new_biomes(false);
 	pumpkins.clear();
 	const PackedInt32Array pumpkin_ids = config["pumpkins"];
 	for (int64_t k = 0; k < pumpkin_ids.size(); k++)
@@ -174,6 +209,19 @@ void NativeBetaGenerator::setup(const Dictionary &config) {
 
 void NativeBetaGenerator::set_tall(bool value) {
 	set_layout(LEGACY_SHIFT, true, value ? 192 : 128, value);
+}
+
+// New worlds' biomes (BetaGenerator.new_biomes): the glacier, the flat
+// marshy swamp, more trees in the taiga.
+void NativeBetaGenerator::set_new_biomes(bool value) {
+	new_biomes = value;
+	const int trees[BIOME_COUNT] = { -20, 5, 0, 5, 2, 5, 0, 0, -20, -20, -20 };
+	for (int b = 0; b < BIOME_COUNT; b++)
+		biome_trees[b] = trees[b];
+	if (new_biomes) {
+		biome_trees[TAIGA] = 8;
+		biome_trees[SWAMPLAND] = 5;
+	}
 }
 
 void NativeBetaGenerator::set_layout(int new_shift, bool new_deep, int height, bool new_tall) {
@@ -257,7 +305,8 @@ PackedInt32Array NativeBetaGenerator::generate_blocks(int cx, int cz) const {
 	climate(cx, cz, climate_values);
 	uint8_t biomes[256];
 	for (int i = 0; i < 256; i++)
-		biomes[i] = uint8_t(biome_index(climate_values[i], climate_values[256 + i]));
+		biomes[i] = uint8_t(new_biomes ? biome_index_new(climate_values[i], climate_values[256 + i])
+										: biome_index(climate_values[i], climate_values[256 + i]));
 	const int top = shape_terrain(upper, cx, cz);
 	replace_surface(upper, cx, cz, biomes, top);
 	carve_caves(upper, upper_size, cx, cz, 2, 119, h - 8, -1);
@@ -369,13 +418,21 @@ int NativeBetaGenerator::shape_terrain(int32_t *blocks, int cx, int cz) const {
 				scale = 0.0;
 			scale += 0.5;
 			depth = depth * LEGACY_CELLS / 16.0;
-			const double center = LEGACY_CELLS / 2.0 + 0.5 + depth * 4.0;
+			double center = LEGACY_CELLS / 2.0 + 0.5 + depth * 4.0;
+			double flatten = 1.0;
+			if (new_biomes) {
+				const double glacier = std::clamp((GLACIER_TEMP - temp) / BLEND, 0.0, 1.0);
+				const double swamp = std::clamp(std::min((humid - SWAMP_HUMID) / BLEND, (SWAMP_TEMP - temp) / BLEND), 0.0, 1.0);
+				flatten = 1.0 + glacier * GLACIER_FLAT + swamp * SWAMP_FLAT;
+				center += (GLACIER_LEVEL - center) * glacier * 0.5;
+				center += (SWAMP_LEVEL - center) * swamp;
+			}
 			for (int gy = 0; gy < stride_y; gy++) {
 				const double wy = double(gy * GRID_Y);
 				double rise = gy - center;
 				if (tall && rise > 1.0)
 					rise = 1.0 + (rise - 1.0) * 0.3;
-				double offset = rise * 12.0 / scale;
+				double offset = rise * 12.0 / scale * flatten;
 				if (offset < 0.0)
 					offset *= 4.0;
 				const double low = noise3(MIN, wx, wy * 0.5, wz) * LIMIT_AMPLITUDE;
@@ -469,19 +526,27 @@ void NativeBetaGenerator::replace_surface(int32_t *blocks, int cx, int cz, const
 					} else if (y >= SEA - 4 && y <= SEA + 1) {
 						top = own_top;
 						filler = own_filler;
-						if (gravel_beach) {
+						const bool plain_shore = new_biomes && (biome == GLACIER || biome == SWAMPLAND);
+						if (gravel_beach && !plain_shore) {
 							top = AIR;
 							filler = gravel;
 						}
-						if (sand_beach) {
+						if (sand_beach && !plain_shore) {
 							top = sand;
 							filler = sand;
 						}
+					}
+					if (new_biomes && biome == GLACIER && y < SEA - 1) {
+						top = gravel;
+						filler = gravel;
 					}
 					if (y < SEA && top == AIR)
 						top = water;
 					depth_left = soil_depth;
 					blocks[i] = y >= SEA - 1 ? top : filler;
+					if (new_biomes && biome == SWAMPLAND && y == SEA - 1 && blocks[i + 256] == AIR &&
+							noise2(DETAIL, wx * POOL_STRETCH, wz * POOL_STRETCH) > POOL_OVER)
+						blocks[i] = water;
 				} else if (depth_left > 0) {
 					depth_left--;
 					blocks[i] = filler;
@@ -1142,8 +1207,10 @@ bool NativeBetaGenerator::can_stay(int32_t plant, int32_t ground) const {
 
 void NativeBetaGenerator::place_plants(int32_t *blocks, const uint8_t *biomes, Pcg &rng) const {
 	const int biome = biomes[8 * 16 + 8];
-	for (int patch = 0; patch < GRASS_PATCHES[biome]; patch++) {
-		const int32_t plant = (biome == RAINFOREST && rng.randi_range(0, 2) != 0) ? fern : tall_grass;
+	const int patches = new_biomes ? NEW_GRASS_PATCHES[biome] : GRASS_PATCHES[biome];
+	const bool ferny = biome == RAINFOREST || (new_biomes && biome == SWAMPLAND);
+	for (int patch = 0; patch < patches; patch++) {
+		const int32_t plant = (ferny && rng.randi_range(0, 2) != 0) ? fern : tall_grass;
 		plant_patch(blocks, rng, plant, 128);
 	}
 	for (int patch = 0; patch < 2; patch++)
@@ -1365,6 +1432,7 @@ void NativeBetaGenerator::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("setup", "config"), &NativeBetaGenerator::setup);
 	ClassDB::bind_method(D_METHOD("set_tall", "value"), &NativeBetaGenerator::set_tall);
 	ClassDB::bind_method(D_METHOD("set_layout", "shift", "deep", "height", "tall"), &NativeBetaGenerator::set_layout);
+	ClassDB::bind_method(D_METHOD("set_new_biomes", "value"), &NativeBetaGenerator::set_new_biomes);
 	ClassDB::bind_method(D_METHOD("generate_blocks", "cx", "cz"), &NativeBetaGenerator::generate_blocks);
 	ClassDB::bind_static_method("NativeBetaGenerator", D_METHOD("check_random", "seed", "count"),
 			&NativeBetaGenerator::check_random);

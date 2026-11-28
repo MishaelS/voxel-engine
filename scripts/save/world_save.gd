@@ -51,6 +51,11 @@ var terrain := CLASSIC
 ## has the taller mountains.
 var height := WorldGenerator.LEGACY_HEIGHT
 var tall_terrain := false
+## Which biomes the generator makes: 1 - the ones worlds had before the
+## glacier and the marshy swamp (those worlds keep their land as it was,
+## with no seams where it was not visited yet), 2 - with them (new worlds).
+const BIOMES_NOW := 2
+var biomes := 1
 var created := 0      # unix time
 var last_played := 0  # unix time
 ## World and player state, written by save_state(); empty for a new world.
@@ -83,6 +88,7 @@ static func create(world_name: String, seed_value: int, world_generator: int, mo
 	save.world_seed = seed_value
 	save.generator = world_generator
 	save.game_mode = mode
+	save.biomes = BIOMES_NOW
 	save.created = int(Time.get_unix_time_from_system())
 	save.last_played = save.created
 	save.folder = _unique_folder(save.name)
@@ -136,6 +142,7 @@ func load_level() -> bool:
 	# Worlds from before the world types: 128 high ones are classic, 256
 	# high ones old.
 	terrain = config.get_value("world", "terrain", CLASSIC if height < WorldGenerator.HEIGHT else OLD)
+	biomes = config.get_value("world", "biomes", 1)
 	state = config.get_value("state", "data", {})
 	return true
 
@@ -168,6 +175,7 @@ func write_level() -> void:
 	config.set_value("world", "height", height)
 	config.set_value("world", "tall_terrain", tall_terrain)
 	config.set_value("world", "terrain", terrain)
+	config.set_value("world", "biomes", biomes)
 	config.set_value("state", "data", state)
 	DirAccess.make_dir_recursive_absolute(path())
 	config.save(path(LEVEL_FILE))
@@ -190,7 +198,9 @@ static func layout_of(world_type: String, old_tall: bool = false) -> Dictionary:
 
 
 func layout() -> Dictionary:
-	return layout_of(terrain, tall_terrain)
+	var result := layout_of(terrain, tall_terrain)
+	result["biomes"] = biomes
+	return result
 
 
 ## Deletes the world folder and everything in it.
